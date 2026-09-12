@@ -1,0 +1,18 @@
+.env
+node_modules/
+dist/
+
+auth/
+auth-phone-backup/
+pair-test-auth/
+
+*.log
+
+# Generated TypeScript output
+*.js
+*.js.map
+*.d.ts
+*.d.ts.map
+
+# Runtime/persistent bot data
+src/data/
