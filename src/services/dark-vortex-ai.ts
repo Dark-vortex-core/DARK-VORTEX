@@ -318,7 +318,7 @@ function normalizeText(
     .trim();
 }
 
-function isDarkVortexRelated(
+export function isDarkVortexRelated(
   text: string,
 ): boolean {
   const normalized =

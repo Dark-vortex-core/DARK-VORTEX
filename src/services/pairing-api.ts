@@ -8,6 +8,10 @@ import cors from "cors";
 import http from "node:http";
 import crypto from "node:crypto";
 
+import {
+  clearWhatsAppAuth,
+} from "./auth-recovery.js";
+
 export type PairingSessionMode =
   | "qr"
   | "pairing";
@@ -544,6 +548,90 @@ function createApp(): Express {
     },
   );
 
+   // ==========================================================
+  // RESET WHATSAPP SESSION
+  // ==========================================================
+
+  app.post(
+    "/api/session/reset",
+    async (request, response) => {
+      if (
+        !requireAuth(
+          request,
+          response,
+        )
+      ) {
+        return;
+      }
+
+      try {
+        createState({
+          status: "STOPPING",
+          qr: null,
+          pairingCode: null,
+          connectedNumber: null,
+          message:
+            "Resetting WhatsApp session...",
+        });
+
+        broadcastState();
+
+        // Stop the active WhatsApp session.
+        await options!.stopSession();
+
+        // Delete saved WhatsApp authentication.
+        await clearWhatsAppAuth();
+
+        // Clear any old QR/pairing artifacts.
+        setPairingArtifactVisibility(
+          false,
+        );
+
+        latestPairingQr = null;
+        latestPairingCode = null;
+
+        createState({
+          status: "DISCONNECTED",
+          mode: null,
+          qr: null,
+          pairingCode: null,
+          phoneNumber: null,
+          connectedNumber: null,
+          message:
+            "WhatsApp session reset. A new QR code or pairing code can now be requested.",
+        });
+
+        broadcastState();
+
+        sendJson(response, 200, {
+          success: true,
+          status: "DISCONNECTED",
+          message:
+            "WhatsApp session reset successfully. A new QR code or pairing code can now be requested.",
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : String(error);
+
+        createState({
+          status: "ERROR",
+          message:
+            `Session reset failed: ${message}`,
+        });
+
+        broadcastState();
+
+        sendJson(response, 500, {
+          success: false,
+          error:
+            `Failed to reset WhatsApp session: ${message}`,
+        });
+      }
+    },
+  );
+
   // ==========================================================
   // SERVER-SENT EVENTS
   // ==========================================================
@@ -623,8 +711,18 @@ export function setPairingArtifactVisibility(
   pairingArtifactVisible = visible;
 
   if (!visible) {
-    return;
-  }
+  latestPairingQr = null;
+  latestPairingCode = null;
+
+  createState({
+    qr: null,
+    pairingCode: null,
+  });
+
+  broadcastState();
+
+  return;
+}
 
   if (
     mode === "qr" &&

@@ -2,6 +2,10 @@ import os from "node:os";
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import {
+  clearWhatsAppAuth,
+} from "./services/auth-recovery.js";
+
 import makeWASocket, {
   type WAMessage,
   DisconnectReason,
@@ -74,7 +78,10 @@ import {
   endStartupBox,
   divider,
 } from "./services/logger.js";
-
+import {
+  markPersonalAssistantOwnerResponse,
+  processPersonalAssistant,
+} from "./services/personal-assistant.js";
 import {
   processProtection,
 } from "./commands/protection.js";
@@ -115,6 +122,11 @@ import {
 import {
   getPrefix,
 } from "./services/prefix.js";
+
+import {
+  handleVortexConfirmation,
+  consumeConfirmedSecurityExecution,
+} from "./commands/vortex-tools.js";
 
 // ============================================================
 // VX SECURITY
@@ -610,6 +622,8 @@ let lastTimeGreetingKey:
 let shuttingDown = false;
 
 let currentSocket: any = null;
+
+let authRecoveryInProgress = false;
 
 let socketCreationInProgress = false;
 
@@ -2409,6 +2423,37 @@ async function stopApiSession(): Promise<void> {
   });
 }
 
+async function recoverFromAuthenticationFailure(): Promise<void> {
+  if (authRecoveryInProgress) {
+    return;
+  }
+
+  authRecoveryInProgress = true;
+
+  try {
+    log.warn(
+      "[AUTH RECOVERY] Authentication failure detected. Clearing WhatsApp session.",
+    );
+
+    setSessionStatus("OFFLINE");
+
+    setPairingArtifactVisibility(false)
+
+    await clearWhatsAppAuth();
+
+    log.info(
+      "[AUTH RECOVERY] Auth state cleared. A fresh QR/pairing session is now required.",
+    );
+  } catch (error) {
+    log.error(
+      "[AUTH RECOVERY] Failed to recover authentication state.",
+      error,
+    );
+  } finally {
+    authRecoveryInProgress = false;
+  }
+}
+
 // ============================================================
 // START BOT
 // ============================================================
@@ -2479,8 +2524,8 @@ async function startBot(): Promise<void> {
       saveCreds,
     } =
       await useMultiFileAuthState(
-        "./auth",
-      );
+        process.env.WHATSAPP_AUTH_DIR?.trim() || "./auth",
+      )
 
     // ========================================================
 // FRESH AUTHENTICATION WAIT
@@ -3414,71 +3459,206 @@ setSessionAccount(
 // --------------------------------------------------
 
 if (
-  statusCode ===
-  DisconnectReason.loggedOut
+  statusCode === DisconnectReason.loggedOut
 ) {
-  // ------------------------------------------------
-  // WEBSITE/API SESSION REQUEST
-  // ------------------------------------------------
-  //
-  // When the website requests a new QR or pairing
-  // session, startApiSession() intentionally closes
-  // the previous socket before creating a fresh one.
-  //
-  // Do NOT treat that intentional replacement as a
-  // permanent logout.
-  // ------------------------------------------------
-
-  if (apiSessionRequested) {
-    log.warn(
-      "WhatsApp socket closed during an API pairing session request. Preparing a fresh authentication session.",
-    );
-
-    currentSocket = null;
-
-    setDashboardConnection(
-      "CONNECTING",
-      false,
-    );
-
-    addDashboardEvent(
-      "AUTH",
-      "WHATSAPP",
-      "Previous session closed for a new website pairing session.",
-    );
-
-    return;
-  }
-
-  // ------------------------------------------------
-  // REAL WHATSAPP LOGOUT
-  // ------------------------------------------------
-
-  disableReconnect();
-
-  setDashboardConnection(
-    "OFFLINE",
-    false,
+  log.warn(
+    "[AUTH RECOVERY] WhatsApp session was logged out.",
   );
 
-  addDashboardEvent(
-    "AUTH",
-    "WHATSAPP",
-    "WhatsApp session logged out • automatic reconnect disabled.",
-  );
+  await recoverFromAuthenticationFailure();
 
-  console.log("");
+  currentSocket = null;
 
-  console.log(
-    "🚫 WhatsApp session was logged out.",
-  );
+  setSessionStatus("OFFLINE");
 
-  console.log(
-    "🛑 Automatic reconnection disabled.",
-  );
+  setPairingDisconnected();
 
   return;
 }
+
+          // --------------------------------------------------
+          // WEBSITE/API SESSION REQUEST
+          // --------------------------------------------------
+          //
+          // The website may intentionally close the existing
+          // socket before requesting a new QR/pairing session.
+          //
+          // This is NOT a WhatsApp logout.
+          // NEVER delete auth files here.
+          // --------------------------------------------------
+
+          if (apiSessionRequested) {
+            log.warn(
+              "WhatsApp socket closed during an API pairing session request. Preparing a fresh authentication session.",
+            );
+
+            currentSocket = null;
+
+            setDashboardConnection(
+              "CONNECTING",
+              false,
+            );
+
+            addDashboardEvent(
+              "AUTH",
+              "WHATSAPP",
+              "Previous socket closed for a new website pairing session.",
+            );
+
+            return;
+          }
+
+          // --------------------------------------------------
+          // AUTHENTICATION FAILURE / REAL WHATSAPP LOGOUT
+          // --------------------------------------------------
+          //
+          // Only a genuine authentication failure should
+          // destroy the saved WhatsApp session.
+          //
+          // Normal network disconnects NEVER reach this block.
+          // --------------------------------------------------
+
+          const isAuthenticationFailure =
+            statusCode === 401 ||
+            statusCode ===
+              DisconnectReason.loggedOut;
+
+          if (
+            isAuthenticationFailure
+          ) {
+            log.warn(
+              "[AUTH RECOVERY] WhatsApp authentication failure detected.",
+            );
+
+            try {
+              await recoverFromAuthenticationFailure();
+
+              log.warn(
+                "[AUTH RECOVERY] Saved WhatsApp authentication removed.",
+              );
+            } catch (error) {
+              log.error(
+                "[AUTH RECOVERY] Failed to remove saved WhatsApp authentication.",
+                error,
+              );
+            }
+
+            currentSocket = null;
+
+            setSessionStatus(
+              "OFFLINE",
+            );
+
+            setPairingDisconnected(
+              "WhatsApp session expired or was logged out. A new QR code or pairing code is required.",
+            );
+
+            setDashboardConnection(
+              "OFFLINE",
+              false,
+            );
+
+            addDashboardEvent(
+              "AUTH",
+              "WHATSAPP",
+              "WhatsApp authentication invalidated • saved auth cleared • fresh pairing required.",
+            );
+
+            console.log("");
+
+            console.log(
+              "🚫 WhatsApp authentication is no longer valid.",
+            );
+
+            console.log(
+              "🧹 Saved authentication has been cleared.",
+            );
+
+            console.log(
+              "🔐 A new QR code or pairing code is required.",
+            );
+
+            return;
+          }
+
+          // --------------------------------------------------
+          // NORMAL UNEXPECTED DISCONNECT
+          // --------------------------------------------------
+          //
+          // IMPORTANT:
+          // Auth files are intentionally preserved here.
+          //
+          // This covers:
+          // • network interruption
+          // • temporary WhatsApp connection loss
+          // • server/network timeout
+          // • temporary socket failure
+          // • Railway restart/reconnect situations
+          //
+          // Dark Vortex will attempt to restore the existing
+          // WhatsApp session instead of forcing re-pairing.
+          // --------------------------------------------------
+
+          if (
+            !isReconnectEnabled() ||
+            shuttingDown ||
+            isLifecycleInProgress() ||
+            (!apiSessionRequested &&
+              !state.creds.registered)
+          ) {
+            return;
+          }
+
+          setDashboardConnection(
+            "RECONNECTING",
+            false,
+          );
+
+          addDashboardEvent(
+            "CONNECTION",
+            "RECONNECT",
+            "Automatic reconnect scheduled in 5 seconds. Saved authentication will be preserved.",
+          );
+
+          console.log(
+            "♻️ Reconnecting Dark Vortex in 5 seconds...",
+          );
+
+          console.log(
+            "🔐 Saved WhatsApp authentication will be preserved.",
+          );
+
+          if (reconnectTimer) {
+            clearTimeout(
+              reconnectTimer,
+            );
+          }
+
+          reconnectTimer =
+            setTimeout(
+              () => {
+                reconnectTimer =
+                  null;
+
+                if (
+                  shuttingDown ||
+                  isLifecycleInProgress() ||
+                  currentSocket
+                ) {
+                  return;
+                }
+
+                void startBot().catch(
+                  (error) => {
+                    console.error(
+                      "❌ Reconnect failed:",
+                      error,
+                    );
+                  },
+                );
+              },
+              5000,
+            );
 
           // --------------------------------------------------
           // NORMAL UNEXPECTED DISCONNECT
@@ -3908,15 +4088,17 @@ const deliveryJid =
 // 🌑 DARK VORTEX — OWNER AVAILABILITY SYSTEM
 // ------------------------------------------------
 
-if (msg.key.fromMe) {
+// ------------------------------------------------
+// 🌑 DARK VORTEX — OWNER AVAILABILITY SYSTEM
+// ------------------------------------------------
 
+if (msg.key.fromMe) {
   const botGenerated =
     isTrackedOutgoingMessage(
       msg.key.id,
     );
 
   if (!botGenerated) {
-
     markOwnerActivity();
 
     markOwnerResponse(
@@ -3924,17 +4106,11 @@ if (msg.key.fromMe) {
       msg,
     );
 
+    markPersonalAssistantOwnerResponse(
+      jid,
+      msg,
+    );
   }
-
-} else {
-
-  await processAway(
-    sock,
-    msg,
-    OWNER_NUMBER,
-    deliveryJid,
-  );
-
 }
             // ------------------------------------------------
             // TEXT EXTRACTION
@@ -4153,108 +4329,166 @@ if (msg.key.fromMe) {
             // COMMAND HANDLER
             // ------------------------------------------------
 
-                    // =====================================================
-        // 🌑 DARK VORTEX — COMMAND + AUTOMATIC AI
-        // =====================================================
+// =====================================================
+// 🌑 DARK VORTEX — COMMAND + AI ROUTER
+// =====================================================
 
-        if (text.trim()) {
-          const commandJid =
-            jid.endsWith("@g.us")
-              ? jid
-              : deliveryJid;
+if (text.trim()) {
+  const commandJid =
+    jid.endsWith("@g.us")
+      ? jid
+      : deliveryJid;
 
-          const commandText =
-            text.trim();
+  const commandText =
+    text.trim();
 
-          // Check whether this message uses the active
-          // command prefix.
-          const activePrefix =
-            getPrefix();
+  // ---------------------------------------------------
+  // ACTIVE COMMAND PREFIX
+  // ---------------------------------------------------
 
-          const isLatencyCommand =
-            commandText
-              .toLowerCase()
-              .trim() === ";latency";
+  const activePrefix =
+    getPrefix();
 
-          const isCommand =
-            commandText.startsWith(
-              activePrefix,
-            ) ||
-            isLatencyCommand;
+  const isLatencyCommand =
+    commandText
+      .toLowerCase()
+      .trim() === ";latency";
 
-          // ===================================================
-          // COMMAND
-          // ===================================================
+  const isCommand =
+    commandText.startsWith(
+      activePrefix,
+    ) ||
+    isLatencyCommand;
+    // ===================================================
+  // 🛡️ VORTEX SECURITY CONFIRMATION ROUTE
+  // ===================================================
 
-          if (isCommand) {
-            incomingMessage({
-              type: "COMMAND",
-              message: commandText,
-              from: sender,
-              delivery: commandJid,
-              chat: jid.endsWith("@g.us")
-                ? "GROUP"
-                : "PRIVATE",
-              messageId:
-                msg.key.id ?? undefined,
-              fromMe: !!msg.key.fromMe,
-            });
+  if (!msg.key.fromMe && commandText.trim()) {
+    const confirmationHandled =
+      await handleVortexConfirmation(
+        sock,
+        commandJid,
+        sender,
+        commandText,
+        msg,
+      );
 
-            incrementDashboardCommands();
+    if (confirmationHandled) {
+      const confirmedExecution =
+        consumeConfirmedSecurityExecution();
 
-            addDashboardEvent(
-              "COMMAND",
-              "HANDLER",
-              `Command: ${commandText.slice(0, 40)}`,
-            );
+      if (confirmedExecution) {
+        await handleCommand(
+          sock,
+          confirmedExecution.chatJid,
+          confirmedExecution.ownerJid,
+          `${getPrefix()}${confirmedExecution.command}${
+            confirmedExecution.args.length
+              ? ` ${confirmedExecution.args.join(" ")}`
+              : ""
+          }`,
+          msg,
+          senderAlt,
+          false,
+        );
+      }
 
-            await handleCommand(
-              sock,
-              commandJid,
-              sender,
-              text,
-              msg,
-              senderAlt,
-              !!msg.key.fromMe,
-            );
+      continue;
+    }
+  }
 
-            // A real command has been handled by the
-            // command system. Never send an AI reply too.
-            continue;
-          }
+  // ===================================================
+  // COMMAND ROUTE
+  // ===================================================
 
-          // ===================================================
-          // 🤖 AUTOMATIC DARK VORTEX AI
-          // ===================================================
+  if (isCommand) {
+    incomingMessage({
+      type: "COMMAND",
+      message: commandText,
+      from: sender,
+      delivery: commandJid,
+      chat: jid.endsWith("@g.us")
+        ? "GROUP"
+        : "PRIVATE",
+      messageId:
+        msg.key.id ?? undefined,
+      fromMe: !!msg.key.fromMe,
+    });
 
-          if (!msg.key.fromMe) {
-            await processDarkVortexAI(
-              sock,
-              jid,
-              msg,
-              commandText,
-            );
-          }
-        }
-          } catch (error) {
-            if (
-              isSignalSessionError(
-                error,
-              )
-            ) {
-              handleSignalSessionLog(
-                error,
-              );
+    incrementDashboardCommands();
 
-              continue;
-            }
+    addDashboardEvent(
+      "COMMAND",
+      "HANDLER",
+      `Command: ${commandText.slice(0, 40)}`,
+    );
 
-            log.error(
-              "Message processing error.",
-              error,
-            );
-          }
-        }
+    await handleCommand(
+      sock,
+      commandJid,
+      sender,
+      text,
+      msg,
+      senderAlt,
+      !!msg.key.fromMe,
+    );
+
+    continue;
+  }
+
+  // ===================================================
+  // 🤖 AI ROUTER
+  // ===================================================
+
+  if (!msg.key.fromMe) {
+    // -------------------------------------------------
+    // PERSONAL ASSISTANT
+    // -------------------------------------------------
+
+    const personalAssistantHandled =
+      await processPersonalAssistant(
+        sock,
+        msg,
+        OWNER_NUMBER,
+        deliveryJid,
+      );
+
+    if (personalAssistantHandled) {
+      continue;
+    }
+
+    // -------------------------------------------------
+    // 🌑 DARK VORTEX AI
+    // -------------------------------------------------
+
+    await processDarkVortexAI(
+      sock,
+      jid,
+      msg,
+      commandText,
+    );
+  }
+}
+
+  } catch (error) {
+    if (
+      isSignalSessionError(
+        error,
+      )
+    ) {
+      handleSignalSessionLog(
+        error,
+      );
+
+      continue;
+    }
+
+    log.error(
+      "Message processing error.",
+      error,
+    );
+  }
+}
       },
     );
 
