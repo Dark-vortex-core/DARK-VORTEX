@@ -4640,7 +4640,8 @@ setDashboardConnection(
 
 const PAIRING_API_PORT =
   Number(
-    process.env.PAIRING_API_PORT ||
+    process.env.PORT ||
+      process.env.PAIRING_API_PORT ||
       3000,
   );
 

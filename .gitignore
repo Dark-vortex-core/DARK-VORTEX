@@ -14,5 +14,8 @@ pair-test-auth/
 *.d.ts
 *.d.ts.map
 
+# Keep required handwritten declaration
+!src/types/qrcode-terminal.d.ts
+
 # Runtime/persistent bot data
 src/data/
