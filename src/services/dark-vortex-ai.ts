@@ -17,14 +17,31 @@ function getAIConfig() {
         .trim()
         .toLowerCase() === "true",
 
-    apiKey:
+    // PRIMARY
+    geminiKey:
+      process.env.DARK_VORTEX_AI_GEMINI_API_KEY?.trim() || "",
+
+    geminiModel:
+      process.env.DARK_VORTEX_AI_GEMINI_MODEL?.trim() ||
+      "gemini-2.5-flash",
+
+    // FALLBACK 1
+    groqKey:
+      process.env.DARK_VORTEX_AI_GROQ_API_KEY?.trim() || "",
+
+    groqModel:
+      process.env.DARK_VORTEX_AI_GROQ_MODEL?.trim() ||
+      "llama-3.3-70b-versatile",
+
+    // FALLBACK 2
+    openRouterKey:
       process.env.DARK_VORTEX_AI_API_KEY?.trim() || "",
 
-    model:
+    openRouterModel:
       process.env.DARK_VORTEX_AI_MODEL?.trim() ||
-      "openrouter/free",
+      "qwen/qwen3-30b-a3b:free",
 
-    apiUrl:
+    openRouterUrl:
       process.env.DARK_VORTEX_AI_API_URL?.trim() ||
       "https://openrouter.ai/api/v1/chat/completions",
   };
@@ -751,37 +768,236 @@ Keep every response clean, premium, readable, and WhatsApp-friendly.
 }
 
 
-/* =========================================================
-   OPENROUTER REQUEST
-========================================================= */
+// =========================================================
+// 🌑 DARK VORTEX AI — MULTI-PROVIDER FALLBACK
+// =========================================================
 
 async function requestAI(
   userText: string,
 ): Promise<string | null> {
   const config = getAIConfig();
 
-  if (
-    !config.enabled ||
-    !config.apiKey
-  ) {
-
+  if (!config.enabled) {
     return null;
   }
 
+  const prompt =
+    userText.slice(
+      0,
+      MAX_INPUT_LENGTH,
+    );
+
+  // =======================================================
+  // 1️⃣ GEMINI — PRIMARY
+  // =======================================================
+
+  if (config.geminiKey) {
+    const answer =
+      await requestGemini(
+        config.geminiKey,
+        config.geminiModel,
+        prompt,
+      );
+
+    if (answer) {
+      console.log(
+        "[DARK VORTEX AI] Provider: Gemini",
+      );
+
+      return answer;
+    }
+
+    console.warn(
+      "[DARK VORTEX AI] Gemini unavailable. Trying Groq.",
+    );
+  }
+
+  // =======================================================
+  // 2️⃣ GROQ — FALLBACK
+  // =======================================================
+
+  if (config.groqKey) {
+    const answer =
+      await requestGroq(
+        config.groqKey,
+        config.groqModel,
+        prompt,
+      );
+
+    if (answer) {
+      console.log(
+        "[DARK VORTEX AI] Provider: Groq",
+      );
+
+      return answer;
+    }
+
+    console.warn(
+      "[DARK VORTEX AI] Groq unavailable. Trying Qwen.",
+    );
+  }
+
+  // =======================================================
+  // 3️⃣ QWEN / OPENROUTER — FINAL FALLBACK
+  // =======================================================
+
+  if (config.openRouterKey) {
+    const answer =
+      await requestOpenRouter(
+        config.openRouterKey,
+        config.openRouterModel,
+        config.openRouterUrl,
+        prompt,
+      );
+
+    if (answer) {
+      console.log(
+        "[DARK VORTEX AI] Provider: Qwen/OpenRouter",
+      );
+
+      return answer;
+    }
+  }
+
+  console.error(
+    "[DARK VORTEX AI] All AI providers failed.",
+  );
+
+  return null;
+}
+
+
+// =========================================================
+// GEMINI
+// =========================================================
+
+async function requestGemini(
+  apiKey: string,
+  model: string,
+  userText: string,
+): Promise<string | null> {
   const controller =
     new AbortController();
 
   const timeout =
     setTimeout(
-      () =>
-        controller.abort(),
+      () => controller.abort(),
       30000,
     );
 
   try {
     const response =
       await fetch(
-        config.apiUrl,
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+          model,
+        )}:generateContent?key=${encodeURIComponent(
+          apiKey,
+        )}`,
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+
+          body: JSON.stringify({
+            systemInstruction: {
+              parts: [
+                {
+                  text:
+                    buildSystemPrompt(),
+                },
+              ],
+            },
+
+            contents: [
+              {
+                role: "user",
+
+                parts: [
+                  {
+                    text: userText,
+                  },
+                ],
+              },
+            ],
+
+            generationConfig: {
+              maxOutputTokens:
+                MAX_OUTPUT_TOKENS,
+
+              temperature:
+                0.35,
+            },
+          }),
+
+          signal:
+            controller.signal,
+        },
+      );
+
+    if (!response.ok) {
+      console.error(
+        `[DARK VORTEX AI] Gemini HTTP ${response.status}`,
+      );
+
+      return null;
+    }
+
+    const data =
+      (await response.json()) as any;
+
+    const answer =
+      data?.candidates?.[0]
+        ?.content?.parts
+        ?.map(
+          (part: any) =>
+            part?.text || "",
+        )
+        .join("")
+        .trim();
+
+    if (!answer) {
+      return null;
+    }
+
+    return answer;
+  } catch (error) {
+    console.error(
+      "[DARK VORTEX AI] Gemini request failed:",
+      error,
+    );
+
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+
+// =========================================================
+// GROQ
+// =========================================================
+
+async function requestGroq(
+  apiKey: string,
+  model: string,
+  userText: string,
+): Promise<string | null> {
+  const controller =
+    new AbortController();
+
+  const timeout =
+    setTimeout(
+      () => controller.abort(),
+      30000,
+    );
+
+  try {
+    const response =
+      await fetch(
+        "https://api.groq.com/openai/v1/chat/completions",
         {
           method: "POST",
 
@@ -790,7 +1006,106 @@ async function requestAI(
               "application/json",
 
             Authorization:
-              `Bearer ${config.apiKey}`,
+              `Bearer ${apiKey}`,
+          },
+
+          body: JSON.stringify({
+            model,
+
+            messages: [
+              {
+                role: "system",
+
+                content:
+                  buildSystemPrompt(),
+              },
+
+              {
+                role: "user",
+
+                content:
+                  userText,
+              },
+            ],
+
+            max_completion_tokens:
+              MAX_OUTPUT_TOKENS,
+
+            temperature:
+              0.35,
+          }),
+
+          signal:
+            controller.signal,
+        },
+      );
+
+    if (!response.ok) {
+      console.error(
+        `[DARK VORTEX AI] Groq HTTP ${response.status}`,
+      );
+
+      return null;
+    }
+
+    const data =
+      (await response.json()) as any;
+
+    const answer =
+      data?.choices?.[0]
+        ?.message?.content
+        ?.trim();
+
+    if (!answer) {
+      return null;
+    }
+
+    return answer;
+  } catch (error) {
+    console.error(
+      "[DARK VORTEX AI] Groq request failed:",
+      error,
+    );
+
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+
+// =========================================================
+// OPENROUTER / QWEN
+// =========================================================
+
+async function requestOpenRouter(
+  apiKey: string,
+  model: string,
+  apiUrl: string,
+  userText: string,
+): Promise<string | null> {
+  const controller =
+    new AbortController();
+
+  const timeout =
+    setTimeout(
+      () => controller.abort(),
+      30000,
+    );
+
+  try {
+    const response =
+      await fetch(
+        apiUrl,
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json",
+
+            Authorization:
+              `Bearer ${apiKey}`,
 
             "HTTP-Referer":
               "https://dark-vortex.local",
@@ -800,29 +1115,29 @@ async function requestAI(
           },
 
           body: JSON.stringify({
-            model: config.model,
+            model,
 
             messages: [
               {
                 role: "system",
+
                 content:
                   buildSystemPrompt(),
               },
 
               {
                 role: "user",
+
                 content:
-                  userText.slice(
-                    0,
-                    MAX_INPUT_LENGTH,
-                  ),
+                  userText,
               },
             ],
 
             max_tokens:
               MAX_OUTPUT_TOKENS,
 
-            temperature: 0.35,
+            temperature:
+              0.35,
           }),
 
           signal:
@@ -830,10 +1145,11 @@ async function requestAI(
         },
       );
 
-
     if (!response.ok) {
-      const errorText =
-        await response.text();
+      console.error(
+        `[DARK VORTEX AI] OpenRouter HTTP ${response.status}`,
+      );
+
       return null;
     }
 
@@ -842,20 +1158,17 @@ async function requestAI(
 
     const answer =
       data?.choices?.[0]
-        ?.message?.content;
+        ?.message?.content
+        ?.trim();
 
-    if (
-      typeof answer !==
-        "string" ||
-      !answer.trim()
-    ) {
+    if (!answer) {
       return null;
     }
 
-    return answer.trim();
+    return answer;
   } catch (error) {
     console.error(
-      "[DARK VORTEX AI] Request failed:",
+      "[DARK VORTEX AI] OpenRouter request failed:",
       error,
     );
 
@@ -875,14 +1188,19 @@ export async function processDarkVortexAI(
   message: WAMessage,
   text: string,
 ): Promise<boolean> {
-    const config = getAIConfig();
+  const config = getAIConfig();
 
-  if (
-    !config.enabled ||
-    !config.apiKey
-  ) {
+  if (!config.enabled) {
     return false;
   }
+
+if (
+  !config.geminiKey &&
+  !config.groqKey &&
+  !config.openRouterKey
+) {
+  return false;
+}
 
   if (message.key.fromMe) {
     return false;

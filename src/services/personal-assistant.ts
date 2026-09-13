@@ -417,34 +417,63 @@ async function showTypingEffect(
 // AI CONFIG
 // ============================================================
 
-function getAIConfig() {
+// ============================================================
+// PERSONAL ASSISTANT AI CONFIGURATION
+// ============================================================
+//
+// IMPORTANT:
+// This is completely separate from Dark Vortex AI.
+//
+// Dark Vortex AI:
+//   DARK_VORTEX_AI_*
+//
+// Personal Assistant:
+//   PERSONAL_ASSISTANT_*
+//
+// ============================================================
+
+function getAssistantAIConfig() {
   return {
     enabled:
       (
-        process.env.DARK_VORTEX_AI_ENABLED ||
+        process.env.PERSONAL_ASSISTANT_AI_ENABLED ||
         "true"
       )
         .trim()
         .toLowerCase() ===
       "true",
 
-    apiKey:
-      process.env.DARK_VORTEX_AI_API_KEY
+    geminiKey:
+      process.env.PERSONAL_ASSISTANT_GEMINI_API_KEY
         ?.trim() ||
       "",
 
-    model:
-      process.env.DARK_VORTEX_AI_MODEL
+    groqKey:
+      process.env.PERSONAL_ASSISTANT_GROQ_API_KEY
         ?.trim() ||
-      "openrouter/free",
+      "",
 
-    apiUrl:
-      process.env.DARK_VORTEX_AI_API_URL
+    openRouterKey:
+      process.env.PERSONAL_ASSISTANT_OPENROUTER_API_KEY
         ?.trim() ||
-      "https://openrouter.ai/api/v1/chat/completions",
+      "",
+
+    geminiModel:
+      process.env.PERSONAL_ASSISTANT_GEMINI_MODEL
+        ?.trim() ||
+      "gemini-2.5-flash",
+
+    groqModel:
+      process.env.PERSONAL_ASSISTANT_GROQ_MODEL
+        ?.trim() ||
+      "llama-3.3-70b-versatile",
+
+    qwenModel:
+      process.env.PERSONAL_ASSISTANT_QWEN_MODEL
+        ?.trim() ||
+      "qwen/qwen3-30b-a3b:free",
   };
 }
-
 
 // ============================================================
 // TEXT CLEANING
@@ -696,22 +725,127 @@ If no response is necessary, return exactly:
 
 
 // ============================================================
-// OPENROUTER REQUEST
+// PERSONAL ASSISTANT AI REQUEST
+// ============================================================
+//
+// Priority:
+//   1. Gemini 2.5 Flash
+//   2. Groq Llama
+//   3. Qwen3 via OpenRouter
+//
+// If a provider returns 429, 5xx, timeout,
+// or another temporary failure, the next provider
+// is attempted automatically.
+//
 // ============================================================
 
 async function requestAssistantAI(
   conversation: AssistantConversation,
 ): Promise<string | null> {
   const config =
-    getAIConfig();
+    getAssistantAIConfig();
 
-  if (
-    !config.enabled ||
-    !config.apiKey
-  ) {
+  if (!config.enabled) {
+    console.warn(
+      "[PERSONAL ASSISTANT] AI is disabled.",
+    );
+
     return null;
   }
 
+  const systemPrompt =
+    buildAssistantPrompt(
+      conversation,
+    );
+
+  // ==========================================================
+  // 1. GEMINI
+  // ==========================================================
+
+  if (config.geminiKey) {
+    const geminiResult =
+      await requestGemini(
+        config.geminiKey,
+        config.geminiModel,
+        systemPrompt,
+      );
+
+    if (geminiResult) {
+      console.log(
+        "[PERSONAL ASSISTANT] AI provider: Gemini",
+      );
+
+      return geminiResult;
+    }
+
+    console.warn(
+      "[PERSONAL ASSISTANT] Gemini failed. Trying Groq fallback.",
+    );
+  }
+
+  // ==========================================================
+  // 2. GROQ
+  // ==========================================================
+
+  if (config.groqKey) {
+    const groqResult =
+      await requestGroq(
+        config.groqKey,
+        config.groqModel,
+        systemPrompt,
+      );
+
+    if (groqResult) {
+      console.log(
+        "[PERSONAL ASSISTANT] AI provider: Groq",
+      );
+
+      return groqResult;
+    }
+
+    console.warn(
+      "[PERSONAL ASSISTANT] Groq failed. Trying Qwen fallback.",
+    );
+  }
+
+  // ==========================================================
+  // 3. QWEN / OPENROUTER
+  // ==========================================================
+
+  if (config.openRouterKey) {
+    const qwenResult =
+      await requestQwen(
+        config.openRouterKey,
+        config.qwenModel,
+        systemPrompt,
+      );
+
+    if (qwenResult) {
+      console.log(
+        "[PERSONAL ASSISTANT] AI provider: Qwen",
+      );
+
+      return qwenResult;
+    }
+  }
+
+  console.error(
+    "[PERSONAL ASSISTANT] All AI providers failed.",
+  );
+
+  return null;
+}
+
+
+// ============================================================
+// GEMINI REQUEST
+// ============================================================
+
+async function requestGemini(
+  apiKey: string,
+  model: string,
+  systemPrompt: string,
+): Promise<string | null> {
   const controller =
     new AbortController();
 
@@ -725,7 +859,115 @@ async function requestAssistantAI(
   try {
     const response =
       await fetch(
-        config.apiUrl,
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+          model,
+        )}:generateContent?key=${encodeURIComponent(
+          apiKey,
+        )}`,
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+
+          body: JSON.stringify({
+            systemInstruction: {
+              parts: [
+                {
+                  text:
+                    systemPrompt,
+                },
+              ],
+            },
+
+            contents: [
+              {
+                role: "user",
+
+                parts: [
+                  {
+                    text:
+                      "Respond to the latest message using the instructions above.",
+                  },
+                ],
+              },
+            ],
+
+            generationConfig: {
+              maxOutputTokens: 350,
+              temperature: 0.35,
+            },
+          }),
+
+          signal:
+            controller.signal,
+        },
+      );
+
+    if (!response.ok) {
+      console.error(
+        `[PERSONAL ASSISTANT] Gemini failed: ${response.status}`,
+      );
+
+      return null;
+    }
+
+    const data =
+      (await response.json()) as any;
+
+    const answer =
+      data?.candidates?.[0]
+        ?.content?.parts
+        ?.map(
+          (part: any) =>
+            part?.text || "",
+        )
+        .join("")
+        .trim();
+
+    if (!answer) {
+      return null;
+    }
+
+    return answer;
+  } catch (error) {
+    console.error(
+      "[PERSONAL ASSISTANT] Gemini error:",
+      error,
+    );
+
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+
+// ============================================================
+// GROQ REQUEST
+// ============================================================
+
+async function requestGroq(
+  apiKey: string,
+  model: string,
+  systemPrompt: string,
+): Promise<string | null> {
+  const controller =
+    new AbortController();
+
+  const timeout =
+    setTimeout(
+      () =>
+        controller.abort(),
+      AI_TIMEOUT_MS,
+    );
+
+  try {
+    const response =
+      await fetch(
+        "https://api.groq.com/openai/v1/chat/completions",
         {
           method: "POST",
 
@@ -734,7 +976,104 @@ async function requestAssistantAI(
               "application/json",
 
             Authorization:
-              `Bearer ${config.apiKey}`,
+              `Bearer ${apiKey}`,
+          },
+
+          body: JSON.stringify({
+            model,
+
+            messages: [
+              {
+                role: "system",
+                content:
+                  systemPrompt,
+              },
+
+              {
+                role: "user",
+                content:
+                  "Respond to the latest message using the instructions above.",
+              },
+            ],
+
+            max_completion_tokens:
+              350,
+
+            temperature:
+              0.35,
+          }),
+
+          signal:
+            controller.signal,
+        },
+      );
+
+    if (!response.ok) {
+      console.error(
+        `[PERSONAL ASSISTANT] Groq failed: ${response.status}`,
+      );
+
+      return null;
+    }
+
+    const data =
+      (await response.json()) as any;
+
+    const answer =
+      data?.choices?.[0]
+        ?.message?.content
+        ?.trim();
+
+    if (!answer) {
+      return null;
+    }
+
+    return answer;
+  } catch (error) {
+    console.error(
+      "[PERSONAL ASSISTANT] Groq error:",
+      error,
+    );
+
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+
+// ============================================================
+// QWEN REQUEST
+// ============================================================
+
+async function requestQwen(
+  apiKey: string,
+  model: string,
+  systemPrompt: string,
+): Promise<string | null> {
+  const controller =
+    new AbortController();
+
+  const timeout =
+    setTimeout(
+      () =>
+        controller.abort(),
+      AI_TIMEOUT_MS,
+    );
+
+  try {
+    const response =
+      await fetch(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json",
+
+            Authorization:
+              `Bearer ${apiKey}`,
 
             "HTTP-Referer":
               "https://dark-vortex.local",
@@ -744,16 +1083,19 @@ async function requestAssistantAI(
           },
 
           body: JSON.stringify({
-            model:
-              config.model,
+            model,
 
             messages: [
               {
                 role: "system",
                 content:
-                  buildAssistantPrompt(
-                    conversation,
-                  ),
+                  systemPrompt,
+              },
+
+              {
+                role: "user",
+                content:
+                  "Respond to the latest message using the instructions above.",
               },
             ],
 
@@ -769,7 +1111,7 @@ async function requestAssistantAI(
 
     if (!response.ok) {
       console.error(
-        `[PERSONAL ASSISTANT] AI request failed: ${response.status}`,
+        `[PERSONAL ASSISTANT] Qwen failed: ${response.status}`,
       );
 
       return null;
@@ -780,21 +1122,17 @@ async function requestAssistantAI(
 
     const answer =
       data?.choices?.[0]
-        ?.message
-        ?.content;
+        ?.message?.content
+        ?.trim();
 
-    if (
-      typeof answer !==
-        "string" ||
-      !answer.trim()
-    ) {
+    if (!answer) {
       return null;
     }
 
-    return answer.trim();
+    return answer;
   } catch (error) {
     console.error(
-      "[PERSONAL ASSISTANT] AI request error:",
+      "[PERSONAL ASSISTANT] Qwen error:",
       error,
     );
 
@@ -803,7 +1141,6 @@ async function requestAssistantAI(
     clearTimeout(timeout);
   }
 }
-
 
 // ============================================================
 // SILENCE DETECTION
