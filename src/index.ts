@@ -3521,36 +3521,107 @@ if (
 }
 
           // --------------------------------------------------
-          // WEBSITE/API SESSION REQUEST
-          // --------------------------------------------------
-          //
-          // The website may intentionally close the existing
-          // socket before requesting a new QR/pairing session.
-          //
-          // This is NOT a WhatsApp logout.
-          // NEVER delete auth files here.
-          // --------------------------------------------------
+// WEBSITE/API SESSION REQUEST
+// --------------------------------------------------
+//
+// The website may intentionally close the existing
+// socket before requesting a new QR/pairing session.
+//
+// IMPORTANT:
+// Baileys can return status 515 immediately after
+// generating a phone-number pairing code.
+//
+// 515 = restart required.
+//
+// This is NOT a logout and MUST NOT clear auth.
+// --------------------------------------------------
 
-          if (apiSessionRequested) {
-            log.warn(
-              "WhatsApp socket closed during an API pairing session request. Preparing a fresh authentication session.",
-            );
+if (apiSessionRequested) {
+  currentSocket = null;
 
-            currentSocket = null;
+  setDashboardConnection(
+    "CONNECTING",
+    false,
+  );
 
-            setDashboardConnection(
-              "CONNECTING",
-              false,
-            );
+  // ------------------------------------------------
+  // PAIRING CODE RESTART
+  // ------------------------------------------------
 
-            addDashboardEvent(
-              "AUTH",
-              "WHATSAPP",
-              "Previous socket closed for a new website pairing session.",
-            );
+  if (
+    statusCode === 515 &&
+    runtimePairingMode === "pairing"
+  ) {
+    log.connect(
+      "WhatsApp requested a socket restart after pairing-code generation.",
+    );
 
+    addDashboardEvent(
+      "AUTH",
+      "PAIRING",
+      "Pairing code generated • restarting WhatsApp socket.",
+    );
+
+    console.log(
+      "♻️ WhatsApp requested a pairing socket restart.",
+    );
+
+    console.log(
+      "🔐 Preserving the current pairing session.",
+    );
+
+    if (reconnectTimer) {
+      clearTimeout(
+        reconnectTimer,
+      );
+
+      reconnectTimer = null;
+    }
+
+    reconnectTimer =
+      setTimeout(
+        () => {
+          reconnectTimer = null;
+
+          if (
+            shuttingDown ||
+            isLifecycleInProgress() ||
+            currentSocket
+          ) {
             return;
           }
+
+          void startBot().catch(
+            (error) => {
+              console.error(
+                "❌ Pairing restart failed:",
+                error,
+              );
+            },
+          );
+        },
+        1500,
+      );
+
+    return;
+  }
+
+  // ------------------------------------------------
+  // OTHER API SESSION SOCKET CLOSE
+  // ------------------------------------------------
+
+  log.warn(
+    "WhatsApp socket closed during an API session request. Preparing a fresh authentication socket.",
+  );
+
+  addDashboardEvent(
+    "AUTH",
+    "WHATSAPP",
+    "Previous socket closed during an API session request.",
+  );
+
+  return;
+}
 
           // --------------------------------------------------
           // AUTHENTICATION FAILURE / REAL WHATSAPP LOGOUT
@@ -3624,85 +3695,6 @@ if (
 
             return;
           }
-
-          // --------------------------------------------------
-          // NORMAL UNEXPECTED DISCONNECT
-          // --------------------------------------------------
-          //
-          // IMPORTANT:
-          // Auth files are intentionally preserved here.
-          //
-          // This covers:
-          // • network interruption
-          // • temporary WhatsApp connection loss
-          // • server/network timeout
-          // • temporary socket failure
-          // • Railway restart/reconnect situations
-          //
-          // Dark Vortex will attempt to restore the existing
-          // WhatsApp session instead of forcing re-pairing.
-          // --------------------------------------------------
-
-          if (
-            !isReconnectEnabled() ||
-            shuttingDown ||
-            isLifecycleInProgress() ||
-            (!apiSessionRequested &&
-              !state.creds.registered)
-          ) {
-            return;
-          }
-
-          setDashboardConnection(
-            "RECONNECTING",
-            false,
-          );
-
-          addDashboardEvent(
-            "CONNECTION",
-            "RECONNECT",
-            "Automatic reconnect scheduled in 5 seconds. Saved authentication will be preserved.",
-          );
-
-          console.log(
-            "♻️ Reconnecting Dark Vortex in 5 seconds...",
-          );
-
-          console.log(
-            "🔐 Saved WhatsApp authentication will be preserved.",
-          );
-
-          if (reconnectTimer) {
-            clearTimeout(
-              reconnectTimer,
-            );
-          }
-
-          reconnectTimer =
-            setTimeout(
-              () => {
-                reconnectTimer =
-                  null;
-
-                if (
-                  shuttingDown ||
-                  isLifecycleInProgress() ||
-                  currentSocket
-                ) {
-                  return;
-                }
-
-                void startBot().catch(
-                  (error) => {
-                    console.error(
-                      "❌ Reconnect failed:",
-                      error,
-                    );
-                  },
-                );
-              },
-              5000,
-            );
 
           // --------------------------------------------------
           // NORMAL UNEXPECTED DISCONNECT
