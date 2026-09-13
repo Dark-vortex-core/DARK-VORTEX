@@ -30,8 +30,8 @@ function getAIConfig() {
       process.env.DARK_VORTEX_AI_GROQ_API_KEY?.trim() || "",
 
     groqModel:
-      process.env.DARK_VORTEX_AI_GROQ_MODEL?.trim() ||
-      "llama-3.3-70b-versatile",
+  process.env.DARK_VORTEX_AI_GROQ_MODEL?.trim() ||
+  "openai/gpt-oss-120b",
 
     // FALLBACK 2
     openRouterKey:

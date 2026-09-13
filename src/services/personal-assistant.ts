@@ -1,3 +1,4 @@
+
 import type {
   WAMessage,
   WASocket,
@@ -18,12 +19,14 @@ import {
 //
 // PERSONAL ASSISTANT FOR BRIAN
 //
-// • 2-minute delayed first response
+// • 20-second delayed first response
 // • Private chat support
 // • Smart group support
 // • Conversation memory
 // • Context-aware follow-ups
 // • Owner-response cancellation
+// • AI provider fallback
+// • Gemini → Groq → Qwen
 // • AI-generated responses
 // • WhatsApp reply/quote support
 // • Typing presence
@@ -39,7 +42,7 @@ import {
 // ============================================================
 
 const ASSISTANT_DELAY_MS =
-   20 * 1000;
+  20 * 1000;
 
 const CONVERSATION_EXPIRY_MS =
   30 * 60 * 1000;
@@ -52,9 +55,6 @@ const MAX_MESSAGE_LENGTH =
 
 const AI_TIMEOUT_MS =
   30000;
-
-const FOLLOWUP_COOLDOWN_MS =
-  20 * 1000;
 
 const TYPING_DELAY_MS =
   1200;
@@ -160,6 +160,10 @@ function jidMatchesOwner(
     cleanOwnerNumber(
       ownerNumber,
     );
+
+  if (!number) {
+    return false;
+  }
 
   return (
     normalized ===
@@ -288,11 +292,6 @@ function isOwnerMentioned(
     context?.mentionedJid ||
     [];
 
-  const ownerNumberClean =
-    cleanOwnerNumber(
-      ownerNumber,
-    );
-
   if (
     mentionedJids.some(
       (jid) =>
@@ -309,6 +308,15 @@ function isOwnerMentioned(
     getMessageText(message);
 
   if (!text) {
+    return false;
+  }
+
+  const ownerNumberClean =
+    cleanOwnerNumber(
+      ownerNumber,
+    );
+
+  if (!ownerNumberClean) {
     return false;
   }
 
@@ -414,21 +422,24 @@ async function showTypingEffect(
 
 
 // ============================================================
-// AI CONFIG
-// ============================================================
-
-// ============================================================
-// PERSONAL ASSISTANT AI CONFIGURATION
+// AI CONFIGURATION
 // ============================================================
 //
-// IMPORTANT:
-// This is completely separate from Dark Vortex AI.
+// Completely separate from Dark Vortex AI.
 //
 // Dark Vortex AI:
+//
 //   DARK_VORTEX_AI_*
 //
 // Personal Assistant:
+//
 //   PERSONAL_ASSISTANT_*
+//
+// Provider priority:
+//
+//   1. Gemini
+//   2. Groq
+//   3. Qwen / OpenRouter
 //
 // ============================================================
 
@@ -466,7 +477,7 @@ function getAssistantAIConfig() {
     groqModel:
       process.env.PERSONAL_ASSISTANT_GROQ_MODEL
         ?.trim() ||
-      "llama-3.3-70b-versatile",
+      "openai/gpt-oss-120b",
 
     qwenModel:
       process.env.PERSONAL_ASSISTANT_QWEN_MODEL
@@ -474,6 +485,7 @@ function getAssistantAIConfig() {
       "qwen/qwen3-30b-a3b:free",
   };
 }
+
 
 // ============================================================
 // TEXT CLEANING
@@ -539,7 +551,11 @@ function buildAssistantPrompt(
     conversation.history
       .map(
         (item) =>
-          `${item.role === "user" ? "PERSON" : "ASSISTANT"}: ${item.text}`,
+          `${
+            item.role === "user"
+              ? "PERSON"
+              : "ASSISTANT"
+          }: ${item.text}`,
       )
       .join("\n");
 
@@ -562,7 +578,7 @@ CORE BEHAVIOR
 
 Brian is currently unavailable.
 
-You should communicate naturally on his behalf.
+Communicate naturally on his behalf.
 
 You are not pretending to be Brian.
 
@@ -715,7 +731,9 @@ The recent conversation history is:
 
 ${history}
 
-Generate the best response to the person's latest message.
+Use the conversation history to understand context.
+
+Respond only to the latest user message.
 
 If no response is necessary, return exactly:
 
@@ -728,14 +746,15 @@ If no response is necessary, return exactly:
 // PERSONAL ASSISTANT AI REQUEST
 // ============================================================
 //
-// Priority:
-//   1. Gemini 2.5 Flash
-//   2. Groq Llama
-//   3. Qwen3 via OpenRouter
+// Provider order:
 //
-// If a provider returns 429, 5xx, timeout,
-// or another temporary failure, the next provider
-// is attempted automatically.
+//   Gemini
+//      ↓
+//   Groq
+//      ↓
+//   Qwen / OpenRouter
+//
+// Any provider failure falls through automatically.
 //
 // ============================================================
 
@@ -758,6 +777,15 @@ async function requestAssistantAI(
       conversation,
     );
 
+  const latestMessage =
+    conversation.history[
+      conversation.history.length - 1
+    ]?.text || "";
+
+  if (!latestMessage) {
+    return null;
+  }
+
   // ==========================================================
   // 1. GEMINI
   // ==========================================================
@@ -768,6 +796,7 @@ async function requestAssistantAI(
         config.geminiKey,
         config.geminiModel,
         systemPrompt,
+        latestMessage,
       );
 
     if (geminiResult) {
@@ -793,6 +822,7 @@ async function requestAssistantAI(
         config.groqKey,
         config.groqModel,
         systemPrompt,
+        latestMessage,
       );
 
     if (groqResult) {
@@ -818,6 +848,7 @@ async function requestAssistantAI(
         config.openRouterKey,
         config.qwenModel,
         systemPrompt,
+        latestMessage,
       );
 
     if (qwenResult) {
@@ -845,6 +876,7 @@ async function requestGemini(
   apiKey: string,
   model: string,
   systemPrompt: string,
+  latestMessage: string,
 ): Promise<string | null> {
   const controller =
     new AbortController();
@@ -889,15 +921,18 @@ async function requestGemini(
                 parts: [
                   {
                     text:
-                      "Respond to the latest message using the instructions above.",
+                      latestMessage,
                   },
                 ],
               },
             ],
 
             generationConfig: {
-              maxOutputTokens: 350,
-              temperature: 0.35,
+              maxOutputTokens:
+                350,
+
+              temperature:
+                0.35,
             },
           }),
 
@@ -907,8 +942,12 @@ async function requestGemini(
       );
 
     if (!response.ok) {
+      const errorText =
+        await response.text();
+
       console.error(
         `[PERSONAL ASSISTANT] Gemini failed: ${response.status}`,
+        errorText,
       );
 
       return null;
@@ -953,6 +992,7 @@ async function requestGroq(
   apiKey: string,
   model: string,
   systemPrompt: string,
+  latestMessage: string,
 ): Promise<string | null> {
   const controller =
     new AbortController();
@@ -992,7 +1032,7 @@ async function requestGroq(
               {
                 role: "user",
                 content:
-                  "Respond to the latest message using the instructions above.",
+                  latestMessage,
               },
             ],
 
@@ -1009,8 +1049,12 @@ async function requestGroq(
       );
 
     if (!response.ok) {
+      const errorText =
+        await response.text();
+
       console.error(
         `[PERSONAL ASSISTANT] Groq failed: ${response.status}`,
+        errorText,
       );
 
       return null;
@@ -1043,13 +1087,14 @@ async function requestGroq(
 
 
 // ============================================================
-// QWEN REQUEST
+// QWEN / OPENROUTER REQUEST
 // ============================================================
 
 async function requestQwen(
   apiKey: string,
   model: string,
   systemPrompt: string,
+  latestMessage: string,
 ): Promise<string | null> {
   const controller =
     new AbortController();
@@ -1095,13 +1140,15 @@ async function requestQwen(
               {
                 role: "user",
                 content:
-                  "Respond to the latest message using the instructions above.",
+                  latestMessage,
               },
             ],
 
-            max_tokens: 350,
+            max_tokens:
+              350,
 
-            temperature: 0.35,
+            temperature:
+              0.35,
           }),
 
           signal:
@@ -1110,8 +1157,12 @@ async function requestQwen(
       );
 
     if (!response.ok) {
+      const errorText =
+        await response.text();
+
       console.error(
         `[PERSONAL ASSISTANT] Qwen failed: ${response.status}`,
+        errorText,
       );
 
       return null;
@@ -1141,6 +1192,7 @@ async function requestQwen(
     clearTimeout(timeout);
   }
 }
+
 
 // ============================================================
 // SILENCE DETECTION
@@ -1253,6 +1305,8 @@ export function markPersonalAssistantOwnerResponse(
   jid: string,
   message: WAMessage,
 ): void {
+  void message;
+
   const normalizedJid =
     normalizeJid(jid);
 
@@ -1403,62 +1457,7 @@ async function sendAssistantResponse(
   return true;
 }
 
-function isImmediateBrianFollowUp(
-  text: string,
-): boolean {
-  const normalized =
-    text
-      .trim()
-      .toLowerCase();
 
-  if (!normalized) {
-    return false;
-  }
-
-  /*
-   * Explicit questions about Brian.
-   */
-
-  const brianQuestion =
-    /\bbrian\b/.test(normalized) &&
-    (
-      normalized.includes("?") ||
-      /\b(can|could|will|would|is|are|was|were|has|have|did|does|do|when|where|what|why|how|who)\b/
-        .test(normalized)
-    );
-
-  if (brianQuestion) {
-    return true;
-  }
-
-  /*
-   * Direct requests involving Brian.
-   */
-
-  const brianRequest =
-    /\b(tell|ask|remind|inform|let|message|call|contact|notify|send)\b/
-      .test(normalized) &&
-    /\bbrian\b/.test(normalized);
-
-  if (brianRequest) {
-    return true;
-  }
-
-  /*
-   * Follow-up questions that clearly continue
-   * the existing conversation.
-   */
-
-  if (
-    normalized.includes("?") &&
-    /\b(he|him|his|you|can|could|would|will|when|where|what|why|how)\b/
-      .test(normalized)
-  ) {
-    return true;
-  }
-
-  return false;
-}
 
 // ============================================================
 // DELAYED FIRST RESPONSE
@@ -1486,9 +1485,10 @@ function scheduleInitialResponse(
     );
 
   console.log(
-    `⏳ [PERSONAL ASSISTANT] Waiting 30 seconds for Brian: ${conversation.key}`,
+    `⏳ [PERSONAL ASSISTANT] Waiting 20 seconds for Brian: ${conversation.key}`,
   );
 }
+
 
 // ============================================================
 // PROCESS DELAYED RESPONSE
@@ -1727,14 +1727,13 @@ export async function processPersonalAssistant(
       isGroup,
     );
 
-  conversation.ownerResponded =
-    false;
-
-    /*
-   * A new message means the person is active.
+  /*
+   * IMPORTANT:
    *
-   * Do NOT blindly reset ownerResponded here.
-   * Brian's response handler controls that state.
+   * Do NOT reset ownerResponded here.
+   *
+   * Brian's response handler is responsible
+   * for changing this state.
    */
 
   conversation.lastMessageAt =
@@ -1750,7 +1749,7 @@ export async function processPersonalAssistant(
    * IMMEDIATE BRIAN FOLLOW-UP
    *
    * Questions or requests specifically involving
-   * Brian should never wait for the 60-second timer.
+   * Brian should never wait for the 20-second timer.
    */
 
   if (
@@ -1761,6 +1760,16 @@ export async function processPersonalAssistant(
     cancelConversationTimer(
       conversation,
     );
+
+    /*
+     * The person has started a new active
+     * request after Brian was previously active.
+     *
+     * Allow the assistant to respond.
+     */
+
+    conversation.ownerResponded =
+      false;
 
     console.log(
       `⚡ [PERSONAL ASSISTANT] Immediate Brian follow-up: ${conversation.key}`,
@@ -1776,7 +1785,7 @@ export async function processPersonalAssistant(
   /*
    * FIRST / UNANSWERED MESSAGE
    *
-   * Wait 60 seconds for Brian.
+   * Wait 20 seconds for Brian.
    *
    * Every new ordinary message resets this timer.
    */
@@ -1882,3 +1891,48 @@ setInterval(
   },
   60 * 1000,
 );
+
+
+function isImmediateBrianFollowUp(
+  text: string,
+): boolean {
+  const normalized =
+    text
+      .trim()
+      .toLowerCase();
+
+  if (!normalized) {
+    return false;
+  }
+
+  const brianQuestion =
+    /\bbrian\b/.test(normalized) &&
+    (
+      normalized.includes("?") ||
+      /\b(can|could|will|would|is|are|was|were|has|have|did|does|do|when|where|what|why|how|who)\b/
+        .test(normalized)
+    );
+
+  if (brianQuestion) {
+    return true;
+  }
+
+  const brianRequest =
+    /\b(tell|ask|remind|inform|let|message|call|contact|notify|send)\b/
+      .test(normalized) &&
+    /\bbrian\b/.test(normalized);
+
+  if (brianRequest) {
+    return true;
+  }
+
+  if (
+    normalized.includes("?") &&
+    /\b(he|him|his|you|can|could|would|will|when|where|what|why|how)\b/
+      .test(normalized)
+  ) {
+    return true;
+  }
+
+  return false;
+}
