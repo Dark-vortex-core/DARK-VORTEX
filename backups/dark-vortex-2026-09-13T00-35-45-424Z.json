@@ -1,0 +1,23 @@
+{
+  "backupType": "DARK_VORTEX_CONFIGURATION",
+  "version": "1.0.0",
+  "createdAt": "2026-09-13T00:35:45.427Z",
+  "bot": {
+    "name": "🌑 ᴅᴀʀᴋ ᴠᴏʀᴛᴇx •",
+    "mode": "public",
+    "prefix": "/",
+    "timezone": "Africa/Lagos"
+  },
+  "owner": {
+    "number": "2347039663381"
+  },
+  "system": {
+    "platform": "win32",
+    "node": "v22.23.2"
+  },
+  "security": {
+    "commandRegistry": true,
+    "ownerOnly": true,
+    "vx": true
+  }
+}

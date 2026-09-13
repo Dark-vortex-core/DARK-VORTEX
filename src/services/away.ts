@@ -1,4 +1,3 @@
-
 import type {
   WAMessage,
   WASocket,
@@ -9,25 +8,49 @@ import {
   POWERED_BY,
 } from "../utils/message.js";
 
+import {
+  sendVortexReply,
+} from "../utils/vortex-reply.js";
+
 // ============================================================
-// 🌑 DARK VORTEX — PREMIUM AWAY SYSTEM
+// 🌑 DARK VORTEX — PREMIUM OWNER AVAILABILITY ENGINE
 // ⚡ Powered by Vortex Tech
 // ============================================================
 //
-// Features:
-//   🕐 Owner inactivity detection
-//   💬 Private away replies
-//   👥 Group mention-based away replies
-//   ⏱️ Per-chat cooldown protection
-//   ⚙️ Custom away messages
+// FEATURES
+//
+// 🕐 Automatic owner inactivity detection
+// 🟢 Automatic AVAILABLE state
+// 🔴 Automatic AWAY state
+// 👤 Owner activity tracking
+// 💬 Private-message detection
+// 👥 Group mention detection
+// ⌨️ WhatsApp typing/presence effect
+// 🧠 Conversation-aware pending-message tracking
+// 🎯 Specific owner-response detection
+// 🔁 Automatic availability recovery
+// ⏱️ Per-chat cooldown protection
+// ⚙️ Custom away messages
 //
 // ============================================================
 
+
+// ============================================================
+// CONFIGURATION
+// ============================================================
+
 const AWAY_AFTER_MS =
-  15 * 60 * 1000;
+  5 * 60 * 1000;
 
 const REPLY_COOLDOWN_MS =
-  30 * 60 * 1000;
+  5 * 60 * 1000;
+
+const TYPING_DELAY_MS =
+  1800;
+
+const PENDING_MESSAGE_EXPIRY_MS =
+  60 * 60 * 1000;
+
 
 // ============================================================
 // DEFAULT MESSAGES
@@ -73,15 +96,57 @@ const DEFAULT_GROUP_MESSAGE =
     ],
   );
 
+
 // ============================================================
-// STATE
+// OWNER AVAILABILITY STATE
 // ============================================================
+
+export type OwnerAvailability =
+  | "AVAILABLE"
+  | "AWAY";
+
+let ownerAvailability:
+  OwnerAvailability =
+    "AVAILABLE";
 
 let lastOwnerActivity =
   Date.now();
 
+let lastIncomingMessage =
+  0;
+
+let lastOwnerResponse =
+  0;
+
+
+// ============================================================
+// PENDING MESSAGE STATE
+// ============================================================
+
+export interface PendingMessage {
+  key: string;
+  jid: string;
+  sender: string;
+  messageId?: string;
+  timestamp: number;
+  responded: boolean;
+}
+
+const pendingMessages =
+  new Map<string, PendingMessage>();
+
+
+// ============================================================
+// REPLY COOLDOWNS
+// ============================================================
+
 const replyCooldowns =
   new Map<string, number>();
+
+
+// ============================================================
+// CUSTOM MESSAGES
+// ============================================================
 
 let awayMessage =
   DEFAULT_AWAY_MESSAGE;
@@ -89,14 +154,237 @@ let awayMessage =
 let groupAwayMessage =
   DEFAULT_GROUP_MESSAGE;
 
+
+// ============================================================
+// JID NORMALIZATION
+// ============================================================
+
+function normalizeJid(
+  jid: string,
+): string {
+  return jid
+    .split(":")[0]
+    .trim()
+    .toLowerCase();
+}
+
+
+// ============================================================
+// CONVERSATION KEY
+// ============================================================
+
+function createConversationKey(
+  jid: string,
+  sender: string,
+): string {
+  return (
+    `${normalizeJid(jid)}:${normalizeJid(sender)}`
+  );
+}
+
+
+// ============================================================
+// OWNER JID MATCHING
+// ============================================================
+
+function jidMatchesOwner(
+  jid: string,
+  ownerNumber: string,
+): boolean {
+  const normalized =
+    normalizeJid(jid);
+
+  const cleanNumber =
+    ownerNumber.replace(
+      /\D/g,
+      "",
+    );
+
+  return (
+    normalized ===
+    `${cleanNumber}@s.whatsapp.net`
+  );
+}
+
+
+// ============================================================
+// REGISTER INCOMING MESSAGE
+// ============================================================
+
+function registerPendingMessage(
+  jid: string,
+  sender: string,
+  messageId?: string,
+): void {
+  const key =
+    createConversationKey(
+      jid,
+      sender,
+    );
+
+  pendingMessages.set(
+    key,
+    {
+      key,
+      jid,
+      sender,
+      messageId,
+      timestamp: Date.now(),
+      responded: false,
+    },
+  );
+
+  lastIncomingMessage =
+    Date.now();
+}
+
+
+// ============================================================
+// MARK SPECIFIC CONVERSATION RESPONDED
+// ============================================================
+
+export function markOwnerResponse(
+  jid: string,
+  message: WAMessage,
+): void {
+  lastOwnerResponse =
+    Date.now();
+
+  /*
+   * ----------------------------------------------------------
+   * PRIVATE CHAT
+   * ----------------------------------------------------------
+   *
+   * In a private chat, the remote JID identifies the person.
+   */
+
+  if (!jid.endsWith("@g.us")) {
+    const key =
+      createConversationKey(
+        jid,
+        jid,
+      );
+
+    const pending =
+      pendingMessages.get(key);
+
+    if (pending) {
+      pending.responded =
+        true;
+
+      console.log(
+        `🟢 [AWAY] Owner responded to ${jid}`,
+      );
+    }
+
+    return;
+  }
+
+
+  /*
+   * ----------------------------------------------------------
+   * GROUP CHAT
+   * ----------------------------------------------------------
+   *
+   * If the owner replied to a quoted message,
+   * contextInfo.participant identifies exactly
+   * who the owner replied to.
+   */
+
+  const context =
+    message.message
+      ?.extendedTextMessage
+      ?.contextInfo;
+
+  const quotedParticipant =
+    context?.participant;
+
+  if (quotedParticipant) {
+    const key =
+      createConversationKey(
+        jid,
+        quotedParticipant,
+      );
+
+    const pending =
+      pendingMessages.get(key);
+
+    if (pending) {
+      pending.responded =
+        true;
+
+      console.log(
+        `🟢 [AWAY] Owner responded to ${quotedParticipant} in ${jid}`,
+      );
+
+      return;
+    }
+  }
+
+  /*
+   * ----------------------------------------------------------
+   * UNQUOTED GROUP MESSAGE
+   * ----------------------------------------------------------
+   *
+   * We intentionally do NOT mark every pending person
+   * as responded.
+   *
+   * We only know that the owner was active.
+   */
+}
+
+
+// ============================================================
+// GET PENDING AWAY MESSAGES
+// ============================================================
+
+export function getPendingAwayMessages():
+  PendingMessage[] {
+  cleanupExpiredPendingMessages();
+
+  return Array.from(
+    pendingMessages.values(),
+  ).filter(
+    (pending) =>
+      !pending.responded,
+  );
+}
+
+
 // ============================================================
 // OWNER ACTIVITY
 // ============================================================
 
+/**
+ * Called when the actual owner sends a WhatsApp message.
+ *
+ * IMPORTANT:
+ * This does NOT mark pending conversations as responded.
+ *
+ * Response detection is handled separately by
+ * markOwnerResponse().
+ */
 export function markOwnerActivity(): void {
   lastOwnerActivity =
     Date.now();
+
+  if (
+    ownerAvailability !==
+    "AVAILABLE"
+  ) {
+    ownerAvailability =
+      "AVAILABLE";
+
+    console.log(
+      "🟢 [AWAY] Owner is active again.",
+    );
+  }
 }
+
+
+// ============================================================
+// AWAY DURATION
+// ============================================================
 
 export function getAwayDuration(): number {
   return (
@@ -105,22 +393,118 @@ export function getAwayDuration(): number {
   );
 }
 
+
+// ============================================================
+// LAST INCOMING MESSAGE
+// ============================================================
+
+export function getLastIncomingMessage(): number {
+  return lastIncomingMessage;
+}
+
+
+// ============================================================
+// LAST OWNER RESPONSE
+// ============================================================
+
+export function getLastOwnerResponse(): number {
+  return lastOwnerResponse;
+}
+
+
+// ============================================================
+// AVAILABILITY ENGINE
+// ============================================================
+
+export function updateOwnerAvailability():
+  OwnerAvailability {
+
+  const inactiveFor =
+    getAwayDuration();
+
+  if (
+    inactiveFor >=
+    AWAY_AFTER_MS
+  ) {
+    if (
+      ownerAvailability !==
+      "AWAY"
+    ) {
+      ownerAvailability =
+        "AWAY";
+
+      console.log(
+        "🔴 [AWAY] Owner inactivity threshold reached.",
+      );
+    }
+  } else {
+    ownerAvailability =
+      "AVAILABLE";
+  }
+
+  return ownerAvailability;
+}
+
+
+// ============================================================
+// GET OWNER AVAILABILITY
+// ============================================================
+
+export function getOwnerAvailability():
+  OwnerAvailability {
+  return updateOwnerAvailability();
+}
+
+
+// ============================================================
+// FORCE AWAY
+// ============================================================
+
 export function forceAway(): void {
   lastOwnerActivity =
     Date.now() -
     AWAY_AFTER_MS -
     1000;
-}
 
-export function isOwnerAway(): boolean {
-  return (
-    getAwayDuration() >=
-    AWAY_AFTER_MS
+  ownerAvailability =
+    "AWAY";
+
+  console.log(
+    "🔴 [AWAY] Owner manually forced into Away mode.",
   );
 }
 
+
 // ============================================================
-// MESSAGE HELPERS
+// FORCE AVAILABLE
+// ============================================================
+
+export function forceAvailable(): void {
+  markOwnerActivity();
+}
+
+
+// ============================================================
+// OWNER STATE CHECKS
+// ============================================================
+
+export function isOwnerAway(): boolean {
+  return (
+    updateOwnerAvailability() ===
+    "AWAY"
+  );
+}
+
+export function isOwnerAvailable(): boolean {
+  return (
+    updateOwnerAvailability() ===
+    "AVAILABLE"
+  );
+}
+
+
+// ============================================================
+// MESSAGE TEXT
 // ============================================================
 
 function getMessageText(
@@ -184,37 +568,6 @@ function getMessageText(
   return "";
 }
 
-// ============================================================
-// OWNER JID MATCHING
-// ============================================================
-
-function normalizeJid(
-  jid: string,
-): string {
-  return jid
-    .split(":")[0]
-    .trim()
-    .toLowerCase();
-}
-
-function jidMatchesOwner(
-  jid: string,
-  ownerNumber: string,
-): boolean {
-  const normalized =
-    normalizeJid(jid);
-
-  const cleanNumber =
-    ownerNumber.replace(
-      /\D/g,
-      "",
-    );
-
-  return (
-    normalized ===
-    `${cleanNumber}@s.whatsapp.net`
-  );
-}
 
 // ============================================================
 // OWNER MENTION DETECTION
@@ -224,6 +577,7 @@ function isOwnerMentioned(
   message: WAMessage,
   ownerNumber: string,
 ): boolean {
+
   const context =
     message.message
       ?.extendedTextMessage
@@ -264,6 +618,7 @@ function isOwnerMentioned(
   );
 }
 
+
 // ============================================================
 // COOLDOWN
 // ============================================================
@@ -271,6 +626,7 @@ function isOwnerMentioned(
 function isOnCooldown(
   jid: string,
 ): boolean {
+
   const lastReply =
     replyCooldowns.get(jid);
 
@@ -296,6 +652,7 @@ function isOnCooldown(
   return true;
 }
 
+
 function setCooldown(
   jid: string,
 ): void {
@@ -305,6 +662,45 @@ function setCooldown(
   );
 }
 
+
+// ============================================================
+// TYPING EFFECT
+// ============================================================
+
+async function showTypingEffect(
+  sock: WASocket,
+  jid: string,
+): Promise<void> {
+
+  try {
+    await sock.sendPresenceUpdate(
+      "composing",
+      jid,
+    );
+
+    await new Promise<void>(
+      (resolve) =>
+        setTimeout(
+          resolve,
+          TYPING_DELAY_MS,
+        ),
+    );
+
+    await sock.sendPresenceUpdate(
+      "paused",
+      jid,
+    );
+
+  } catch (error) {
+
+    console.error(
+      "⚠️ [AWAY] Typing effect failed:",
+      error,
+    );
+  }
+}
+
+
 // ============================================================
 // AWAY MESSAGE CONFIGURATION
 // ============================================================
@@ -312,6 +708,7 @@ function setCooldown(
 export function setAwayMessage(
   message: string,
 ): void {
+
   const trimmed =
     message.trim();
 
@@ -323,17 +720,21 @@ export function setAwayMessage(
     trimmed;
 }
 
+
 export function getAwayMessage(): string {
   return awayMessage;
 }
+
 
 export function getGroupAwayMessage(): string {
   return groupAwayMessage;
 }
 
+
 export function setGroupAwayMessage(
   message: string,
 ): void {
+
   const trimmed =
     message.trim();
 
@@ -345,47 +746,58 @@ export function setGroupAwayMessage(
     trimmed;
 }
 
+
 // ============================================================
-// PROCESS AWAY REPLY
+// PROCESS AWAY
 // ============================================================
 
 export async function processAway(
   sock: WASocket,
   message: WAMessage,
   ownerNumber: string,
+  deliveryJid?: string,
 ): Promise<boolean> {
-  // ----------------------------------------------------------
-  // Ignore messages sent by the bot/owner itself
-  // ----------------------------------------------------------
 
+  /*
+   * Never process the bot's own outgoing message.
+   */
   if (message.key.fromMe) {
-    markOwnerActivity();
     return false;
   }
 
-  // ----------------------------------------------------------
-  // If owner is still active, do nothing
-  // ----------------------------------------------------------
 
-  if (!isOwnerAway()) {
+  /*
+   * Refresh availability.
+   */
+  updateOwnerAvailability();
+
+
+  /*
+   * Owner is currently available.
+   */
+  if (
+    ownerAvailability !==
+    "AWAY"
+  ) {
     return false;
   }
 
-  // ----------------------------------------------------------
-  // Determine remote chat
-  // ----------------------------------------------------------
 
+  /*
+   * Determine chat.
+   */
   const remoteJid =
+    deliveryJid ||
     message.key.remoteJid;
 
   if (!remoteJid) {
     return false;
   }
 
-  // ----------------------------------------------------------
-  // Never reply to WhatsApp status
-  // ----------------------------------------------------------
 
+  /*
+   * Ignore WhatsApp status.
+   */
   if (
     remoteJid ===
     "status@broadcast"
@@ -393,20 +805,22 @@ export async function processAway(
     return false;
   }
 
-  // ----------------------------------------------------------
-  // Determine DM or group
-  // ----------------------------------------------------------
 
+  /*
+   * Determine group/private.
+   */
   const isGroup =
     remoteJid.endsWith(
       "@g.us",
     );
 
-  // ----------------------------------------------------------
-  // Groups require owner mention
-  // ----------------------------------------------------------
 
+  /*
+   * Groups only trigger Away when
+   * the owner is mentioned.
+   */
   if (isGroup) {
+
     if (
       !isOwnerMentioned(
         message,
@@ -417,10 +831,10 @@ export async function processAway(
     }
   }
 
-  // ----------------------------------------------------------
-  // Determine sender
-  // ----------------------------------------------------------
 
+  /*
+   * Determine sender.
+   */
   const sender =
     message.key.participant ||
     message.key.remoteJid ||
@@ -430,10 +844,10 @@ export async function processAway(
     return false;
   }
 
-  // ----------------------------------------------------------
-  // Never reply to owner
-  // ----------------------------------------------------------
 
+  /*
+   * Never reply to the owner.
+   */
   if (
     jidMatchesOwner(
       sender,
@@ -443,15 +857,35 @@ export async function processAway(
     return false;
   }
 
-  // ----------------------------------------------------------
-  // Cooldown protection
-  // ----------------------------------------------------------
 
+  /*
+   * Register the exact conversation.
+   */
+  registerPendingMessage(
+    remoteJid,
+    sender,
+    message.key.id ||
+      undefined,
+  );
+
+
+  /*
+   * Cooldown key.
+   */
   const cooldownKey =
     isGroup
-      ? `${remoteJid}:${sender}`
-      : remoteJid;
+      ? createConversationKey(
+          remoteJid,
+          sender,
+        )
+      : normalizeJid(
+          remoteJid,
+        );
 
+
+  /*
+   * Respect cooldown.
+   */
   if (
     isOnCooldown(
       cooldownKey,
@@ -460,50 +894,170 @@ export async function processAway(
     return false;
   }
 
-  // ----------------------------------------------------------
-  // Send away message
-  // ----------------------------------------------------------
 
+  /*
+   * Typing + response.
+   */
   try {
+
+    console.log(
+      `⌨️ [AWAY] Typing to ${cooldownKey}`,
+    );
+
+
+    await showTypingEffect(
+      sock,
+      remoteJid,
+    );
+
+
     const text =
       isGroup
         ? groupAwayMessage
         : awayMessage;
 
-    await sock.sendMessage(
+
+    await sendVortexReply(
+      sock,
       remoteJid,
-      {
-        text,
-      },
+      text,
+      message,
     );
+
 
     setCooldown(
       cooldownKey,
     );
 
+
     console.log(
-      `🤖 Away reply sent to ${cooldownKey}`,
+      `🤖 [AWAY] Reply sent to ${cooldownKey}`,
     );
 
+
     return true;
-  } catch (err) {
+
+  } catch (error) {
+
     console.error(
-      "❌ Away reply failed:",
-      err,
+      "❌ [AWAY] Reply failed:",
+      error,
     );
+
+    try {
+      await sock.sendPresenceUpdate(
+        "paused",
+        remoteJid,
+      );
+    } catch {
+      // Ignore presence cleanup failure.
+    }
 
     return false;
   }
 }
 
+
 // ============================================================
-// CLEAN EXPIRED COOLDOWNS
+// CLEAN EXPIRED PENDING MESSAGES
+// ============================================================
+
+function cleanupExpiredPendingMessages(): void {
+
+  const now =
+    Date.now();
+
+  for (
+    const [
+      key,
+      pending,
+    ] of pendingMessages
+  ) {
+
+    if (
+      now -
+        pending.timestamp >
+      PENDING_MESSAGE_EXPIRY_MS
+    ) {
+      pendingMessages.delete(
+        key,
+      );
+    }
+  }
+}
+
+
+// ============================================================
+// OWNER STATUS
+// ============================================================
+
+export function getOwnerStatus(): {
+  availability: OwnerAvailability;
+  away: boolean;
+  inactiveFor: number;
+  lastOwnerActivity: number;
+  lastIncomingMessage: number;
+  lastOwnerResponse: number;
+  pendingMessages: number;
+} {
+
+  updateOwnerAvailability();
+
+  cleanupExpiredPendingMessages();
+
+  let pendingCount =
+    0;
+
+  for (
+    const pending of
+      pendingMessages.values()
+  ) {
+
+    if (
+      !pending.responded
+    ) {
+      pendingCount++;
+    }
+  }
+
+  return {
+
+    availability:
+      ownerAvailability,
+
+    away:
+      ownerAvailability ===
+      "AWAY",
+
+    inactiveFor:
+      getAwayDuration(),
+
+    lastOwnerActivity,
+
+    lastIncomingMessage,
+
+    lastOwnerResponse,
+
+    pendingMessages:
+      pendingCount,
+  };
+}
+
+
+// ============================================================
+// PERIODIC CLEANUP
 // ============================================================
 
 setInterval(
   () => {
+
     const now =
       Date.now();
+
+
+    // --------------------------------------------------------
+    // Cooldowns
+    // --------------------------------------------------------
 
     for (
       const [
@@ -511,8 +1065,10 @@ setInterval(
         timestamp,
       ] of replyCooldowns
     ) {
+
       if (
-        now - timestamp >=
+        now -
+          timestamp >=
         REPLY_COOLDOWN_MS
       ) {
         replyCooldowns.delete(
@@ -520,12 +1076,28 @@ setInterval(
         );
       }
     }
+
+
+    // --------------------------------------------------------
+    // Pending conversations
+    // --------------------------------------------------------
+
+    cleanupExpiredPendingMessages();
+
+
+    // --------------------------------------------------------
+    // Availability
+    // --------------------------------------------------------
+
+    updateOwnerAvailability();
+
   },
-  10 * 60 * 1000,
+  60 * 1000,
 );
 
-// Keep the shared brand export referenced in this module
-// so the branding layer remains available for future
-// away-system extensions.
-void POWERED_BY;
 
+// ============================================================
+// BRAND REFERENCE
+// ============================================================
+
+void POWERED_BY;

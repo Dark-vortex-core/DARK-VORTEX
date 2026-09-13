@@ -1,5 +1,6 @@
-
 import os from "node:os";
+
+import type { WAMessage } from "@whiskeysockets/baileys";
 
 import {
   vortexBox,
@@ -9,6 +10,8 @@ import {
   formatUptime,
   formatBytes,
 } from "../utils/message.js";
+
+import { sendVortexReply } from "../utils/vortex-reply.js";
 
 import { getPrefix } from "../services/prefix.js";
 
@@ -32,6 +35,11 @@ import {
 
    Presentation layer only.
    Existing command logic and behavior preserved.
+
+   Reply system:
+   • Native WhatsApp quoted replies
+   • Automatic Read More for long responses
+   • Centralized through sendVortexReply()
 ========================================================= */
 
 
@@ -199,8 +207,32 @@ export async function handleOwnerCommand(
   sock: any,
   jid: string,
   command: string,
-  args: string[] = []
+  args: string[] = [],
+  quotedMessage?: WAMessage,
 ): Promise<boolean> {
+
+  /*
+   * 🌑 DARK VORTEX REPLY ENGINE
+   *
+   * Every normal owner-command response goes through
+   * sendVortexReply().
+   *
+   * This automatically:
+   * • Quotes the triggering command
+   * • Adds Read More to long responses
+   * • Keeps WhatsApp reply behavior consistent
+   */
+  const sendReply = async (
+    text: string,
+  ) => {
+    return await sendVortexReply(
+      sock,
+      jid,
+      text,
+      quotedMessage,
+    );
+  };
+
 
   switch (command) {
 
@@ -211,43 +243,39 @@ export async function handleOwnerCommand(
 
     case "owner": {
 
-      await sock.sendMessage(
-        jid,
-        {
-          text:
-            vortexBox(
-              "👑 OWNER CONTROL",
-              [
-                "🟢 Status: ONLINE",
-                "👑 Access: OWNER ONLY",
-                "🛡️ Security: ACTIVE",
-                "",
-                "┣━━〔 ⚙️ SYSTEM 〕",
-                `┃ ${getPrefix()}owner`,
-                `┃ ${getPrefix()}botinfo`,
-                `┃ ${getPrefix()}system`,
-                `┃ ${getPrefix()}runtime`,
-                `┃ ${getPrefix()}status`,
-                "",
-                "┣━━〔 👥 GROUP CONTROL 〕",
-                `┃ ${getPrefix()}groups`,
-                `┃ ${getPrefix()}enable`,
-                `┃ ${getPrefix()}disable`,
-                `┃ ${getPrefix()}leave`,
-                "",
-                "┣━━〔 📡 BROADCAST 〕",
-                `┃ ${getPrefix()}broadcast`,
-                "",
-                "┣━━〔 🚪 REQUEST CONTROL 〕",
-                `┃ ${getPrefix()}approveall`,
-                `┃ ${getPrefix()}rejectall`,
-                "",
-                "┣━━〔 ⚡ LIFECYCLE 〕",
-                `┃ ${getPrefix()}restart`,
-                `┃ ${getPrefix()}shutdown`,
-              ]
-            ),
-        }
+      await sendReply(
+        vortexBox(
+          "👑 OWNER CONTROL",
+          [
+            "🟢 Status: ONLINE",
+            "👑 Access: OWNER ONLY",
+            "🛡️ Security: ACTIVE",
+            "",
+            "┣━━〔 ⚙️ SYSTEM 〕",
+            `┃ ${getPrefix()}owner`,
+            `┃ ${getPrefix()}botinfo`,
+            `┃ ${getPrefix()}system`,
+            `┃ ${getPrefix()}runtime`,
+            `┃ ${getPrefix()}status`,
+            "",
+            "┣━━〔 👥 GROUP CONTROL 〕",
+            `┃ ${getPrefix()}groups`,
+            `┃ ${getPrefix()}enable`,
+            `┃ ${getPrefix()}disable`,
+            `┃ ${getPrefix()}leave`,
+            "",
+            "┣━━〔 📡 BROADCAST 〕",
+            `┃ ${getPrefix()}broadcast`,
+            "",
+            "┣━━〔 🚪 REQUEST CONTROL 〕",
+            `┃ ${getPrefix()}approveall`,
+            `┃ ${getPrefix()}rejectall`,
+            "",
+            "┣━━〔 ⚡ LIFECYCLE 〕",
+            `┃ ${getPrefix()}restart`,
+            `┃ ${getPrefix()}shutdown`,
+          ]
+        )
       );
 
       return true;
@@ -262,32 +290,28 @@ export async function handleOwnerCommand(
 
     case "botinfo": {
 
-      await sock.sendMessage(
-        jid,
-        {
-          text:
-            vortexBox(
-              "🤖 BOT INFORMATION",
-              [
-                "🟢 Status: ONLINE",
-                "📦 Version: 1.0.0",
-                `🔣 Prefix: ${getPrefix()}`,
-                "🌍 Timezone: Africa/Lagos",
-                `⏱️ Runtime: ${formatUptime(
-                  process.uptime()
-                )}`,
-                `🟦 Node: ${process.version}`,
-                `💻 Platform: ${process.platform}`,
-                `🧩 Architecture: ${process.arch}`,
-                "",
-                "┣━━〔 🛡️ SECURITY 〕",
-                "┃ Owner-only mode: ACTIVE",
-                "┃ Protection: ACTIVE",
-                "┃ Automation: AVAILABLE",
-                "┃ Broadcast: AVAILABLE",
-              ]
-            ),
-        }
+      await sendReply(
+        vortexBox(
+          "🤖 BOT INFORMATION",
+          [
+            "🟢 Status: ONLINE",
+            "📦 Version: 1.0.0",
+            `🔣 Prefix: ${getPrefix()}`,
+            "🌍 Timezone: Africa/Lagos",
+            `⏱️ Runtime: ${formatUptime(
+              process.uptime()
+            )}`,
+            `🟦 Node: ${process.version}`,
+            `💻 Platform: ${process.platform}`,
+            `🧩 Architecture: ${process.arch}`,
+            "",
+            "┣━━〔 🛡️ SECURITY 〕",
+            "┃ Owner-only mode: ACTIVE",
+            "┃ Protection: ACTIVE",
+            "┃ Automation: AVAILABLE",
+            "┃ Broadcast: AVAILABLE",
+          ]
+        )
       );
 
       return true;
@@ -313,36 +337,32 @@ export async function handleOwnerCommand(
       const cpuLoad =
         os.loadavg()[0];
 
-      await sock.sendMessage(
-        jid,
-        {
-          text:
-            system(
-              "SYSTEM HEALTH",
-              [
-                "🟢 Core Status: ONLINE",
-                "🛡️ Security: ACTIVE",
-                "⚡ Engine: VORTEX CORE",
-                "",
-                `⏱️ Uptime: ${formatUptime(
-                  process.uptime()
-                )}`,
-                `🧠 Memory: ${formatBytes(
-                  usedMemory
-                )} / ${formatBytes(
-                  totalMemory
-                )}`,
-                `📊 CPU Load: ${(
-                  cpuLoad * 100
-                ).toFixed(1)}%`,
-                `💻 OS: ${os.platform()}`,
-                `🏗️ Architecture: ${os.arch()}`,
-                `🟦 Node.js: ${process.version}`,
-                "",
-                "🟢 System operating normally.",
-              ]
-            ),
-        }
+      await sendReply(
+        system(
+          "SYSTEM HEALTH",
+          [
+            "🟢 Core Status: ONLINE",
+            "🛡️ Security: ACTIVE",
+            "⚡ Engine: VORTEX CORE",
+            "",
+            `⏱️ Uptime: ${formatUptime(
+              process.uptime()
+            )}`,
+            `🧠 Memory: ${formatBytes(
+              usedMemory
+            )} / ${formatBytes(
+              totalMemory
+            )}`,
+            `📊 CPU Load: ${(
+              cpuLoad * 100
+            ).toFixed(1)}%`,
+            `💻 OS: ${os.platform()}`,
+            `🏗️ Architecture: ${os.arch()}`,
+            `🟦 Node.js: ${process.version}`,
+            "",
+            "🟢 System operating normally.",
+          ]
+        )
       );
 
       return true;
@@ -358,36 +378,32 @@ export async function handleOwnerCommand(
       const memory =
         process.memoryUsage();
 
-      await sock.sendMessage(
-        jid,
-        {
-          text:
-            system(
-              "RUNTIME INFORMATION",
-              [
-                "🟢 Status: ONLINE",
-                "",
-                `⏱️ Uptime: ${formatUptime(
-                  process.uptime()
-                )}`,
-                `💾 RSS: ${formatBytes(
-                  memory.rss
-                )}`,
-                `🧠 Heap Used: ${formatBytes(
-                  memory.heapUsed
-                )}`,
-                `📦 Heap Total: ${formatBytes(
-                  memory.heapTotal
-                )}`,
-                "",
-                `🟦 Node.js: ${process.version}`,
-                `💻 Platform: ${process.platform}`,
-                `🏗️ Architecture: ${process.arch}`,
-                "",
-                "⚡ Runtime engine is healthy.",
-              ]
-            ),
-        }
+      await sendReply(
+        system(
+          "RUNTIME INFORMATION",
+          [
+            "🟢 Status: ONLINE",
+            "",
+            `⏱️ Uptime: ${formatUptime(
+              process.uptime()
+            )}`,
+            `💾 RSS: ${formatBytes(
+              memory.rss
+            )}`,
+            `🧠 Heap Used: ${formatBytes(
+              memory.heapUsed
+            )}`,
+            `📦 Heap Total: ${formatBytes(
+              memory.heapTotal
+            )}`,
+            "",
+            `🟦 Node.js: ${process.version}`,
+            `💻 Platform: ${process.platform}`,
+            `🏗️ Architecture: ${process.arch}`,
+            "",
+            "⚡ Runtime engine is healthy.",
+          ]
+        )
       );
 
       return true;
@@ -400,26 +416,22 @@ export async function handleOwnerCommand(
 
     case "status": {
 
-      await sock.sendMessage(
-        jid,
-        {
-          text:
-            vortexBox(
-              "🟢 DARK VORTEX STATUS",
-              [
-                "🟢 Bot: ONLINE",
-                "🛡️ Security: ACTIVE",
-                "👑 Owner Only: ACTIVE",
-                "⚡ Engine: VORTEX CORE",
-                `🔣 Prefix: ${getPrefix()}`,
-                `⏱️ Uptime: ${formatUptime(
-                  process.uptime()
-                )}`,
-                "",
-                "🚀 All core systems operational.",
-              ]
-            ),
-        }
+      await sendReply(
+        vortexBox(
+          "🟢 DARK VORTEX STATUS",
+          [
+            "🟢 Bot: ONLINE",
+            "🛡️ Security: ACTIVE",
+            "👑 Owner Only: ACTIVE",
+            "⚡ Engine: VORTEX CORE",
+            `🔣 Prefix: ${getPrefix()}`,
+            `⏱️ Uptime: ${formatUptime(
+              process.uptime()
+            )}`,
+            "",
+            "🚀 All core systems operational.",
+          ]
+        )
       );
 
       return true;
@@ -444,22 +456,18 @@ export async function handleOwnerCommand(
 
         if (groups.length === 0) {
 
-          await sock.sendMessage(
-            jid,
-            {
-              text:
-                vortexBox(
-                  "👥 GROUP DIRECTORY",
-                  [
-                    "📊 Total Groups: 0",
-                    "",
-                    "🟢 No active group sessions found.",
-                    "",
-                    "Dark Vortex is currently not",
-                    "participating in any groups.",
-                  ]
-                ),
-            }
+          await sendReply(
+            vortexBox(
+              "👥 GROUP DIRECTORY",
+              [
+                "📊 Total Groups: 0",
+                "",
+                "🟢 No active group sessions found.",
+                "",
+                "Dark Vortex is currently not",
+                "participating in any groups.",
+              ]
+            )
           );
 
           return true;
@@ -543,15 +551,11 @@ export async function handleOwnerCommand(
           lines.push("");
         }
 
-        await sock.sendMessage(
-          jid,
-          {
-            text:
-              vortexBox(
-                "👥 GROUP DIRECTORY",
-                lines
-              ),
-          }
+        await sendReply(
+          vortexBox(
+            "👥 GROUP DIRECTORY",
+            lines,
+          )
         );
 
       } catch (err) {
@@ -561,20 +565,16 @@ export async function handleOwnerCommand(
           err
         );
 
-        await sock.sendMessage(
-          jid,
-          {
-            text:
-              error(
-                "GROUP LIST FAILED",
-                [
-                  "📡 Group data could not be retrieved.",
-                  "",
-                  "💡 Verify the WhatsApp connection",
-                  "and try again.",
-                ]
-              ),
-          }
+        await sendReply(
+          error(
+            "GROUP LIST FAILED",
+            [
+              "📡 Group data could not be retrieved.",
+              "",
+              "💡 Verify the WhatsApp connection",
+              "and try again.",
+            ]
+          )
         );
       }
 
@@ -592,21 +592,17 @@ export async function handleOwnerCommand(
         !jid.endsWith("@g.us")
       ) {
 
-        await sock.sendMessage(
-          jid,
-          {
-            text:
-              error(
-                "GROUP ONLY",
-                [
-                  "👥 This command requires",
-                  "a WhatsApp group.",
-                  "",
-                  `💡 Use ${getPrefix()}enable`,
-                  "inside the target group.",
-                ]
-              ),
-          }
+        await sendReply(
+          error(
+            "GROUP ONLY",
+            [
+              "👥 This command requires",
+              "a WhatsApp group.",
+              "",
+              `💡 Use ${getPrefix()}enable`,
+              "inside the target group.",
+            ]
+          )
         );
 
         return true;
@@ -626,23 +622,19 @@ export async function handleOwnerCommand(
               "Unknown Group"
           );
 
-        await sock.sendMessage(
-          jid,
-          {
-            text:
-              success(
-                "GROUP ENABLED",
-                [
-                  `👥 Group: ${group.name}`,
-                  "",
-                  "🟢 Management: ENABLED",
-                  "🛡️ Group configuration: ACTIVE",
-                  "",
-                  "⚡ Dark Vortex is now active",
-                  "in this group.",
-                ]
-              ),
-          }
+        await sendReply(
+          success(
+            "GROUP ENABLED",
+            [
+              `👥 Group: ${group.name}`,
+              "",
+              "🟢 Management: ENABLED",
+              "🛡️ Group configuration: ACTIVE",
+              "",
+              "⚡ Dark Vortex is now active",
+              "in this group.",
+            ]
+          )
         );
 
       } catch (err) {
@@ -652,21 +644,17 @@ export async function handleOwnerCommand(
           err
         );
 
-        await sock.sendMessage(
-          jid,
-          {
-            text:
-              error(
-                "ENABLE FAILED",
-                [
-                  "⚠️ Dark Vortex could not be",
-                  "enabled for this group.",
-                  "",
-                  "💡 Check the WhatsApp connection",
-                  "and try again.",
-                ]
-              ),
-          }
+        await sendReply(
+          error(
+            "ENABLE FAILED",
+            [
+              "⚠️ Dark Vortex could not be",
+              "enabled for this group.",
+              "",
+              "💡 Check the WhatsApp connection",
+              "and try again.",
+            ]
+          )
         );
       }
 
@@ -684,21 +672,17 @@ export async function handleOwnerCommand(
         !jid.endsWith("@g.us")
       ) {
 
-        await sock.sendMessage(
-          jid,
-          {
-            text:
-              error(
-                "GROUP ONLY",
-                [
-                  "👥 This command requires",
-                  "a WhatsApp group.",
-                  "",
-                  `💡 Use ${getPrefix()}disable`,
-                  "inside the target group.",
-                ]
-              ),
-          }
+        await sendReply(
+          error(
+            "GROUP ONLY",
+            [
+              "👥 This command requires",
+              "a WhatsApp group.",
+              "",
+              `💡 Use ${getPrefix()}disable`,
+              "inside the target group.",
+            ]
+          )
         );
 
         return true;
@@ -718,23 +702,19 @@ export async function handleOwnerCommand(
               "Unknown Group"
           );
 
-        await sock.sendMessage(
-          jid,
-          {
-            text:
-              success(
-                "GROUP DISABLED",
-                [
-                  `👥 Group: ${group.name}`,
-                  "",
-                  "🔴 Management: DISABLED",
-                  "🛡️ Local management: INACTIVE",
-                  "",
-                  "⚠️ Dark Vortex will no longer",
-                  "process group management here.",
-                ]
-              ),
-          }
+        await sendReply(
+          success(
+            "GROUP DISABLED",
+            [
+              `👥 Group: ${group.name}`,
+              "",
+              "🔴 Management: DISABLED",
+              "🛡️ Local management: INACTIVE",
+              "",
+              "⚠️ Dark Vortex will no longer",
+              "process group management here.",
+            ]
+          )
         );
 
       } catch (err) {
@@ -744,21 +724,17 @@ export async function handleOwnerCommand(
           err
         );
 
-        await sock.sendMessage(
-          jid,
-          {
-            text:
-              error(
-                "DISABLE FAILED",
-                [
-                  "⚠️ Dark Vortex could not be",
-                  "disabled for this group.",
-                  "",
-                  "💡 Check the WhatsApp connection",
-                  "and try again.",
-                ]
-              ),
-          }
+        await sendReply(
+          error(
+            "DISABLE FAILED",
+            [
+              "⚠️ Dark Vortex could not be",
+              "disabled for this group.",
+              "",
+              "💡 Check the WhatsApp connection",
+              "and try again.",
+            ]
+          )
         );
       }
 
@@ -776,21 +752,17 @@ export async function handleOwnerCommand(
         !jid.endsWith("@g.us")
       ) {
 
-        await sock.sendMessage(
-          jid,
-          {
-            text:
-              error(
-                "GROUP ONLY",
-                [
-                  "👥 This command requires",
-                  "a WhatsApp group.",
-                  "",
-                  `💡 Use ${getPrefix()}leave`,
-                  "inside the target group.",
-                ]
-              ),
-          }
+        await sendReply(
+          error(
+            "GROUP ONLY",
+            [
+              "👥 This command requires",
+              "a WhatsApp group.",
+              "",
+              `💡 Use ${getPrefix()}leave`,
+              "inside the target group.",
+            ]
+          )
         );
 
         return true;
@@ -807,22 +779,18 @@ export async function handleOwnerCommand(
           metadata.subject ||
           "Unknown Group";
 
-        await sock.sendMessage(
-          jid,
-          {
-            text:
-              success(
-                "LEAVE SEQUENCE",
-                [
-                  `👥 Group: ${groupName}`,
-                  "",
-                  "🚪 Leaving group...",
-                  "🛡️ Group configuration will remain stored.",
-                  "",
-                  "⚡ Disconnecting from this group.",
-                ]
-              ),
-          }
+        await sendReply(
+          success(
+            "LEAVE SEQUENCE",
+            [
+              `👥 Group: ${groupName}`,
+              "",
+              "🚪 Leaving group...",
+              "🛡️ Group configuration will remain stored.",
+              "",
+              "⚡ Disconnecting from this group.",
+            ]
+          )
         );
 
         /*
@@ -860,21 +828,17 @@ export async function handleOwnerCommand(
           err
         );
 
-        await sock.sendMessage(
-          jid,
-          {
-            text:
-              error(
-                "LEAVE FAILED",
-                [
-                  "🚪 Dark Vortex could not leave",
-                  "this WhatsApp group.",
-                  "",
-                  "💡 Verify the connection",
-                  "and try again.",
-                ]
-              ),
-          }
+        await sendReply(
+          error(
+            "LEAVE FAILED",
+            [
+              "🚪 Dark Vortex could not leave",
+              "this WhatsApp group.",
+              "",
+              "💡 Verify the connection",
+              "and try again.",
+            ]
+          )
         );
       }
 
@@ -895,24 +859,20 @@ export async function handleOwnerCommand(
         jid.endsWith("@g.us")
       ) {
 
-        await sock.sendMessage(
-          jid,
-          {
-            text:
-              error(
-                "DM ONLY",
-                [
-                  "📡 Broadcast is available",
-                  "from your private DM only.",
-                  "",
-                  "📝 FORMAT",
-                  `${getPrefix()}broadcast Group Name | Message`,
-                  "",
-                  "💡 Example",
-                  `${getPrefix()}broadcast My Group | Hello everyone!`,
-                ]
-              ),
-          }
+        await sendReply(
+          error(
+            "DM ONLY",
+            [
+              "📡 Broadcast is available",
+              "from your private DM only.",
+              "",
+              "📝 FORMAT",
+              `${getPrefix()}broadcast Group Name | Message`,
+              "",
+              "💡 Example",
+              `${getPrefix()}broadcast My Group | Hello everyone!`,
+            ]
+          )
         );
 
         return true;
@@ -926,24 +886,20 @@ export async function handleOwnerCommand(
         !broadcastInput.includes("|")
       ) {
 
-        await sock.sendMessage(
-          jid,
-          {
-            text:
-              error(
-                "INVALID BROADCAST",
-                [
-                  "📡 A group name and message",
-                  "are required.",
-                  "",
-                  "📝 FORMAT",
-                  `${getPrefix()}broadcast Group Name | Message`,
-                  "",
-                  "💡 Example",
-                  `${getPrefix()}broadcast My Group | Hello everyone!`,
-                ]
-              ),
-          }
+        await sendReply(
+          error(
+            "INVALID BROADCAST",
+            [
+              "📡 A group name and message",
+              "are required.",
+              "",
+              "📝 FORMAT",
+              `${getPrefix()}broadcast Group Name | Message`,
+              "",
+              "💡 Example",
+              `${getPrefix()}broadcast My Group | Hello everyone!`,
+            ]
+          )
         );
 
         return true;
@@ -966,20 +922,16 @@ export async function handleOwnerCommand(
 
       if (!groupName) {
 
-        await sock.sendMessage(
-          jid,
-          {
-            text:
-              error(
-                "GROUP REQUIRED",
-                [
-                  "👥 No target group was provided.",
-                  "",
-                  "💡 Enter the exact WhatsApp",
-                  "group name before the | symbol.",
-                ]
-              ),
-          }
+        await sendReply(
+          error(
+            "GROUP REQUIRED",
+            [
+              "👥 No target group was provided.",
+              "",
+              "💡 Enter the exact WhatsApp",
+              "group name before the | symbol.",
+            ]
+          )
         );
 
         return true;
@@ -988,20 +940,16 @@ export async function handleOwnerCommand(
 
       if (!message) {
 
-        await sock.sendMessage(
-          jid,
-          {
-            text:
-              error(
-                "MESSAGE REQUIRED",
-                [
-                  "📝 No broadcast message was provided.",
-                  "",
-                  "💡 Add your message after",
-                  "the | separator.",
-                ]
-              ),
-          }
+        await sendReply(
+          error(
+            "MESSAGE REQUIRED",
+            [
+              "📝 No broadcast message was provided.",
+              "",
+              "💡 Add your message after",
+              "the | separator.",
+            ]
+          )
         );
 
         return true;
@@ -1041,23 +989,19 @@ export async function handleOwnerCommand(
           matches.length === 0
         ) {
 
-          await sock.sendMessage(
-            jid,
-            {
-              text:
-                error(
-                  "GROUP NOT FOUND",
-                  [
-                    `👥 Target: ${groupName}`,
-                    "",
-                    "❌ No participating group",
-                    "matched that exact name.",
-                    "",
-                    `💡 Use ${getPrefix()}groups`,
-                    "to view available groups.",
-                  ]
-                ),
-            }
+          await sendReply(
+            error(
+              "GROUP NOT FOUND",
+              [
+                `👥 Target: ${groupName}`,
+                "",
+                "❌ No participating group",
+                "matched that exact name.",
+                "",
+                `💡 Use ${getPrefix()}groups`,
+                "to view available groups.",
+              ]
+            )
           );
 
           return true;
@@ -1071,23 +1015,19 @@ export async function handleOwnerCommand(
           matches.length > 1
         ) {
 
-          await sock.sendMessage(
-            jid,
-            {
-              text:
-                error(
-                  "MULTIPLE GROUPS FOUND",
-                  [
-                    `👥 Name: ${groupName}`,
-                    "",
-                    `⚠️ ${matches.length} groups share`,
-                    "this exact name.",
-                    "",
-                    "Rename one of the groups",
-                    "before broadcasting.",
-                  ]
-                ),
-            }
+          await sendReply(
+            error(
+              "MULTIPLE GROUPS FOUND",
+              [
+                `👥 Name: ${groupName}`,
+                "",
+                `⚠️ ${matches.length} groups share`,
+                "this exact name.",
+                "",
+                "Rename one of the groups",
+                "before broadcasting.",
+              ]
+            )
           );
 
           return true;
@@ -1105,6 +1045,11 @@ export async function handleOwnerCommand(
           groupName;
 
 
+        /*
+         * IMPORTANT:
+         * This is the actual broadcast delivery.
+         * It intentionally remains a normal sendMessage().
+         */
         await sock.sendMessage(
           targetJid,
           {
@@ -1113,22 +1058,21 @@ export async function handleOwnerCommand(
         );
 
 
-        await sock.sendMessage(
-          jid,
-          {
-            text:
-              success(
-                "BROADCAST SENT",
-                [
-                  `👥 Group: ${targetName}`,
-                  "",
-                  "📡 Message delivered successfully.",
-                  "",
-                  "🟢 Target matched by group name.",
-                  "🛡️ No group JID was required.",
-                ]
-              ),
-          }
+        /*
+         * The owner's confirmation is a reply.
+         */
+        await sendReply(
+          success(
+            "BROADCAST SENT",
+            [
+              `👥 Group: ${targetName}`,
+              "",
+              "📡 Message delivered successfully.",
+              "",
+              "🟢 Target matched by group name.",
+              "🛡️ No group JID was required.",
+            ]
+          )
         );
 
       } catch (err) {
@@ -1138,20 +1082,16 @@ export async function handleOwnerCommand(
           err
         );
 
-        await sock.sendMessage(
-          jid,
-          {
-            text:
-              error(
-                "BROADCAST FAILED",
-                [
-                  "📡 The broadcast could not be sent.",
-                  "",
-                  "💡 Verify that Dark Vortex",
-                  "is still connected to WhatsApp.",
-                ]
-              ),
-          }
+        await sendReply(
+          error(
+            "BROADCAST FAILED",
+            [
+              "📡 The broadcast could not be sent.",
+              "",
+              "💡 Verify that Dark Vortex",
+              "is still connected to WhatsApp.",
+            ]
+          )
         );
       }
 
@@ -1169,18 +1109,14 @@ export async function handleOwnerCommand(
         !jid.endsWith("@g.us")
       ) {
 
-        await sock.sendMessage(
-          jid,
-          {
-            text:
-              error(
-                "GROUP ONLY",
-                [
-                  "👥 This command requires",
-                  "a WhatsApp group.",
-                ]
-              ),
-          }
+        await sendReply(
+          error(
+            "GROUP ONLY",
+            [
+              "👥 This command requires",
+              "a WhatsApp group.",
+            ]
+          )
         );
 
         return true;
@@ -1201,44 +1137,36 @@ export async function handleOwnerCommand(
           result.total === 0
         ) {
 
-          await sock.sendMessage(
-            jid,
-            {
-              text:
-                vortexBox(
-                  "👥 JOIN REQUESTS",
-                  [
-                    "📊 Pending: 0",
-                    "",
-                    "🟢 No pending join requests.",
-                    "",
-                    "Nothing needs approval.",
-                  ]
-                ),
-            }
+          await sendReply(
+            vortexBox(
+              "👥 JOIN REQUESTS",
+              [
+                "📊 Pending: 0",
+                "",
+                "🟢 No pending join requests.",
+                "",
+                "Nothing needs approval.",
+              ]
+            )
           );
 
           return true;
         }
 
 
-        await sock.sendMessage(
-          jid,
-          {
-            text:
-              success(
-                "APPROVAL COMPLETE",
-                [
-                  `👥 Requests: ${result.total}`,
-                  `✅ Approved: ${result.processed}`,
-                  `❌ Failed: ${result.failed}`,
-                  "",
-                  result.failed === 0
-                    ? "🟢 All pending requests approved."
-                    : "🟡 Approval completed with some failures.",
-                ]
-              ),
-          }
+        await sendReply(
+          success(
+            "APPROVAL COMPLETE",
+            [
+              `👥 Requests: ${result.total}`,
+              `✅ Approved: ${result.processed}`,
+              `❌ Failed: ${result.failed}`,
+              "",
+              result.failed === 0
+                ? "🟢 All pending requests approved."
+                : "🟡 Approval completed with some failures.",
+            ]
+          )
         );
 
       } catch (err) {
@@ -1248,21 +1176,17 @@ export async function handleOwnerCommand(
           err
         );
 
-        await sock.sendMessage(
-          jid,
-          {
-            text:
-              error(
-                "APPROVAL FAILED",
-                [
-                  "👥 Pending join requests",
-                  "could not be processed.",
-                  "",
-                  "💡 Make sure Dark Vortex",
-                  "is a group administrator.",
-                ]
-              ),
-          }
+        await sendReply(
+          error(
+            "APPROVAL FAILED",
+            [
+              "👥 Pending join requests",
+              "could not be processed.",
+              "",
+              "💡 Make sure Dark Vortex",
+              "is a group administrator.",
+            ]
+          )
         );
       }
 
@@ -1280,18 +1204,14 @@ export async function handleOwnerCommand(
         !jid.endsWith("@g.us")
       ) {
 
-        await sock.sendMessage(
-          jid,
-          {
-            text:
-              error(
-                "GROUP ONLY",
-                [
-                  "👥 This command requires",
-                  "a WhatsApp group.",
-                ]
-              ),
-          }
+        await sendReply(
+          error(
+            "GROUP ONLY",
+            [
+              "👥 This command requires",
+              "a WhatsApp group.",
+            ]
+          )
         );
 
         return true;
@@ -1312,44 +1232,36 @@ export async function handleOwnerCommand(
           result.total === 0
         ) {
 
-          await sock.sendMessage(
-            jid,
-            {
-              text:
-                vortexBox(
-                  "👥 JOIN REQUESTS",
-                  [
-                    "📊 Pending: 0",
-                    "",
-                    "🟢 No pending join requests.",
-                    "",
-                    "Nothing needs rejection.",
-                  ]
-                ),
-            }
+          await sendReply(
+            vortexBox(
+              "👥 JOIN REQUESTS",
+              [
+                "📊 Pending: 0",
+                "",
+                "🟢 No pending join requests.",
+                "",
+                "Nothing needs rejection.",
+              ]
+            )
           );
 
           return true;
         }
 
 
-        await sock.sendMessage(
-          jid,
-          {
-            text:
-              success(
-                "REJECTION COMPLETE",
-                [
-                  `👥 Requests: ${result.total}`,
-                  `❌ Rejected: ${result.processed}`,
-                  `⚠️ Failed: ${result.failed}`,
-                  "",
-                  result.failed === 0
-                    ? "🟢 All pending requests rejected."
-                    : "🟡 Rejection completed with some failures.",
-                ]
-              ),
-          }
+        await sendReply(
+          success(
+            "REJECTION COMPLETE",
+            [
+              `👥 Requests: ${result.total}`,
+              `❌ Rejected: ${result.processed}`,
+              `⚠️ Failed: ${result.failed}`,
+              "",
+              result.failed === 0
+                ? "🟢 All pending requests rejected."
+                : "🟡 Rejection completed with some failures.",
+            ]
+          )
         );
 
       } catch (err) {
@@ -1359,21 +1271,17 @@ export async function handleOwnerCommand(
           err
         );
 
-        await sock.sendMessage(
-          jid,
-          {
-            text:
-              error(
-                "REJECTION FAILED",
-                [
-                  "👥 Pending join requests",
-                  "could not be processed.",
-                  "",
-                  "💡 Make sure Dark Vortex",
-                  "is a group administrator.",
-                ]
-              ),
-          }
+        await sendReply(
+          error(
+            "REJECTION FAILED",
+            [
+              "👥 Pending join requests",
+              "could not be processed.",
+              "",
+              "💡 Make sure Dark Vortex",
+              "is a group administrator.",
+            ]
+          )
         );
       }
 
@@ -1395,44 +1303,36 @@ export async function handleOwnerCommand(
 
       if (!accepted) {
 
-        await sock.sendMessage(
-          jid,
-          {
-            text:
-              vortexBox(
-                "⚠️ LIFECYCLE BUSY",
-                [
-                  "🔄 A restart or shutdown",
-                  "operation is already running.",
-                  "",
-                  "🛡️ Existing lifecycle operation",
-                  "must finish first.",
-                ]
-              ),
-          }
+        await sendReply(
+          vortexBox(
+            "⚠️ LIFECYCLE BUSY",
+            [
+              "🔄 A restart or shutdown",
+              "operation is already running.",
+              "",
+              "🛡️ Existing lifecycle operation",
+              "must finish first.",
+            ]
+          )
         );
 
         return true;
       }
 
 
-      await sock.sendMessage(
-        jid,
-        {
-          text:
-            success(
-              "RESTART SEQUENCE",
-              [
-                "🔄 Dark Vortex is restarting.",
-                "",
-                "🛡️ WhatsApp session: PRESERVED",
-                "💾 Authentication data: PRESERVED",
-                "",
-                "⚡ Closing WhatsApp connection...",
-                "🚀 Restart signal prepared.",
-              ]
-            ),
-        }
+      await sendReply(
+        success(
+          "RESTART SEQUENCE",
+          [
+            "🔄 Dark Vortex is restarting.",
+            "",
+            "🛡️ WhatsApp session: PRESERVED",
+            "💾 Authentication data: PRESERVED",
+            "",
+            "⚡ Closing WhatsApp connection...",
+            "🚀 Restart signal prepared.",
+          ]
+        )
       );
 
 
@@ -1465,44 +1365,36 @@ export async function handleOwnerCommand(
 
       if (!accepted) {
 
-        await sock.sendMessage(
-          jid,
-          {
-            text:
-              vortexBox(
-                "⚠️ LIFECYCLE BUSY",
-                [
-                  "🛑 A restart or shutdown",
-                  "operation is already running.",
-                  "",
-                  "🛡️ Existing lifecycle operation",
-                  "must finish first.",
-                ]
-              ),
-          }
+        await sendReply(
+          vortexBox(
+            "⚠️ LIFECYCLE BUSY",
+            [
+              "🛑 A restart or shutdown",
+              "operation is already running.",
+              "",
+              "🛡️ Existing lifecycle operation",
+              "must finish first.",
+            ]
+          )
         );
 
         return true;
       }
 
 
-      await sock.sendMessage(
-        jid,
-        {
-          text:
-            success(
-              "SHUTDOWN SEQUENCE",
-              [
-                "🛑 Dark Vortex is shutting down.",
-                "",
-                "🛡️ WhatsApp session: PRESERVED",
-                "💾 Authentication data: PRESERVED",
-                "",
-                "⚡ Closing WhatsApp connection...",
-                "🔴 Process termination prepared.",
-              ]
-            ),
-        }
+      await sendReply(
+        success(
+          "SHUTDOWN SEQUENCE",
+          [
+            "🛑 Dark Vortex is shutting down.",
+            "",
+            "🛡️ WhatsApp session: PRESERVED",
+            "💾 Authentication data: PRESERVED",
+            "",
+            "⚡ Closing WhatsApp connection...",
+            "🔴 Process termination prepared.",
+          ]
+        )
       );
 
 
@@ -1529,4 +1421,3 @@ export async function handleOwnerCommand(
       return false;
   }
 }
-

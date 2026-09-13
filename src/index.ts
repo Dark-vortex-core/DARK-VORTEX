@@ -1,6 +1,9 @@
 import os from "node:os";
+import fs from "node:fs/promises";
+import path from "node:path";
 
 import makeWASocket, {
+  type WAMessage,
   DisconnectReason,
   useMultiFileAuthState,
   fetchLatestBaileysVersion,
@@ -9,8 +12,26 @@ import makeWASocket, {
 
 import { Boom } from "@hapi/boom";
 import pino from "pino";
-
 import qrcode from "qrcode-terminal";
+import {
+  setSessionStatus,
+  markSessionConnected,
+  markSessionDisconnected,
+  setSessionAccount,
+  setSessionPairingMode,
+  getSessionStartedAt,
+} from "./services/session-state.js";
+import {
+  startPairingApi,
+  stopPairingApi,
+  updatePairingApiState,
+  setPairingQr,
+  setPairingCode,
+  setPairingConnecting,
+  setPairingConnected,
+  setPairingDisconnected,
+  setPairingArtifactVisibility,
+} from "./services/pairing-api.js";
 
 import {
   setActiveSocket,
@@ -33,6 +54,7 @@ import { config } from "./config.js";
 import {
   processAway,
   markOwnerActivity,
+  markOwnerResponse,
 } from "./services/away.js";
 
 import { processTrigger } from "./services/triggers.js";
@@ -46,6 +68,7 @@ import {
 
 import {
   log,
+  incomingMessage,
   startupBox,
   startupLine,
   endStartupBox,
@@ -69,6 +92,14 @@ import {
 } from "./commands/moderation.js";
 
 import {
+  trackOutgoingMessage,
+  isTrackedOutgoingMessage,
+} from "./utils/outgoing-message-tracker.js";
+import {
+  rememberMessage,
+  processAntiEditUpdate,
+} from "./services/anti-edit.js";
+import {
   processSlowmode,
 } from "./services/slowmode.js";
 
@@ -76,6 +107,14 @@ import {
   sendWelcome,
   sendGoodbye,
 } from "./services/automation.js";
+
+import {
+  processDarkVortexAI,
+} from "./services/dark-vortex-ai.js";
+
+import {
+  getPrefix,
+} from "./services/prefix.js";
 
 // ============================================================
 // VX SECURITY
@@ -98,6 +137,24 @@ import {
 } from "./security/vx-monitor.js";
 
 // ============================================================
+// 🌑 DARK VORTEX TERMINAL DASHBOARD
+// ============================================================
+
+import {
+  startTerminalDashboard,
+  shutdownTerminalDashboard,
+  addDashboardEvent,
+  setDashboardConnection,
+  setDashboardLatency,
+  setDashboardGroups,
+  setDashboardSecurity,
+  setDashboardMemoryCleanup,
+  setDashboardSignalCleanup,
+  incrementDashboardMessages,
+  incrementDashboardCommands,
+} from "./services/terminal-dashboard.js";
+
+// ============================================================
 // 🌑 DARK VORTEX
 // ============================================================
 
@@ -108,51 +165,596 @@ const OWNER_NUMBER = config.ownerNumber
   .replace(/@.*$/, "")
   .replace(/\D/g, "");
 
-const logger = pino({
-  level: "silent",
-});
+const AUTH_DIR = path.resolve(
+  process.cwd(),
+  "auth",
+);
+
+const AUTH_BACKUP_DIR = path.resolve(
+  process.cwd(),
+  "auth-backups",
+);
+
+// ============================================================
+// AUTOMATIC SIGNAL SESSION CLEANUP
+// ============================================================
+
+const SIGNAL_CLEANUP_THRESHOLD = 3;
+const SIGNAL_CLEANUP_WINDOW = 30_000;
+
+let signalErrorTimes: number[] = [];
+
+let automaticSignalCleanupInProgress =
+  false;
+
+let signalCleanupTimer:
+  NodeJS.Timeout | null = null;
+
+function isSignalSessionError(
+  value: unknown,
+): boolean {
+  const text =
+    value instanceof Error
+      ? value.stack ||
+        value.message ||
+        ""
+      : String(value ?? "");
+
+  const normalized =
+    text.toLowerCase();
+
+  return (
+    normalized.includes("bad mac") ||
+    normalized.includes(
+      "verify mac",
+    ) ||
+    normalized.includes(
+      "session error",
+    ) ||
+    normalized.includes(
+      "decryptwhispermessage",
+    ) ||
+    normalized.includes(
+      "dodecryptwhispermessage",
+    )
+  );
+}
+
+function registerSignalSessionError(): boolean {
+  const now = Date.now();
+
+  signalErrorTimes =
+    signalErrorTimes.filter(
+      (timestamp) =>
+        now - timestamp <=
+        SIGNAL_CLEANUP_WINDOW,
+    );
+
+  signalErrorTimes.push(now);
+
+  return (
+    signalErrorTimes.length >=
+    SIGNAL_CLEANUP_THRESHOLD
+  );
+}
+
+function resetSignalSessionErrors(): void {
+  signalErrorTimes = [];
+}
+
+async function backupAuthSession(): Promise<
+  string | null
+> {
+  try {
+    await fs.mkdir(
+      AUTH_BACKUP_DIR,
+      {
+        recursive: true,
+      },
+    );
+
+    const timestamp =
+      new Date()
+        .toISOString()
+        .replace(/[:.]/g, "-");
+
+    const backupPath =
+      path.join(
+        AUTH_BACKUP_DIR,
+        `auth-${timestamp}`,
+      );
+
+    try {
+      await fs.rename(
+        AUTH_DIR,
+        backupPath,
+      );
+
+      return backupPath;
+    } catch (error) {
+      const code =
+        (
+          error as NodeJS.ErrnoException
+        )?.code;
+
+      if (code === "ENOENT") {
+        return null;
+      }
+
+      throw error;
+    }
+  } catch (error) {
+    log.error(
+      "Failed to backup old WhatsApp authentication session.",
+      error,
+    );
+
+    return null;
+  }
+}
+
+async function performAutomaticSignalCleanup(): Promise<void> {
+  if (
+    automaticSignalCleanupInProgress ||
+    shuttingDown
+  ) {
+    return;
+  }
+
+  automaticSignalCleanupInProgress =
+    true;
+
+  setDashboardSignalCleanup(
+    "RUNNING",
+  );
+
+  addDashboardEvent(
+    "SIGNAL",
+    "RECOVERY",
+    "Automatic Signal session recovery started.",
+  );
+
+  if (signalCleanupTimer) {
+    clearTimeout(
+      signalCleanupTimer,
+    );
+
+    signalCleanupTimer = null;
+  }
+
+  resetSignalSessionErrors();
+
+  log.security(
+    "⚠️ Repeated WhatsApp Signal-session errors detected.",
+  );
+
+  log.security(
+    "🧹 Automatic Signal session cleanup starting...",
+  );
+
+  try {
+    disableReconnect();
+
+    clearConnectionTimers();
+
+    try {
+      await stopAllVxMonitors();
+
+      log.security(
+        "VX live monitoring sessions stopped before session cleanup.",
+      );
+    } catch (error) {
+      log.error(
+        "Failed to stop VX monitors during Signal cleanup.",
+        error,
+      );
+    }
+
+    try {
+      if (currentSocket) {
+        await closeActiveSocket();
+      }
+    } catch (error) {
+      log.error(
+        "Failed to close WhatsApp socket during Signal cleanup.",
+        error,
+      );
+    }
+
+    currentSocket = null;
+    setActiveSocket(null);
+    updateRestSocket(null);
+
+    await new Promise(
+      (resolve) =>
+        setTimeout(resolve, 1000),
+    );
+
+    const backupPath =
+      await backupAuthSession();
+
+    if (backupPath) {
+      log.security(
+        `🧹 Old Signal session backed up safely: ${path.basename(
+          backupPath,
+        )}`,
+      );
+    } else {
+      log.warn(
+        "No existing auth folder was available to backup.",
+      );
+    }
+
+    log.security(
+      "♻️ Fresh WhatsApp authentication session will be created.",
+    );
+
+    enableReconnect();
+
+    await new Promise(
+      (resolve) =>
+        setTimeout(resolve, 1500),
+    );
+
+    if (
+      shuttingDown ||
+      currentSocket
+    ) {
+      return;
+    }
+
+    await startBot();
+
+    setDashboardSignalCleanup(
+      "COMPLETE",
+    );
+
+    addDashboardEvent(
+      "SIGNAL",
+      "RECOVERY",
+      "Fresh authentication session created.",
+    );
+
+    log.success(
+      "✅ Automatic Signal session cleanup completed.",
+    );
+  } catch (error) {
+    setDashboardSignalCleanup(
+      "FAILED",
+    );
+
+    addDashboardEvent(
+      "SIGNAL",
+      "RECOVERY",
+      "Automatic Signal session recovery failed.",
+    );
+
+    log.fatal(
+      "Automatic Signal session cleanup failed.",
+      error,
+    );
+
+    enableReconnect();
+
+    if (
+      !shuttingDown &&
+      !currentSocket &&
+      !reconnectTimer
+    ) {
+      reconnectTimer =
+        setTimeout(
+          () => {
+            reconnectTimer = null;
+
+            if (
+              shuttingDown ||
+              currentSocket
+            ) {
+              return;
+            }
+
+            void startBot().catch(
+              (retryError) => {
+                log.error(
+                  "Retry after Signal cleanup failed.",
+                  retryError,
+                );
+              },
+            );
+          },
+          5000,
+        );
+    }
+  } finally {
+    automaticSignalCleanupInProgress =
+      false;
+  }
+}
+
+function handleSignalSessionLog(
+  value: unknown,
+): void {
+  if (
+    automaticSignalCleanupInProgress ||
+    shuttingDown
+  ) {
+    return;
+  }
+
+  // Never process or display structured Signal session objects.
+  // They may contain cryptographic session material.
+  if (typeof value !== "string") {
+    return;
+  }
+
+  const text = value.trim();
+
+  if (!text) {
+    return;
+  }
+
+  // Never expose Signal cryptographic/session internals.
+  const sensitiveSignalLog =
+    /Closing session|SessionEntry|currentRatchet|ephemeralKeyPair|remoteIdentityKey|pendingPreKey|chainKey|messageKeys|registrationId/i;
+
+  if (sensitiveSignalLog.test(text)) {
+    return;
+  }
+
+  if (
+    !isSignalSessionError(text)
+  ) {
+    return;
+  }
+
+  const thresholdReached =
+    registerSignalSessionError();
+
+  if (!thresholdReached) {
+    log.warn(
+      `Signal session error detected • automatic cleanup threshold: ${signalErrorTimes.length}/${SIGNAL_CLEANUP_THRESHOLD}`,
+    );
+
+    return;
+  }
+
+  if (signalCleanupTimer) {
+    return;
+  }
+
+  log.security(
+    "🚨 Signal-session error threshold reached • automatic cleanup armed.",
+  );
+
+  signalCleanupTimer =
+    setTimeout(
+      () => {
+        signalCleanupTimer = null;
+
+        void performAutomaticSignalCleanup();
+      },
+      250,
+    );
+}
+
+// ============================================================
+// BAILEYS LOGGER
+// ============================================================
+
+const loggerStream = {
+  write(chunk: string): boolean {
+    try {
+      const text = String(chunk).trim();
+
+      // Never forward raw Signal/session objects to the terminal.
+      // These logs can contain cryptographic session material.
+      if (
+        text.includes("Closing session") ||
+        text.includes("SessionEntry") ||
+        text.includes("ephemeralKeyPair") ||
+        text.includes("remoteIdentityKey") ||
+        text.includes("currentRatchet") ||
+        text.includes("pendingPreKey") ||
+        text.includes("chainKey") ||
+        text.includes("messageKeys")
+      ) {
+        return true;
+      }
+
+      // Only pass safe Signal/session status messages onward.
+      handleSignalSessionLog(text);
+    } catch {
+      // Never allow logger failures to affect the bot.
+    }
+
+    return true;
+  },
+};
+
+const logger = pino(
+  {
+    // Keep Baileys from flooding the dashboard/terminal.
+    level: "silent",
+
+    // Prevent object inspection/debug output.
+    serializers: {
+      err: pino.stdSerializers.err,
+    },
+  },
+  loggerStream,
+);
+
+// ============================================================
+// RUNTIME STATE
+// ============================================================
 
 let botStarted = false;
-let reconnectTimer: NodeJS.Timeout | null = null;
+
+let reconnectTimer:
+  NodeJS.Timeout | null = null;
+
 let botStarting = false;
 
-let dailyReportTimer: NodeJS.Timeout | null = null;
-let systemReadyTimer: NodeJS.Timeout | null = null;
-let timeGreetingTimer: NodeJS.Timeout | null = null;
+let dailyReportTimer:
+  NodeJS.Timeout | null = null;
 
-let lastTimeGreetingKey: string | null = null;
+let systemReadyTimer:
+  NodeJS.Timeout | null = null;
+
+let timeGreetingTimer:
+  NodeJS.Timeout | null = null;
+
+let lastTimeGreetingKey:
+  string | null = null;
 
 let shuttingDown = false;
+
 let currentSocket: any = null;
 
 let socketCreationInProgress = false;
-let socketGeneration = 0;
 
-/**
- * Identifies the currently active WhatsApp connection.
- *
- * Any timer belonging to an older socket is ignored.
- */
-let connectionGeneration = 0;
+let socketGeneration = 0;
+;
+let connectionGeneration = 0
+
+// ============================================================
+// MESSAGE DUPLICATION PROTECTION
+// ============================================================
+//
+// Prevent the same WhatsApp message from being processed more
+// than once. This protects commands, VX operations, triggers,
+// moderation and other handlers from duplicate event delivery.
+//
+
+const processedMessageIds =
+  new Map<string, number>();
+
+const MESSAGE_DEDUP_WINDOW =
+  10 * 60 * 1000; // 10 minutes
+
+function hasProcessedMessage(
+  messageId?: string | null,
+): boolean {
+  if (!messageId) {
+    return false;
+  }
+
+  const now = Date.now();
+
+  // Remove expired entries.
+  for (
+    const [
+      id,
+      timestamp,
+    ] of processedMessageIds
+  ) {
+    if (
+      now - timestamp >
+      MESSAGE_DEDUP_WINDOW
+    ) {
+      processedMessageIds.delete(id);
+    }
+  }
+
+  if (
+    processedMessageIds.has(
+      messageId,
+    )
+  ) {
+    return true;
+  }
+
+  processedMessageIds.set(
+    messageId,
+    now,
+  );
+
+  return false;
+}
+
+// ============================================================
+// WHATSAPP PHONE-NUMBER PAIRING
+// ============================================================
+
+const PAIRING_MODE =
+  (process.env.PAIRING_MODE || "qr").trim().toLowerCase();
+
+const PAIRING_NUMBER =
+  (process.env.PAIRING_NUMBER || "").replace(/\D/g, "");
+
+// Runtime pairing settings.
+// These must be initialized directly from .env before the helper functions use them.
+let runtimePairingMode: "qr" | "pairing" =
+  PAIRING_MODE === "pairing" ? "pairing" : "qr";
+
+let runtimePairingNumber = PAIRING_NUMBER;
+
+let pairingCodeRequested = false;
+
+let apiSessionRequested = false;
+
+let websitePairingRequested = false;
+
+function isPairingMode(): boolean {
+  return runtimePairingMode === "pairing";
+}
+
+function getPairingNumber(): string {
+  return runtimePairingNumber;
+}
+
+function maskPhoneNumber(
+  number: string,
+): string {
+  if (number.length <= 6) {
+    return "***";
+  }
+
+  return (
+    number.slice(0, 3) +
+    "*".repeat(
+      Math.max(
+        1,
+        number.length - 6,
+      ),
+    ) +
+    number.slice(-3)
+  );
+}
+
+// ============================================================
+// HELPERS
+// ============================================================
 
 function clearConnectionTimers(): void {
   if (dailyReportTimer) {
-    clearInterval(dailyReportTimer);
+    clearInterval(
+      dailyReportTimer,
+    );
+
     dailyReportTimer = null;
   }
 
   if (systemReadyTimer) {
-    clearTimeout(systemReadyTimer);
+    clearTimeout(
+      systemReadyTimer,
+    );
+
     systemReadyTimer = null;
   }
 
   if (timeGreetingTimer) {
-    clearTimeout(timeGreetingTimer);
+    clearTimeout(
+      timeGreetingTimer,
+    );
+
     timeGreetingTimer = null;
   }
 }
 
-function isCurrentSocket(sock: any): boolean {
+function isCurrentSocket(
+  sock: any,
+): boolean {
   return sock === currentSocket;
 }
 
@@ -160,13 +762,6 @@ function isCurrentSocket(sock: any): boolean {
 // VX AUTOMATIC INTELLIGENCE STATE
 // ============================================================
 
-/*
- * Prevents VX bot-profile persistence from being executed
- * excessively for every single incoming message.
- *
- * VX message detection still runs automatically on messages.
- * Bot-profile persistence is throttled per participant.
- */
 const vxBotAnalysisTimes =
   new Map<string, number>();
 
@@ -174,22 +769,29 @@ const VX_BOT_ANALYSIS_INTERVAL =
   15_000;
 
 // ============================================================
-// HELPERS
+// GENERAL HELPERS
 // ============================================================
 
-function formatUptime(delay: number): string {
-  const totalSeconds = Math.floor(delay / 1000);
+function formatUptime(
+  delay: number,
+): string {
+  const totalSeconds =
+    Math.floor(
+      delay / 1000,
+    );
 
   const days = Math.floor(
     totalSeconds / 86400,
   );
 
   const hours = Math.floor(
-    (totalSeconds % 86400) / 3600,
+    (totalSeconds % 86400) /
+      3600,
   );
 
   const minutes = Math.floor(
-    (totalSeconds % 3600) / 60,
+    (totalSeconds % 3600) /
+      60,
   );
 
   const parts: string[] = [];
@@ -304,6 +906,57 @@ function getTimeGreeting(): {
   };
 }
 
+function formatDuration(
+  delay: number,
+): string {
+  return formatUptime(delay);
+}
+
+function getSessionUptime(): string {
+  const sessionStartedAt = getSessionStartedAt();
+
+  if (!sessionStartedAt) {
+    return "0s";
+  }
+
+  return formatDuration(
+    Date.now() - sessionStartedAt,
+  );
+}
+
+function getSessionStatus(): string {
+  if (
+    currentSocket &&
+    botStarted
+  ) {
+    return "CONNECTED";
+  }
+
+  if (botStarting) {
+    return "CONNECTING";
+  }
+
+  if (isResting()) {
+    return "RESTING";
+  }
+
+  if (reconnectTimer) {
+    return "RECONNECTING";
+  }
+
+  return "OFFLINE";
+}
+
+function getSessionAuthStatus(): string {
+  if (
+    currentSocket &&
+    botStarted
+  ) {
+    return "AUTHENTICATED";
+  }
+
+  return "NOT AUTHENTICATED";
+}
 // ============================================================
 // AUTOMATIC TIME GREETING SCHEDULER
 // ============================================================
@@ -319,18 +972,25 @@ function getCurrentGreetingPeriod():
     new Intl.DateTimeFormat(
       "en-US",
       {
-        timeZone: "Africa/Lagos",
+        timeZone:
+          "Africa/Lagos",
         hour: "numeric",
         hour12: false,
       },
     ).format(new Date()),
   );
 
-  if (hour >= 5 && hour < 12) {
+  if (
+    hour >= 5 &&
+    hour < 12
+  ) {
     return "morning";
   }
 
-  if (hour >= 12 && hour < 18) {
+  if (
+    hour >= 12 &&
+    hour < 18
+  ) {
     return "afternoon";
   }
 
@@ -341,7 +1001,8 @@ function getLagosDateKey(): string {
   return new Intl.DateTimeFormat(
     "en-CA",
     {
-      timeZone: "Africa/Lagos",
+      timeZone:
+        "Africa/Lagos",
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
@@ -360,7 +1021,8 @@ function getMillisecondsUntilNextGreeting(): number {
     new Intl.DateTimeFormat(
       "en-US",
       {
-        timeZone: "Africa/Lagos",
+        timeZone:
+          "Africa/Lagos",
         hour: "numeric",
         minute: "numeric",
         second: "numeric",
@@ -368,7 +1030,10 @@ function getMillisecondsUntilNextGreeting(): number {
       },
     ).formatToParts(now);
 
-  const values: Record<string, number> = {};
+  const values: Record<
+    string,
+    number
+  > = {};
 
   for (const part of parts) {
     if (
@@ -396,25 +1061,28 @@ function getMillisecondsUntilNextGreeting(): number {
     second;
 
   const greetingTimes = [
-    5 * 60 * 60,   // 05:00
-    12 * 60 * 60,  // 12:00
-    18 * 60 * 60,  // 18:00
+    5 * 60 * 60,
+    12 * 60 * 60,
+    18 * 60 * 60,
   ];
 
   const nextTime =
     greetingTimes.find(
       (time) =>
-        time > currentSeconds,
+        time >
+        currentSeconds,
     );
 
-  if (nextTime !== undefined) {
+  if (
+    nextTime !== undefined
+  ) {
     return (
-      (nextTime - currentSeconds) *
-        1000
+      (nextTime -
+        currentSeconds) *
+      1000
     );
   }
 
-  // Next greeting is tomorrow at 05:00.
   return (
     (24 * 60 * 60 -
       currentSeconds +
@@ -427,13 +1095,19 @@ async function sendAutomaticTimeGreeting(
   sock: any,
   period: TimeGreetingPeriod,
 ): Promise<void> {
-  if (shuttingDown || isResting()) {
+  if (
+    shuttingDown ||
+    isResting()
+  ) {
     return;
   }
 
-  if (sock !== currentSocket) {
+  if (
+    sock !== currentSocket
+  ) {
     return;
   }
+
   const ownerJid =
     `${OWNER_NUMBER}@s.whatsapp.net`;
 
@@ -445,11 +1119,6 @@ async function sendAutomaticTimeGreeting(
   const currentPeriod =
     getCurrentGreetingPeriod();
 
-  /*
-   * Safety check:
-   * Never send a morning greeting during
-   * afternoon/evening, etc.
-   */
   if (
     currentPeriod !== period
   ) {
@@ -481,6 +1150,12 @@ async function sendAutomaticTimeGreeting(
     log.success(
       `Automatic ${period} greeting sent.`,
     );
+
+    addDashboardEvent(
+      "SYSTEM",
+      "GREETING",
+      `Automatic ${period} owner greeting sent.`,
+    );
   } catch (error) {
     log.error(
       `Failed to send automatic ${period} greeting.`,
@@ -491,70 +1166,97 @@ async function sendAutomaticTimeGreeting(
 
 function scheduleNextTimeGreeting(
   sock: any,
-  generation: number = connectionGeneration,
+  generation: number =
+    connectionGeneration,
 ): void {
   if (shuttingDown) {
     return;
   }
 
-  // Ignore schedulers belonging to an old socket.
-  if (generation !== connectionGeneration) {
+  if (
+    generation !==
+    connectionGeneration
+  ) {
     return;
   }
 
   if (timeGreetingTimer) {
-    clearTimeout(timeGreetingTimer);
+    clearTimeout(
+      timeGreetingTimer,
+    );
+
     timeGreetingTimer = null;
   }
 
-  const delay = getMillisecondsUntilNextGreeting();
+  const delay =
+    getMillisecondsUntilNextGreeting();
 
-  timeGreetingTimer = setTimeout(
-    async () => {
-      timeGreetingTimer = null;
+  timeGreetingTimer =
+    setTimeout(
+      async () => {
+        timeGreetingTimer =
+          null;
 
-      if (shuttingDown) {
-        return;
-      }
+        if (shuttingDown) {
+          return;
+        }
 
-      // Old socket/timer — do nothing.
-      if (generation !== connectionGeneration) {
-        return;
-      }
+        if (
+          generation !==
+          connectionGeneration
+        ) {
+          return;
+        }
 
-      // Socket is no longer the active socket.
-      if (currentSocket !== sock) {
-        return;
-      }
+        if (
+          currentSocket !== sock
+        ) {
+          return;
+        }
 
-      // Never generate automatic greetings during rest.
-      if (isResting()) {
-        scheduleNextTimeGreeting(sock, generation);
-        return;
-      }
+        if (isResting()) {
+          scheduleNextTimeGreeting(
+            sock,
+            generation,
+          );
 
-      const period = getCurrentGreetingPeriod();
-      const greetingKey = getGreetingPeriodKey();
+          return;
+        }
 
-      if (lastTimeGreetingKey !== greetingKey) {
-        await sendAutomaticTimeGreeting(
+        const period =
+          getCurrentGreetingPeriod();
+
+        const greetingKey =
+          getGreetingPeriodKey();
+
+        if (
+          lastTimeGreetingKey !==
+          greetingKey
+        ) {
+          await sendAutomaticTimeGreeting(
+            sock,
+            period,
+          );
+
+          lastTimeGreetingKey =
+            greetingKey;
+        }
+
+        scheduleNextTimeGreeting(
           sock,
-          period,
+          generation,
         );
-
-        lastTimeGreetingKey = greetingKey;
-      }
-
-      scheduleNextTimeGreeting(
-        sock,
-        generation,
-      );
-    },
-    Math.max(delay, 1000),
-  );
+      },
+      Math.max(
+        delay,
+        1000,
+      ),
+    );
 
   log.system(
-    `Time greeting scheduler • NEXT UPDATE IN ${formatUptime(delay)}`,
+    `Time greeting scheduler • NEXT UPDATE IN ${formatUptime(
+      delay,
+    )}`,
   );
 }
 
@@ -575,16 +1277,15 @@ function normalizePhoneNumber(
       .replace(/@.*$/, "")
       .replace(/\D/g, "");
 
-  return number || undefined;
+  return (
+    number || undefined
+  );
 }
 
 function getActorPhoneNumber(
   sender: string,
   senderAlt?: string,
 ): string | undefined {
-  /*
-   * Prefer the real WhatsApp number when a LID is involved.
-   */
   if (
     senderAlt &&
     senderAlt.endsWith(
@@ -644,18 +1345,12 @@ async function processVxMessage(
   groupName?: string,
   participantCount?: number,
 ): Promise<void> {
-  /*
-   * VX currently focuses its behavioral sensor on groups.
-   */
   if (
     !jid.endsWith("@g.us")
   ) {
     return;
   }
 
-  /*
-   * Ignore the bot's own messages.
-   */
   if (
     sender ===
       sock.user?.id ||
@@ -667,21 +1362,14 @@ async function processVxMessage(
 
   const actor = {
     jid: sender,
-
     phoneNumber:
       getActorPhoneNumber(
         sender,
         senderAlt,
       ),
-
-    name:
-      undefined,
-
-    isAdmin:
-      undefined,
-
-    isBot:
-      undefined,
+    name: undefined,
+    isAdmin: undefined,
+    isBot: undefined,
   };
 
   const group =
@@ -691,9 +1379,6 @@ async function processVxMessage(
       participantCount,
     );
 
-  /*
-   * URL/link detection.
-   */
   const hasLink =
     /https?:\/\/\S+/i.test(
       text,
@@ -702,27 +1387,16 @@ async function processVxMessage(
       text,
     );
 
-  /*
-   * Feed the message into the VX
-   * behavioral detection engine.
-   *
-   * detectVxMessage() itself performs
-   * risk analysis and event logging.
-   */
   let detection;
 
   try {
     detection =
       await detectVxMessage({
         group,
-
         actor,
-
         text:
           text || undefined,
-
         command,
-
         hasLink,
       });
   } catch (error) {
@@ -740,43 +1414,43 @@ async function processVxMessage(
       {
         actorJid:
           actor.jid,
-
         text,
-
         command,
-
         suspicious:
-          Boolean(detection),
+          Boolean(
+            detection,
+          ),
       },
     );
-
 
   if (
     correlation.coordinated
   ) {
     console.log(
-      `[VX] Coordinated activity detected in ${group.name || group.jid}: ` +
-      `${correlation.actors.length} actors, ` +
-      `risk=${correlation.score}, ` +
-      `confidence=${correlation.confidence}`,
+      `[VX] Coordinated activity detected in ${
+        group.name || group.jid
+      }: ` +
+        `${correlation.actors.length} actors, ` +
+        `risk=${correlation.score}, ` +
+        `confidence=${correlation.confidence}`,
+    );
+
+    addDashboardEvent(
+      "VX",
+      "CORRELATOR",
+      `Coordinated activity • ${correlation.actors.length} actors • risk ${correlation.score}`,
     );
   }
 
-  /*
-   * No meaningful behavioral signal yet.
-   */
   if (!detection) {
     return;
   }
 
-  /*
-   * VX event analysis has already happened
-   * inside detectVxMessage().
-   *
-   * Do not call analyzeVxEvent() again here,
-   * otherwise the same detection could be
-   * logged twice.
-   */
+  addDashboardEvent(
+    "VX",
+    "DETECTOR",
+    "Suspicious activity detected and analyzed.",
+  );
 
   const metadata =
     detection.event?.metadata;
@@ -784,36 +1458,31 @@ async function processVxMessage(
   const messagesPerMinute =
     Number(
       metadata?.messagesPerMinute ||
-      0,
+        0,
     );
 
   const commands =
     Number(
       metadata?.commands ||
-      0,
+        0,
     );
 
   const links =
     Number(
       metadata?.links ||
-      0,
+        0,
     );
 
   const similarity =
     Number(
       metadata?.messageSimilarity ||
-      0,
+        0,
     );
 
-  /*
-   * Only persist the more expensive bot
-   * intelligence profile periodically.
-   */
   const actorKey =
     `${jid}:${sender}`;
 
-  const now =
-    Date.now();
+  const now = Date.now();
 
   const lastAnalysis =
     vxBotAnalysisTimes.get(
@@ -821,7 +1490,8 @@ async function processVxMessage(
     ) || 0;
 
   const shouldAnalyzeBot =
-    now - lastAnalysis >=
+    now -
+      lastAnalysis >=
     VX_BOT_ANALYSIS_INTERVAL;
 
   if (
@@ -839,55 +1509,49 @@ async function processVxMessage(
     const result =
       await analyzeVxBot({
         group,
-
         actor,
-
         messages: 1,
-
         commands:
           command
             ? 1
             : 0,
-
         links:
           hasLink
             ? 1
             : 0,
-
         repeatedMessages:
           similarity >= 0.5
             ? 1
             : 0,
-
         messagesPerMinute,
-
         reason:
           "VX automatic behavioral intelligence analysis.",
-
-        /*
-         * The detector already created an
-         * incident for strong individual
-         * behavioral indicators.
-         *
-         * Allow the persistent bot profile
-         * to create its own incident when
-         * cumulative intelligence crosses
-         * the suspected-bot threshold.
-         */
         createIncident: true,
       });
 
-    /*
-     * Only log high-confidence bot
-     * intelligence to the normal console.
-     * The persistent VX system has already
-     * handled its audit records.
-     */
     if (
       result.suspectedBot
     ) {
+      setDashboardSecurity({
+        vxActive: true,
+        threats: 1,
+      });
+
+      addDashboardEvent(
+        "VX",
+        "BOT INTEL",
+        `Suspected bot detected • risk ${result.riskScore}/100`,
+      );
+
       log.security(
-        `VX suspected bot • ${actor.phoneNumber || sender} • risk ${result.riskScore}/100 • confidence ${result.confidence}%`,
+        `VX suspected bot • ${
+          actor.phoneNumber ||
+          sender
+        } • risk ${
+          result.riskScore
+        }/100 • confidence ${
+          result.confidence
+        }%`,
       );
     }
   } catch (error) {
@@ -916,7 +1580,13 @@ async function sendDailyOwnerReport(
         await sock.groupFetchAllParticipating();
 
       groupCount =
-        Object.keys(groups).length;
+        Object.keys(
+          groups,
+        ).length;
+
+      setDashboardGroups(
+        groupCount,
+      );
     } catch {
       groupCount = 0;
     }
@@ -950,7 +1620,8 @@ async function sendDailyOwnerReport(
       `┃\n` +
       `┃ 👥 Groups: ${groupCount}\n` +
       `┃ ⏱️ Uptime: ${formatUptime(
-        process.uptime() * 1000,
+        process.uptime() *
+          1000,
       )}\n` +
       `┃\n` +
       `┃ 🧠 MEMORY\n` +
@@ -982,6 +1653,12 @@ async function sendDailyOwnerReport(
       },
     );
 
+    addDashboardEvent(
+      "SYSTEM",
+      "REPORT",
+      "Daily owner report sent.",
+    );
+
     log.success(
       "Daily owner report sent.",
     );
@@ -999,7 +1676,8 @@ async function sendDailyOwnerReport(
 
 async function sendOwnerStartupGreeting(
   sock: any,
-  generation: number = connectionGeneration
+  generation: number =
+    connectionGeneration,
 ): Promise<void> {
   const ownerJid =
     `${OWNER_NUMBER}@s.whatsapp.net`;
@@ -1007,8 +1685,7 @@ async function sendOwnerStartupGreeting(
   const {
     greeting,
     emoji,
-  } =
-    getTimeGreeting();
+  } = getTimeGreeting();
 
   try {
     await sock.sendMessage(
@@ -1037,6 +1714,12 @@ async function sendOwnerStartupGreeting(
       "Owner startup greeting sent.",
     );
 
+    addDashboardEvent(
+      "SYSTEM",
+      "OWNER",
+      "Owner startup greeting sent.",
+    );
+
     if (systemReadyTimer) {
       clearTimeout(
         systemReadyTimer,
@@ -1046,18 +1729,23 @@ async function sendOwnerStartupGreeting(
     systemReadyTimer =
       setTimeout(
         async () => {
-          systemReadyTimer = null;
+          systemReadyTimer =
+            null;
 
           if (shuttingDown) {
             return;
           }
 
-          if (generation !== connectionGeneration) {
+          if (
+            generation !==
+            connectionGeneration
+          ) {
             return;
           }
 
-
-          if (sock !== currentSocket) {
+          if (
+            sock !== currentSocket
+          ) {
             return;
           }
 
@@ -1073,7 +1761,13 @@ async function sendOwnerStartupGreeting(
                 await sock.groupFetchAllParticipating();
 
               groupCount =
-                Object.keys(groups).length;
+                Object.keys(
+                  groups,
+                ).length;
+
+              setDashboardGroups(
+                groupCount,
+              );
             } catch {
               groupCount = 0;
             }
@@ -1112,6 +1806,12 @@ async function sendOwnerStartupGreeting(
               },
             );
 
+            addDashboardEvent(
+              "SYSTEM",
+              "CORE",
+              `System ready • ${groupCount} connected groups.`,
+            );
+
             log.success(
               "Owner system-ready message sent.",
             );
@@ -1138,7 +1838,8 @@ async function sendOwnerStartupGreeting(
 
 function startDailyOwnerReport(
   sock: any,
-  generation: number = connectionGeneration,
+  generation: number =
+    connectionGeneration,
 ): void {
   const ONE_DAY =
     24 * 60 * 60 * 1000;
@@ -1156,11 +1857,16 @@ function startDailyOwnerReport(
           return;
         }
 
-        if (generation !== connectionGeneration) {
+        if (
+          generation !==
+          connectionGeneration
+        ) {
           return;
         }
 
-        if (sock !== currentSocket) {
+        if (
+          sock !== currentSocket
+        ) {
           return;
         }
 
@@ -1194,7 +1900,9 @@ function getMessageTypeNames(
     return [];
   }
 
-  return Object.keys(message);
+  return Object.keys(
+    message,
+  );
 }
 
 function isPotentialStatusShare(
@@ -1208,10 +1916,11 @@ function isPotentialStatusShare(
   }
 
   const keys =
-    getMessageTypeNames(message)
-      .map((key) =>
-        key.toLowerCase(),
-      );
+    getMessageTypeNames(
+      message,
+    ).map((key) =>
+      key.toLowerCase(),
+    );
 
   const directStatusKeys = [
     "statusmentionmessage",
@@ -1334,12 +2043,24 @@ async function syncGroupRegistry(
       `Group registry • found ${groupList.length} group(s)`,
     );
 
+    setDashboardGroups(
+      groupList.length,
+    );
+
+    addDashboardEvent(
+      "GROUPS",
+      "REGISTRY",
+      `${groupList.length} group(s) synchronized.`,
+    );
+
     for (
       const group of groupList as any[]
     ) {
       if (
         !group?.id ||
-        !group.id.endsWith("@g.us")
+        !group.id.endsWith(
+          "@g.us",
+        )
       ) {
         continue;
       }
@@ -1368,6 +2089,325 @@ async function syncGroupRegistry(
     );
   }
 }
+// ============================================================
+// DARK VORTEX — TERMINAL MESSAGE DETAILS
+// ============================================================
+
+function getTerminalMessageType(
+  msg: WAMessage,
+): string {
+  const content = msg.message;
+
+  if (!content) {
+    return "Unknown";
+  }
+
+  if (content.conversation || content.extendedTextMessage) {
+    return "Text";
+  }
+
+  if (content.imageMessage) {
+    return "Image";
+  }
+
+  if (content.videoMessage) {
+    return "Video";
+  }
+
+  if (content.audioMessage) {
+    return "Audio";
+  }
+
+  if (content.documentMessage) {
+    return "Document";
+  }
+
+  if (content.stickerMessage) {
+    return "Sticker";
+  }
+
+  if (content.locationMessage || content.liveLocationMessage) {
+    return "Location";
+  }
+
+  if (content.contactMessage || content.contactsArrayMessage) {
+    return "Contact";
+  }
+
+  if (content.pollCreationMessage || content.pollCreationMessageV3) {
+    return "Poll";
+  }
+
+  if (content.reactionMessage) {
+    return "Reaction";
+  }
+
+  return "Other";
+}
+
+
+function getTerminalSource(
+  jid: string,
+): string {
+  if (jid.endsWith("@g.us")) {
+    return "Group";
+  }
+
+  if (jid.endsWith("@broadcast")) {
+    return "Broadcast";
+  }
+
+  if (jid === "status@broadcast") {
+    return "Status";
+  }
+
+  return "Private";
+}
+
+
+function getTerminalSenderType(
+  owner: boolean,
+  fromMe: boolean,
+): string {
+  if (fromMe) {
+    return "Self";
+  }
+
+  if (owner) {
+    return "Owner";
+  }
+
+  return "User";
+}
+
+
+function formatTerminalContent(
+  text: string,
+): string {
+  const clean =
+    text
+      .replace(/\s+/g, " ")
+      .trim();
+
+  if (!clean) {
+    return "none";
+  }
+
+  const maxLength = 80;
+
+  if (clean.length <= maxLength) {
+    return clean;
+  }
+
+  return `${clean.slice(0, maxLength - 3)}...`;
+}
+
+
+function logIncomingTerminalMessage(
+  msg: WAMessage,
+  jid: string,
+  text: string,
+  owner: boolean,
+  fromMe: boolean,
+  isCommand: boolean,
+  commandName?: string,
+  args?: string[],
+): void {
+  const type =
+    getTerminalMessageType(msg);
+
+  const source =
+    getTerminalSource(jid);
+
+  const senderType =
+    getTerminalSenderType(
+      owner,
+      fromMe,
+    );
+
+  if (isCommand) {
+    const argumentText =
+      args && args.length > 0
+        ? args.join(" ")
+        : "none";
+
+    log.command(
+      [
+        "➜ COMMAND RECEIVED",
+        `   ├─ Type     : ${type}`,
+        `   ├─ Source   : ${source}`,
+        `   ├─ Sender   : ${senderType}`,
+        "   ├─ Command  : YES",
+        `   ├─ Name     : ${commandName || "unknown"}`,
+        `   └─ Arguments: ${formatTerminalContent(argumentText)}`,
+      ].join("\n"),
+    );
+
+    return;
+  }
+
+  log.info(
+    [
+      "➜ INCOMING MESSAGE",
+      `   ├─ Type     : ${type}`,
+      `   ├─ Source   : ${source}`,
+      `   ├─ Sender   : ${senderType}`,
+      "   ├─ Command  : NO",
+      `   └─ Content  : ${formatTerminalContent(text)}`,
+    ].join("\n"),
+  );
+}
+
+
+// ============================================================
+// 🌐 DARK VORTEX PAIRING API SESSION CONTROL
+// ============================================================
+
+async function startApiSession(
+  mode: "qr" | "pairing",
+  phoneNumber?: string,
+): Promise<void> {
+  if (shuttingDown) {
+    throw new Error(
+      "Dark Vortex is shutting down.",
+    );
+  }
+
+  if (
+    mode === "pairing" &&
+    !phoneNumber
+  ) {
+    throw new Error(
+      "Phone number is required for pairing mode.",
+    );
+  }
+
+  apiSessionRequested = true;
+  setPairingArtifactVisibility(true);
+
+  runtimePairingMode =
+    mode;
+
+  runtimePairingNumber =
+    phoneNumber || "";
+
+  pairingCodeRequested =
+    false;
+
+  updatePairingApiState({
+    status: "STARTING",
+    mode,
+    qr: null,
+    pairingCode: null,
+    phoneNumber:
+      phoneNumber || null,
+    connectedNumber: null,
+    message:
+      mode === "qr"
+        ? "Preparing QR authentication..."
+        : "Preparing phone-number pairing...",
+  });
+
+  // ----------------------------------------------------------
+  // If an old socket exists, close it first.
+  // ----------------------------------------------------------
+
+  if (currentSocket) {
+    try {
+      await closeActiveSocket();
+    } catch (error) {
+      log.error(
+        "Failed to close existing socket for API session.",
+        error,
+      );
+    }
+
+    currentSocket = null;
+
+    setActiveSocket(null);
+
+    updateRestSocket(null);
+
+    await new Promise(
+      (resolve) =>
+        setTimeout(
+          resolve,
+          750,
+        ),
+    );
+  }
+
+  if (reconnectTimer) {
+    clearTimeout(
+      reconnectTimer,
+    );
+
+    reconnectTimer = null;
+  }
+
+  enableReconnect();
+
+  await startBot();
+}
+
+async function stopApiSession(): Promise<void> {
+  websitePairingRequested = false;
+  setPairingArtifactVisibility(false);
+  apiSessionRequested =
+    true;
+
+  if (reconnectTimer) {
+    clearTimeout(
+      reconnectTimer,
+    );
+
+    reconnectTimer = null;
+  }
+
+  disableReconnect();
+
+  try {
+    await stopAllVxMonitors();
+  } catch (error) {
+    log.error(
+      "Failed to stop VX monitoring before API session stop.",
+      error,
+    );
+  }
+
+  if (currentSocket) {
+    try {
+      await closeActiveSocket();
+    } catch (error) {
+      log.error(
+        "Failed to close WhatsApp socket from API.",
+        error,
+      );
+    }
+  }
+
+  currentSocket = null;
+
+  setActiveSocket(null);
+
+  updateRestSocket(null);
+
+  botStarted = false;
+  botStarting = false;
+  socketCreationInProgress =
+    false;
+
+  clearConnectionTimers();
+
+  updatePairingApiState({
+    status: "DISCONNECTED",
+    qr: null,
+    pairingCode: null,
+    connectedNumber: null,
+    message:
+      "WhatsApp session stopped.",
+  });
+}
 
 // ============================================================
 // START BOT
@@ -1377,7 +2417,8 @@ async function startBot(): Promise<void> {
   if (
     botStarting ||
     socketCreationInProgress ||
-    shuttingDown
+    shuttingDown ||
+    automaticSignalCleanupInProgress
   ) {
     return;
   }
@@ -1386,11 +2427,15 @@ async function startBot(): Promise<void> {
     log.warn(
       "Socket creation skipped • an active WhatsApp socket already exists.",
     );
+
     return;
   }
 
   botStarting = true;
-  socketCreationInProgress = true;
+  socketCreationInProgress =
+    true;
+
+  pairingCodeRequested = false;
 
   try {
     startupBox(
@@ -1437,6 +2482,35 @@ async function startBot(): Promise<void> {
         "./auth",
       );
 
+    // ========================================================
+// FRESH AUTHENTICATION WAIT
+// ========================================================
+//
+// Do not create a WhatsApp socket until the website
+// explicitly selects QR or phone-number pairing.
+//
+
+if (
+  !state.creds.registered &&
+  !apiSessionRequested
+) {
+  log.connect(
+    "Fresh authentication detected • waiting for website to select QR or Pairing Code.",
+  );
+
+  log.info(
+    "No authentication method will be requested automatically.",
+  );
+
+  disableReconnect();
+
+  socketCreationInProgress =
+    false;
+
+  botStarting = false;
+
+  return;
+}
     let version:
       | [number, number, number]
       | undefined;
@@ -1449,7 +2523,9 @@ async function startBot(): Promise<void> {
         latest.version;
 
       log.connect(
-        `WhatsApp Web ${version.join(".")} ${
+        `WhatsApp Web ${version.join(
+          ".",
+        )} ${
           latest.isLatest
             ? "• latest"
             : "• update available"
@@ -1463,12 +2539,18 @@ async function startBot(): Promise<void> {
 
     const maskedOwner =
       OWNER_NUMBER.length > 6
-        ? `${OWNER_NUMBER.slice(0, 3)}${"*".repeat(
+        ? `${OWNER_NUMBER.slice(
+            0,
+            3,
+          )}${"*".repeat(
             Math.max(
               0,
-              OWNER_NUMBER.length - 6,
+              OWNER_NUMBER.length -
+                6,
             ),
-          )}${OWNER_NUMBER.slice(-3)}`
+          )}${OWNER_NUMBER.slice(
+            -3,
+          )}`
         : "***";
 
     log.system(
@@ -1476,19 +2558,49 @@ async function startBot(): Promise<void> {
     );
 
     if (
-      !state.creds.registered
-    ) {
-      log.connect(
-        "Authentication required • QR pairing",
+  !state.creds.registered
+  ) {
+  if (isPairingMode()) {
+    const pairingNumber =
+      getPairingNumber();
+
+    if (!pairingNumber) {
+      log.error(
+        "Phone-number pairing is enabled but PAIRING_NUMBER is missing.",
       );
+
       log.info(
-        "Scan the QR code displayed in this terminal with WhatsApp.",
+        "Set PAIRING_NUMBER in .env using international format without +, spaces, or dashes.",
       );
     } else {
-      log.success(
-        "Existing authentication detected • saved session",
+      log.connect(
+        "Authentication required • phone-number pairing",
+      );
+
+      log.info(
+        `Pairing account: ${maskPhoneNumber(
+          pairingNumber,
+        )}`,
+      );
+
+      log.info(
+        "A real WhatsApp pairing code will be requested from Baileys.",
       );
     }
+  } else {
+    log.connect(
+      "Authentication required • QR pairing",
+    );
+
+    log.info(
+      "Scan the QR code displayed in this terminal with WhatsApp.",
+    );
+  }
+} else {
+  log.success(
+    "Existing authentication detected • saved session",
+  );
+}
 
     log.security(
       "Protection system • ACTIVE",
@@ -1530,26 +2642,117 @@ async function startBot(): Promise<void> {
       "Automatic maintenance • ACTIVE",
     );
 
-    divider();
+    log.security(
+      "Automatic Signal session cleanup • ACTIVE",
+    );
 
-    const sock = makeWASocket({
-      auth: state,
-      ...(version ? { version } : {}),
-      logger,
-      browser: Browsers.windows("Chrome"),
-      connectTimeoutMs: 120_000,
-      defaultQueryTimeoutMs: 60_000,
-      keepAliveIntervalMs: 10_000,
-      markOnlineOnConnect: false,
-      generateHighQualityLinkPreview: true,
-    });
+    divider();
+// ============================================================
+// LIBSIGNAL OUTPUT PROTECTION
+// ============================================================
+//
+// libsignal can directly print sensitive Signal session objects
+// with console.info()/console.warn(). Suppress only those specific
+// internal messages. All normal Dark Vortex terminal output remains
+// untouched.
+//
+
+const originalConsoleInfo = console.info;
+const originalConsoleWarn = console.warn;
+
+function isSensitiveSignalOutput(
+  args: unknown[],
+): boolean {
+  const first =
+    typeof args[0] === "string"
+      ? args[0]
+      : "";
+
+  return (
+    /^Closing session:?$/i.test(first.trim()) ||
+    /^Opening session:?$/i.test(first.trim()) ||
+    /^Session already closed/i.test(first.trim()) ||
+    /^Decrypted message with closed session\.?$/i.test(
+      first.trim(),
+    )
+  );
+}
+
+console.info = (...args: unknown[]) => {
+  if (isSensitiveSignalOutput(args)) {
+    return;
+  }
+
+  originalConsoleInfo(...args);
+};
+
+console.warn = (...args: unknown[]) => {
+  if (isSensitiveSignalOutput(args)) {
+    return;
+  }
+
+  originalConsoleWarn(...args);
+};
+
+    const sock =
+      makeWASocket({
+        auth: state,
+        ...(version
+          ? { version }
+          : {}),
+        logger,
+        browser:
+          Browsers.windows(
+            "Chrome",
+          ),
+        connectTimeoutMs:
+          120_000,
+        defaultQueryTimeoutMs:
+          60_000,
+        keepAliveIntervalMs:
+          10_000,
+        markOnlineOnConnect:
+          false,
+        generateHighQualityLinkPreview:
+          true,
+      });
+    // ========================================================
+// 🌑 DARK VORTEX — OUTGOING MESSAGE TRACKING
+// ========================================================
+
+const originalSendMessage =
+  sock.sendMessage.bind(sock);
+
+sock.sendMessage = async (
+  jid,
+  content,
+  options,
+) => {
+
+  const sentMessage =
+    await originalSendMessage(
+      jid,
+      content,
+      options,
+    );
+
+  trackOutgoingMessage(
+    sentMessage,
+  );
+
+  return sentMessage;
+};
 
     currentSocket = sock;
 
     updateRestSocket(sock);
+
     setActiveSocket(sock);
+
     enableReconnect();
-    socketCreationInProgress = false;
+
+    socketCreationInProgress =
+      false;
 
     // ========================================================
     // CREDENTIALS
@@ -1577,56 +2780,188 @@ async function startBot(): Promise<void> {
           connection ===
           "connecting"
         ) {
+          setSessionStatus("CONNECTING");
+          setPairingConnecting();
+        }
+    // ─────────────────────────────────────────────────────────────
+// PHONE-NUMBER PAIRING
+// Request only after Baileys has produced its registration QR
+// event. This keeps QR mode completely independent.
+// ─────────────────────────────────────────────────────────────
+if (
+  qr &&
+  !state.creds.registered &&
+  isPairingMode() &&
+  !pairingCodeRequested
+) {
+  const pairingNumber = getPairingNumber();
+
+  if (!pairingNumber) {
+    pairingCodeRequested = false;
+
+    log.error(
+      "Phone-number pairing enabled but PAIRING_NUMBER is missing.",
+    );
+  } else if (pairingNumber.length < 8) {
+    pairingCodeRequested = false;
+
+    log.error(
+      `Invalid pairing number: ${maskPhoneNumber(pairingNumber)}`,
+    );
+  } else {
+    pairingCodeRequested = true;
+
+    log.connect(
+      `Phone-number pairing ready • requesting code for ${maskPhoneNumber(pairingNumber)}`,
+    );
+
+    try {
+      const pairingCode =
+  await sock.requestPairingCode(
+    pairingNumber,
+  );
+
+const formattedPairingCode =
+  pairingCode.length === 8
+    ? `${pairingCode.slice(0, 4)}-${pairingCode.slice(4)}`
+    : pairingCode;
+
+setPairingCode(
+  formattedPairingCode,
+);
+
+log.connect(
+  `🔑 PAIRING CODE: ${formattedPairingCode}`,
+);
+
+log.info(
+  "Open WhatsApp → Linked Devices → Link with phone number and enter the displayed code.",
+);
+    } catch (error) {
+      pairingCodeRequested = false;
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : String(error);
+
+      log.error(
+        `Phone-number pairing request failed: ${message}`,
+      );
+    }
+  }
+}
+        if (
+          connection ===
+          "connecting"
+        ) {
           log.connect(
+            "Connecting to WhatsApp...",
+          );
+
+          setDashboardConnection(
+            "CONNECTING",
+            false,
+          );
+
+          addDashboardEvent(
+            "CONNECTION",
+            "WHATSAPP",
             "Connecting to WhatsApp...",
           );
         }
 
         // ----------------------------------------------------
         // QR AUTHENTICATION
-       // ----------------------------------------------------
+        // ----------------------------------------------------
 
-        if (qr) {
+        if (
+          qr &&
+          !isPairingMode()
+        ) {
+          setPairingQr(qr);
           console.log("");
+
           console.log(
             "╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮",
           );
+
           console.log(
             "┃ 🌑 DARK VORTEX — QR PAIRING",
           );
+
           console.log(
             "┃",
           );
+
           console.log(
             "┃ Scan this QR with WhatsApp:",
           );
+
           console.log(
             "┃ WhatsApp → Linked Devices → Link a Device",
           );
+
           console.log(
             "╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯",
           );
-          console.log("");
-
-          qrcode.generate(qr, {
-            small: true,
-          });
 
           console.log("");
-            log.connect(
-              "QR code displayed • waiting for WhatsApp scan...",
-            );
-          }
+
+          qrcode.generate(
+            qr,
+            {
+              small: true,
+            },
+          );
+
+          console.log("");
+
+          log.connect(
+            "QR code displayed • waiting for WhatsApp scan...",
+          );
+
+          addDashboardEvent(
+            "AUTH",
+            "WHATSAPP",
+            "QR authentication code displayed.",
+          );
+        }
+
         // ----------------------------------------------------
         // OPEN
         // ----------------------------------------------------
 
-        if (connection === "open") {
+        if (
+          connection ===
+          "open"
+        ) {
+
+        const connectedNumber =
+          sock.user?.id
+            ?.replace(/:\d+/g, "")
+            ?.replace(/@.*$/, "");
+
+        markSessionConnected(
+  connectedNumber,
+);
+
+setSessionAccount(
+  connectedNumber || null,
+);
+
+        setPairingConnected(
+          connectedNumber,
+        );
           if (shuttingDown) {
             return;
           }
 
-          if (!isCurrentSocket(sock)) {
+          if (
+            !isCurrentSocket(
+              sock,
+            )
+          ) {
             log.warn(
               "Ignoring open event from stale WhatsApp socket.",
             );
@@ -1639,15 +2974,43 @@ async function startBot(): Promise<void> {
           }
 
           currentSocket = sock;
+
+          apiSessionRequested = false;
+
           updateRestSocket(sock);
+
+          setActiveSocket(sock);
 
           botStarting = false;
 
-          connectionGeneration += 1;
+          socketGeneration += 1;
 
-          const generation = connectionGeneration
+          connectionGeneration +=
+            1;
+
+
+
+          const generation =
+            connectionGeneration;
 
           clearConnectionTimers();
+
+          resetSignalSessionErrors();
+
+          setDashboardConnection(
+            "ONLINE",
+            true,
+          );
+
+          setDashboardSecurity({
+            vxActive: true,
+          });
+
+          addDashboardEvent(
+            "CONNECTION",
+            "WHATSAPP",
+            "WhatsApp connection established.",
+          );
 
           console.log("");
 
@@ -1659,13 +3022,17 @@ async function startBot(): Promise<void> {
             `┃ ${BOT_NAME}`,
           );
 
-          console.log("┃");
+          console.log(
+            "┃",
+          );
 
           console.log(
             "┃ 🟢 WHATSAPP CONNECTED",
           );
 
-          console.log("┃");
+          console.log(
+            "┃",
+          );
 
           console.log(
             "┃ 🔐 Authentication: SAVED",
@@ -1707,7 +3074,9 @@ async function startBot(): Promise<void> {
             "┃ 📢 Broadcast System: READY",
           );
 
-          console.log("┃");
+          console.log(
+            "┃",
+          );
 
           console.log(
             `┃ ${POWERED_BY}`,
@@ -1730,10 +3099,8 @@ async function startBot(): Promise<void> {
               sock,
             );
 
-
             lastTimeGreetingKey =
               getGreetingPeriodKey();
-
 
             scheduleNextTimeGreeting(
               sock,
@@ -1744,7 +3111,17 @@ async function startBot(): Promise<void> {
               sock,
             );
 
-            startAutomaticMemoryCleanup();
+            setDashboardMemoryCleanup(
+              "ACTIVE",
+            );
+
+            addDashboardEvent(
+              "MEMORY",
+              "CLEANER",
+              "Automatic memory monitoring active.",
+            );
+
+            startAutomaticMemoryCleanup(sock);
           }
 
           return;
@@ -1755,9 +3132,15 @@ async function startBot(): Promise<void> {
         // ----------------------------------------------------
 
         if (
-          connection === "close"
+          connection ===
+          "close"
         ) {
-          const socketIsCurrent = isCurrentSocket(sock);
+          const socketIsCurrent =
+            isCurrentSocket(
+              sock,
+            );
+
+            markSessionDisconnected();
 
           if (!socketIsCurrent) {
             log.warn(
@@ -1767,14 +3150,31 @@ async function startBot(): Promise<void> {
             return;
           }
 
+          setPairingDisconnected(
+            "WhatsApp session disconnected.",
+          );
+
           botStarted = false;
           botStarting = false;
 
+          setDashboardConnection(
+            "OFFLINE",
+            false,
+          );
+
+          addDashboardEvent(
+            "CONNECTION",
+            "WHATSAPP",
+            "WhatsApp connection closed.",
+          );
+
           clearConnectionTimers();
 
-          connectionGeneration += 1;
+          connectionGeneration +=
+            1;
 
-          lastTimeGreetingKey = null;
+          lastTimeGreetingKey =
+            null;
 
           const disconnectError =
             lastDisconnect?.error as
@@ -1785,6 +3185,10 @@ async function startBot(): Promise<void> {
             disconnectError
               ?.output
               ?.statusCode;
+
+          const disconnectMessage =
+            disconnectError?.message ||
+            "";
 
           const lifecycleAction =
             getLifecycleAction();
@@ -1804,8 +3208,7 @@ async function startBot(): Promise<void> {
 
           console.log(
             `⚠️ Reason: ${
-              disconnectError
-                ?.message ??
+              disconnectMessage ||
               "unknown"
             }`,
           );
@@ -1813,7 +3216,24 @@ async function startBot(): Promise<void> {
           setActiveSocket(null);
 
           // --------------------------------------------------
-          // STOP VX MONITORING FOR THIS CONNECTION
+          // AUTOMATIC SIGNAL CLEANUP
+          // --------------------------------------------------
+
+          if (
+            automaticSignalCleanupInProgress
+          ) {
+            currentSocket =
+              null;
+
+            log.security(
+              "🧹 Connection closed as part of automatic Signal session cleanup.",
+            );
+
+            return;
+          }
+
+          // --------------------------------------------------
+          // STOP VX MONITORING
           // --------------------------------------------------
 
           try {
@@ -1834,17 +3254,28 @@ async function startBot(): Promise<void> {
           // --------------------------------------------------
           // CONNECTION REST
           // --------------------------------------------------
-          // Do not let the normal reconnect loop immediately undo
-          // an intentional connection-rest disconnect.
+
           if (
             isResting() &&
-            getRestMode() === "connection"
+            getRestMode() ===
+              "connection"
           ) {
             log.system(
               "Connection rest active • automatic reconnect paused until rest ends.",
             );
+
+            addDashboardEvent(
+              "REST",
+              "LIFECYCLE",
+              "Connection rest active • reconnect paused.",
+            );
+
             return;
           }
+
+          // --------------------------------------------------
+          // SHUTDOWN
+          // --------------------------------------------------
 
           if (
             lifecycleAction ===
@@ -1888,13 +3319,21 @@ async function startBot(): Promise<void> {
               timeGreetingTimer = null;
             }
 
-            stopAutomaticMemoryCleanup();
+            stopAutomaticMemoryCleanup(sock);
 
             clearLifecycleAction();
 
             shuttingDown = true;
 
             disableReconnect();
+
+            addDashboardEvent(
+              "SYSTEM",
+              "SHUTDOWN",
+              "Dark Vortex shutdown requested.",
+            );
+
+            shutdownTerminalDashboard();
 
             console.log(
               "🛑 Automatic reconnection disabled.",
@@ -1921,6 +3360,12 @@ async function startBot(): Promise<void> {
               "♻️ Dark Vortex restart requested.",
             );
 
+            addDashboardEvent(
+              "SYSTEM",
+              "RESTART",
+              "Manual restart requested.",
+            );
+
             if (reconnectTimer) {
               clearTimeout(
                 reconnectTimer,
@@ -1938,7 +3383,8 @@ async function startBot(): Promise<void> {
             reconnectTimer =
               setTimeout(
                 () => {
-                  reconnectTimer = null;
+                  reconnectTimer =
+                    null;
 
                   if (
                     shuttingDown ||
@@ -1947,6 +3393,7 @@ async function startBot(): Promise<void> {
                   ) {
                     return;
                   }
+
                   void startBot().catch(
                     (error) => {
                       console.error(
@@ -1963,27 +3410,75 @@ async function startBot(): Promise<void> {
           }
 
           // --------------------------------------------------
-          // LOGGED OUT
-          // --------------------------------------------------
+// LOGGED OUT
+// --------------------------------------------------
 
-          if (
-            statusCode ===
-            DisconnectReason.loggedOut
-          ) {
-            disableReconnect();
+if (
+  statusCode ===
+  DisconnectReason.loggedOut
+) {
+  // ------------------------------------------------
+  // WEBSITE/API SESSION REQUEST
+  // ------------------------------------------------
+  //
+  // When the website requests a new QR or pairing
+  // session, startApiSession() intentionally closes
+  // the previous socket before creating a fresh one.
+  //
+  // Do NOT treat that intentional replacement as a
+  // permanent logout.
+  // ------------------------------------------------
 
-            console.log("");
+  if (apiSessionRequested) {
+    log.warn(
+      "WhatsApp socket closed during an API pairing session request. Preparing a fresh authentication session.",
+    );
 
-            console.log(
-              "🚫 WhatsApp session was logged out.",
-            );
+    currentSocket = null;
 
-            console.log(
-              "🛑 Automatic reconnection disabled.",
-            );
+    setDashboardConnection(
+      "CONNECTING",
+      false,
+    );
 
-            return;
-          }
+    addDashboardEvent(
+      "AUTH",
+      "WHATSAPP",
+      "Previous session closed for a new website pairing session.",
+    );
+
+    return;
+  }
+
+  // ------------------------------------------------
+  // REAL WHATSAPP LOGOUT
+  // ------------------------------------------------
+
+  disableReconnect();
+
+  setDashboardConnection(
+    "OFFLINE",
+    false,
+  );
+
+  addDashboardEvent(
+    "AUTH",
+    "WHATSAPP",
+    "WhatsApp session logged out • automatic reconnect disabled.",
+  );
+
+  console.log("");
+
+  console.log(
+    "🚫 WhatsApp session was logged out.",
+  );
+
+  console.log(
+    "🛑 Automatic reconnection disabled.",
+  );
+
+  return;
+}
 
           // --------------------------------------------------
           // NORMAL UNEXPECTED DISCONNECT
@@ -1992,10 +3487,23 @@ async function startBot(): Promise<void> {
           if (
             !isReconnectEnabled() ||
             shuttingDown ||
-            isLifecycleInProgress()
+            isLifecycleInProgress() ||
+            (!apiSessionRequested &&
+              !state.creds.registered)
           ) {
             return;
           }
+
+          setDashboardConnection(
+            "RECONNECTING",
+            false,
+          );
+
+          addDashboardEvent(
+            "CONNECTION",
+            "RECONNECT",
+            "Automatic reconnect scheduled in 5 seconds.",
+          );
 
           console.log(
             "♻️ Reconnecting Dark Vortex in 5 seconds...",
@@ -2010,7 +3518,8 @@ async function startBot(): Promise<void> {
           reconnectTimer =
             setTimeout(
               () => {
-                reconnectTimer = null;
+                reconnectTimer =
+                  null;
 
                 if (
                   shuttingDown ||
@@ -2064,15 +3573,23 @@ async function startBot(): Promise<void> {
             "this group";
 
           const participantCount =
-            metadata?.participants
+            metadata
+              ?.participants
               ?.length;
+
+          addDashboardEvent(
+            "GROUP",
+            "PARTICIPANTS",
+            `${action.toUpperCase()} • ${participants.length} participant(s) • ${groupName}`,
+          );
 
           // --------------------------------------------------
           // MEMBER ADDED
           // --------------------------------------------------
 
           if (
-            action === "add"
+            action ===
+            "add"
           ) {
             for (
               const participant of participants
@@ -2086,14 +3603,6 @@ async function startBot(): Promise<void> {
                 continue;
               }
 
-              /*
-               * Register the participant with
-               * VX bot intelligence immediately.
-               *
-               * This is observation only.
-               * No automatic enforcement happens
-               * from this event alone.
-               */
               try {
                 await analyzeVxBot({
                   group:
@@ -2102,32 +3611,25 @@ async function startBot(): Promise<void> {
                       groupName,
                       participantCount,
                     ),
-
                   actor: {
                     jid:
                       participantJid,
-
                     phoneNumber:
                       normalizePhoneNumber(
                         participantJid,
                       ),
-
                     name:
                       undefined,
-
                     isBot:
                       undefined,
                   },
-
                   messages: 0,
                   commands: 0,
                   links: 0,
                   repeatedMessages: 0,
                   messagesPerMinute: 0,
-
                   reason:
                     "Participant joined group and was registered for VX behavioral observation.",
-
                   createIncident:
                     false,
                 });
@@ -2165,7 +3667,8 @@ async function startBot(): Promise<void> {
           // --------------------------------------------------
 
           if (
-            action === "remove"
+            action ===
+            "remove"
           ) {
             for (
               const participant of participants
@@ -2193,7 +3696,8 @@ async function startBot(): Promise<void> {
           // --------------------------------------------------
 
           if (
-            action === "promote"
+            action ===
+            "promote"
           ) {
             for (
               const participant of participants
@@ -2209,7 +3713,8 @@ async function startBot(): Promise<void> {
           // --------------------------------------------------
 
           if (
-            action === "demote"
+            action ===
+            "demote"
           ) {
             for (
               const participant of participants
@@ -2239,25 +3744,54 @@ async function startBot(): Promise<void> {
         type,
       }) => {
         if (
-          type !== "notify"
+          type !==
+          "notify"
         ) {
           return;
         }
 
         for (
-          const msg of messages
-        ) {
-          try {
-            // ------------------------------------------------
-            // BASIC VALIDATION
-            // ------------------------------------------------
+  const msg of messages
+) {
+  try {
+    incrementDashboardMessages();
 
-            if (
-              !msg.message
-            ) {
-              continue;
-            }
+    // ------------------------------------------------
+    // BASIC VALIDATION
+    // ------------------------------------------------
 
+    if (
+      !msg.message
+    ) {
+      continue;
+    }
+
+    rememberMessage(msg);
+
+    // ------------------------------------------------
+    // DUPLICATE MESSAGE PROTECTION
+    // ------------------------------------------------
+    //
+    // WhatsApp/Baileys can occasionally surface the same
+    // message more than once. Never execute a command,
+    // VX operation, trigger or moderation action twice
+    // for the same WhatsApp message.
+    //
+
+    const messageId =
+      msg.key.id;
+
+    if (
+      hasProcessedMessage(
+        messageId,
+      )
+    ) {
+      log.warn(
+        `Duplicate message ignored • ${messageId}`,
+      );
+
+      continue;
+    }
             const jid =
               msg.key.remoteJid;
 
@@ -2270,7 +3804,9 @@ async function startBot(): Promise<void> {
               | undefined;
 
             if (
-              jid.endsWith("@g.us")
+              jid.endsWith(
+                "@g.us",
+              )
             ) {
               try {
                 groupMetadata =
@@ -2314,26 +3850,12 @@ async function startBot(): Promise<void> {
             // ------------------------------------------------
 
             const specialStatusShare =
-              jid.endsWith("@g.us") &&
+              jid.endsWith(
+                "@g.us",
+              ) &&
               isPotentialStatusShare(
                 message,
               );
-
-            // ------------------------------------------------
-            // AWAY SYSTEM
-            // ------------------------------------------------
-
-            if (
-              msg.key.fromMe
-            ) {
-              markOwnerActivity();
-            } else {
-              await processAway(
-                sock,
-                msg,
-                OWNER_NUMBER,
-              );
-            }
 
             // ------------------------------------------------
             // SENDER
@@ -2365,18 +3887,55 @@ async function startBot(): Promise<void> {
               "";
 
             // ------------------------------------------------
-            // DELIVERY JID / LID SUPPORT
-            // ------------------------------------------------
+// DELIVERY JID / LID SUPPORT
+// ------------------------------------------------
 
-            const deliveryJid =
-              !jid.endsWith("@g.us") &&
-              jid.endsWith("@lid") &&
-              senderAlt.endsWith(
-                "@s.whatsapp.net",
-              )
-                ? senderAlt
-                : jid;
+const deliveryJid =
+  !jid.endsWith(
+    "@g.us",
+  ) &&
+  jid.endsWith(
+    "@lid",
+  ) &&
+  senderAlt.endsWith(
+    "@s.whatsapp.net",
+  )
+    ? senderAlt
+    : jid;
 
+
+// ------------------------------------------------
+// 🌑 DARK VORTEX — OWNER AVAILABILITY SYSTEM
+// ------------------------------------------------
+
+if (msg.key.fromMe) {
+
+  const botGenerated =
+    isTrackedOutgoingMessage(
+      msg.key.id,
+    );
+
+  if (!botGenerated) {
+
+    markOwnerActivity();
+
+    markOwnerResponse(
+      jid,
+      msg,
+    );
+
+  }
+
+} else {
+
+  await processAway(
+    sock,
+    msg,
+    OWNER_NUMBER,
+    deliveryJid,
+  );
+
+}
             // ------------------------------------------------
             // TEXT EXTRACTION
             // ------------------------------------------------
@@ -2433,23 +3992,26 @@ async function startBot(): Promise<void> {
             const hasMedia =
               Boolean(
                 message.imageMessage ||
-                message.videoMessage ||
-                message.documentMessage,
+                  message.videoMessage ||
+                  message.documentMessage,
               );
 
-            // ============================================================
+            // =================================================
             // 💤 DARK VORTEX REST MODE
-            // ============================================================
-            // During soft rest, keep the Node process and socket alive,
-            // but ignore normal bot activity. Rest-control commands are
-            // allowed through so the owner can check status or cancel.
-            const normalizedText = text.trim();
+            // =================================================
+
+            const normalizedText =
+              text.trim();
+
             const isRestControlCommand =
-              /^[/!#.]rest(?:auto)?\b/i.test(
+              /^[/!#.]rest(?::auto)?\b/i.test(
                 normalizedText,
               );
 
-            if (isResting() && !isRestControlCommand) {
+            if (
+              isResting() &&
+              !isRestControlCommand
+            ) {
               continue;
             }
 
@@ -2457,16 +4019,10 @@ async function startBot(): Promise<void> {
             // VX AUTOMATIC SECURITY SENSOR
             // ------------------------------------------------
 
-            /*
-             * VX observes group traffic automatically.
-             *
-             * This happens before trigger/protection
-             * handling so suspicious behavioral activity
-             * is still recorded even when another subsystem
-             * later handles the message.
-             */
             if (
-              jid.endsWith("@g.us") &&
+              jid.endsWith(
+                "@g.us",
+              ) &&
               !msg.key.fromMe &&
               !specialStatusShare
             ) {
@@ -2474,12 +4030,6 @@ async function startBot(): Promise<void> {
                 | string
                 | undefined;
 
-              /*
-               * Commands are identified conservatively
-               * from the first token. VX does not need
-               * to know every registered command to track
-               * command-heavy behavior.
-               */
               if (
                 text.trim()
               ) {
@@ -2487,7 +4037,7 @@ async function startBot(): Promise<void> {
                   text
                     .trim()
                     .match(
-                      /^[./!#]([^\s]+)/,
+                      /^[./!#](\S+)/,
                     );
 
                 if (
@@ -2521,7 +4071,9 @@ async function startBot(): Promise<void> {
 
             if (
               specialStatusShare &&
-              jid.endsWith("@g.us") &&
+              jid.endsWith(
+                "@g.us",
+              ) &&
               !msg.key.fromMe
             ) {
               await processProtection(
@@ -2567,7 +4119,9 @@ async function startBot(): Promise<void> {
             // ------------------------------------------------
 
             if (
-              jid.endsWith("@g.us") &&
+              jid.endsWith(
+                "@g.us",
+              ) &&
               !msg.key.fromMe
             ) {
               await processProtection(
@@ -2599,29 +4153,102 @@ async function startBot(): Promise<void> {
             // COMMAND HANDLER
             // ------------------------------------------------
 
-            if (
-              text.trim()
-            ) {
-              const commandJid =
-                jid.endsWith("@g.us")
-                  ? jid
-                  : deliveryJid;
+                    // =====================================================
+        // 🌑 DARK VORTEX — COMMAND + AUTOMATIC AI
+        // =====================================================
 
-              log.command(
-                `Command received: ${text.trim()} | from: ${sender} | delivery: ${commandJid}`,
-              );
+        if (text.trim()) {
+          const commandJid =
+            jid.endsWith("@g.us")
+              ? jid
+              : deliveryJid;
 
-              await handleCommand(
-                sock,
-                commandJid,
-                sender,
-                text,
-                msg,
-                senderAlt,
-                !!msg.key.fromMe,
-              );
-            }
+          const commandText =
+            text.trim();
+
+          // Check whether this message uses the active
+          // command prefix.
+          const activePrefix =
+            getPrefix();
+
+          const isLatencyCommand =
+            commandText
+              .toLowerCase()
+              .trim() === ";latency";
+
+          const isCommand =
+            commandText.startsWith(
+              activePrefix,
+            ) ||
+            isLatencyCommand;
+
+          // ===================================================
+          // COMMAND
+          // ===================================================
+
+          if (isCommand) {
+            incomingMessage({
+              type: "COMMAND",
+              message: commandText,
+              from: sender,
+              delivery: commandJid,
+              chat: jid.endsWith("@g.us")
+                ? "GROUP"
+                : "PRIVATE",
+              messageId:
+                msg.key.id ?? undefined,
+              fromMe: !!msg.key.fromMe,
+            });
+
+            incrementDashboardCommands();
+
+            addDashboardEvent(
+              "COMMAND",
+              "HANDLER",
+              `Command: ${commandText.slice(0, 40)}`,
+            );
+
+            await handleCommand(
+              sock,
+              commandJid,
+              sender,
+              text,
+              msg,
+              senderAlt,
+              !!msg.key.fromMe,
+            );
+
+            // A real command has been handled by the
+            // command system. Never send an AI reply too.
+            continue;
+          }
+
+          // ===================================================
+          // 🤖 AUTOMATIC DARK VORTEX AI
+          // ===================================================
+
+          if (!msg.key.fromMe) {
+            await processDarkVortexAI(
+              sock,
+              jid,
+              msg,
+              commandText,
+            );
+          }
+        }
           } catch (error) {
+            if (
+              isSignalSessionError(
+                error,
+              )
+            ) {
+              handleSignalSessionLog(
+                error,
+              );
+
+              continue;
+            }
+
             log.error(
               "Message processing error.",
               error,
@@ -2636,11 +4263,26 @@ async function startBot(): Promise<void> {
     // ========================================================
 
     sock.ev.on(
-      "messages.update",
-      () => {
-        // Message status updates intentionally kept silent.
-      },
-    );
+  "messages.update",
+  async (updates) => {
+    for (const update of updates) {
+      try {
+        await processAntiEditUpdate(
+          sock,
+          update,
+        );
+      } catch (error) {
+        log.error(
+          {
+            error,
+            messageId: update.key?.id,
+          },
+          "Anti-Edit processing failed",
+        );
+      }
+    }
+  },
+);
 
     // ========================================================
     // SYSTEM STATUS
@@ -2651,7 +4293,15 @@ async function startBot(): Promise<void> {
     );
 
     log.connect(
-      "QR pairing: ENABLED • Phone-number pairing: DISABLED",
+      `QR pairing: ${
+        isPairingMode()
+          ? "STANDBY"
+          : "ENABLED"
+      } • Phone-number pairing: ${
+        isPairingMode()
+          ? "ENABLED"
+          : "STANDBY"
+      }`,
     );
 
     log.security(
@@ -2678,6 +4328,10 @@ async function startBot(): Promise<void> {
       "VX Audit Logging: ACTIVE",
     );
 
+    log.security(
+      "Signal session auto-cleanup: ACTIVE",
+    );
+
     log.system(
       "Welcome/Goodbye automation: ACTIVE",
     );
@@ -2695,16 +4349,31 @@ async function startBot(): Promise<void> {
     );
   } catch (error) {
     botStarting = false;
-    socketCreationInProgress = false;
+    socketCreationInProgress =
+      false;
+
+    if (
+      isSignalSessionError(
+        error,
+      )
+    ) {
+      handleSignalSessionLog(
+        error,
+      );
+    }
 
     log.fatal(
       "Fatal startup error.",
       error,
     );
 
-    if (
-      shuttingDown
-    ) {
+    addDashboardEvent(
+      "SYSTEM",
+      "STARTUP",
+      "Fatal startup error detected.",
+    );
+
+    if (shuttingDown) {
       return;
     }
 
@@ -2713,6 +4382,17 @@ async function startBot(): Promise<void> {
         reconnectTimer,
       );
     }
+
+    setDashboardConnection(
+      "RECONNECTING",
+      false,
+    );
+
+    addDashboardEvent(
+      "CONNECTION",
+      "RECONNECT",
+      "Startup retry scheduled in 5 seconds.",
+    );
 
     reconnectTimer =
       setTimeout(
@@ -2724,10 +4404,10 @@ async function startBot(): Promise<void> {
             shuttingDown ||
             currentSocket ||
             socketCreationInProgress
-
           ) {
             return;
           }
+
           void startBot().catch(
             (retryError) => {
               log.error(
@@ -2755,7 +4435,25 @@ async function gracefulShutdown(
 
   shuttingDown = true;
 
+  addDashboardEvent(
+    "SYSTEM",
+    "SHUTDOWN",
+    `Graceful shutdown • ${reason}`,
+  );
+
+  shutdownTerminalDashboard();
+
   disableReconnect();
+
+  if (signalCleanupTimer) {
+    clearTimeout(
+      signalCleanupTimer,
+    );
+
+    signalCleanupTimer = null;
+  }
+
+  resetSignalSessionErrors();
 
   log.system(
     `Graceful shutdown requested • ${reason}`,
@@ -2785,10 +4483,14 @@ async function gracefulShutdown(
     systemReadyTimer = null;
   }
 
-  /*
-   * Stop live VX monitor sessions before
-   * closing the WhatsApp connection.
-   */
+  if (timeGreetingTimer) {
+    clearTimeout(
+      timeGreetingTimer,
+    );
+
+    timeGreetingTimer = null;
+  }
+
   try {
     await stopAllVxMonitors();
 
@@ -2802,11 +4504,9 @@ async function gracefulShutdown(
     );
   }
 
-  /*
-   * Clear in-memory VX bot analysis
-   * throttling state.
-   */
   vxBotAnalysisTimes.clear();
+
+  stopAutomaticMemoryCleanup(currentSocket);
 
   await closeActiveSocket();
 
@@ -2824,17 +4524,22 @@ async function gracefulShutdown(
 // ============================================================
 // 💤 REST MODE LIFECYCLE
 // ============================================================
+
 configureRestMode({
-  getSocket: () => currentSocket,
+  getSocket: () =>
+    currentSocket,
+
   closeSocket: async () => {
     await closeActiveSocket();
   },
+
   restartSocket: async () => {
     if (shuttingDown) {
       return;
     }
 
     reconnectTimer = null;
+
     await startBot();
   },
 });
@@ -2858,15 +4563,30 @@ process.on(
     void gracefulShutdown(
       "SIGTERM",
     );
-  },
-);
+  });
 
 process.on(
   "uncaughtException",
   (error) => {
+    if (
+      isSignalSessionError(
+        error,
+      )
+    ) {
+      handleSignalSessionLog(
+        error,
+      );
+    }
+
     log.fatal(
       "Uncaught exception.",
       error,
+    );
+
+    addDashboardEvent(
+      "SYSTEM",
+      "RUNTIME",
+      "Uncaught exception captured.",
     );
   },
 );
@@ -2874,24 +4594,91 @@ process.on(
 process.on(
   "unhandledRejection",
   (error) => {
+    if (
+      isSignalSessionError(
+        error,
+      )
+    ) {
+      handleSignalSessionLog(
+        error,
+      );
+    }
+
     log.error(
       "Unhandled rejection.",
       error,
     );
+
+    addDashboardEvent(
+      "SYSTEM",
+      "RUNTIME",
+      "Unhandled rejection captured.",
+    );
   },
 );
+
+// ============================================================
+// 🌑 DARK VORTEX TERMINAL DASHBOARD
+// ============================================================
+
+startTerminalDashboard();
+
+addDashboardEvent(
+  "SYSTEM",
+  "CORE",
+  "Dark Vortex core starting...",
+);
+
+setDashboardConnection(
+  "CONNECTING",
+  false,
+);
+
+// ============================================================
+// 🌐 DARK VORTEX PAIRING API
+// ============================================================
+
+const PAIRING_API_PORT =
+  Number(
+    process.env.PAIRING_API_PORT ||
+      3000,
+  );
+
+const PAIRING_API_HOST =
+  process.env.PAIRING_API_HOST ||
+  "0.0.0.0";
+
+const PAIRING_API_KEY =
+  process.env.PAIRING_API_KEY ||
+  "";
+
+if (!PAIRING_API_KEY) {
+  log.warn(
+    "PAIRING_API_KEY is not configured. Pairing API requests will be rejected.",
+  );
+} else {
+  void startPairingApi({
+    port: PAIRING_API_PORT,
+    host: PAIRING_API_HOST,
+    apiKey: PAIRING_API_KEY,
+    startSession: startApiSession,
+    stopSession: stopApiSession,
+  });
+}
 
 // ============================================================
 // START
 // ============================================================
 
-void startBot().catch(
-  (error) => {
-    log.fatal(
-      "Fatal bot error.",
-      error,
-    );
+void startBot().catch((error) => {
+  log.error(
+    "Failed to start bot.",
+    error,
+  );
 
-    process.exit(1);
-  },
-);
+  addDashboardEvent(
+    "SYSTEM",
+    "STARTUP",
+    "Initial bot startup failed.",
+  );
+});

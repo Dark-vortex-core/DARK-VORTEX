@@ -1,6 +1,10 @@
 import os from "node:os";
 import dns from "node:dns/promises";
-import type { WASocket } from "@whiskeysockets/baileys";
+
+import type {
+  WAMessage,
+  WASocket,
+} from "@whiskeysockets/baileys";
 
 import {
   vortexBox,
@@ -8,6 +12,10 @@ import {
   success,
   info,
 } from "../utils/message.js";
+
+import {
+  sendVortexReply,
+} from "../utils/vortex-reply.js";
 
 // =========================================================
 // 🌑 DARK VORTEX — SECURITY TOOLS PANEL
@@ -49,6 +57,7 @@ export async function handleSecurityPanelCommand(
   jid: string,
   command: string,
   args: string[],
+  quotedMessage?: WAMessage,
 ): Promise<boolean> {
 
   // ---------------------------------------------------------
@@ -75,8 +84,10 @@ export async function handleSecurityPanelCommand(
         memory.heapUsed / 1024 / 1024,
       );
 
-    await sock.sendMessage(jid, {
-      text: vortexBox(
+    await sendVortexReply(
+      sock,
+      jid,
+      vortexBox(
         "🛡️ VORTEX SECURITY PANEL",
         [
           "🟢 SYSTEM       ONLINE",
@@ -111,7 +122,8 @@ export async function handleSecurityPanelCommand(
           "╰─── ⚡ VORTEX TECH ───╯",
         ],
       ),
-    });
+      quotedMessage,
+    );
 
     return true;
   }
@@ -121,8 +133,10 @@ export async function handleSecurityPanelCommand(
   // ---------------------------------------------------------
 
   if (command === "uptime") {
-    await sock.sendMessage(jid, {
-      text: success(
+    await sendVortexReply(
+      sock,
+      jid,
+      success(
         "SYSTEM UPTIME",
         [
           `⏱️ Process: ${formatUptime(process.uptime())}`,
@@ -131,7 +145,8 @@ export async function handleSecurityPanelCommand(
           "🟢 Dark Vortex process is running.",
         ],
       ),
-    });
+      quotedMessage,
+    );
 
     return true;
   }
@@ -149,8 +164,10 @@ export async function handleSecurityPanelCommand(
         memory.rss / 1024 / 1024,
       );
 
-    await sock.sendMessage(jid, {
-      text: success(
+    await sendVortexReply(
+      sock,
+      jid,
+      success(
         "SYSTEM HEALTH",
         [
           "🟢 Bot Process: HEALTHY",
@@ -160,7 +177,8 @@ export async function handleSecurityPanelCommand(
           `⏱️ Uptime: ${formatUptime(process.uptime())}`,
         ],
       ),
-    });
+      quotedMessage,
+    );
 
     return true;
   }
@@ -201,8 +219,10 @@ export async function handleSecurityPanelCommand(
       }
     }
 
-    await sock.sendMessage(jid, {
-      text: info(
+    await sendVortexReply(
+      sock,
+      jid,
+      info(
         "HOST DIAGNOSTICS",
         [
           `🖥️ Hostname: ${os.hostname()}`,
@@ -216,7 +236,8 @@ export async function handleSecurityPanelCommand(
             : ["No interfaces detected."]),
         ],
       ),
-    });
+      quotedMessage,
+    );
 
     return true;
   }
@@ -250,8 +271,10 @@ export async function handleSecurityPanelCommand(
       }
     }
 
-    await sock.sendMessage(jid, {
-      text: info(
+    await sendVortexReply(
+      sock,
+      jid,
+      info(
         "NETWORK INFORMATION",
         [
           "🌐 Local network addresses:",
@@ -264,7 +287,8 @@ export async function handleSecurityPanelCommand(
           "local network information only.",
         ],
       ),
-    });
+      quotedMessage,
+    );
 
     return true;
   }
@@ -278,15 +302,18 @@ export async function handleSecurityPanelCommand(
       args[0]?.trim();
 
     if (!hostname) {
-      await sock.sendMessage(jid, {
-        text: error(
+      await sendVortexReply(
+        sock,
+        jid,
+        error(
           "DNS USAGE",
           [
             "Usage:",
             "/dns example.com",
           ],
         ),
-      });
+        quotedMessage,
+      );
 
       return true;
     }
@@ -300,8 +327,10 @@ export async function handleSecurityPanelCommand(
           },
         );
 
-      await sock.sendMessage(jid, {
-        text: success(
+      await sendVortexReply(
+        sock,
+        jid,
+        success(
           "DNS LOOKUP",
           [
             `🌐 Host: ${hostname}`,
@@ -312,21 +341,25 @@ export async function handleSecurityPanelCommand(
             ),
           ],
         ),
-      });
+        quotedMessage,
+      );
     } catch (err) {
       console.error(
         "Vortex DNS lookup error:",
         err,
       );
 
-      await sock.sendMessage(jid, {
-        text: error(
+      await sendVortexReply(
+        sock,
+        jid,
+        error(
           "DNS FAILED",
           [
             `Unable to resolve ${hostname}.`,
           ],
         ),
-      });
+        quotedMessage,
+      );
     }
 
     return true;

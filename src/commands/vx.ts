@@ -1,28 +1,23 @@
-/* =========================================================
-   🌑 DARK VORTEX — VX SECURITY COMMAND INTERFACE
-
-   ⚡ VX Security Intelligence Core
-   ⚡ Powered by Vortex Tech
-
-   Responsibilities:
-   - VX command routing
-   - Bot intelligence
-   - Security scanning
-   - Live monitoring
-   - Incident management
-   - Security statistics
-   - Audit/log inspection
-   - Real operation IDs
-   - Single-message progress lifecycle
-   - Registry-compatible privileged VX interface
-   - Safe operation history
-========================================================= */
-
 import { randomUUID } from "node:crypto";
 
 import type {
   WASocket,
 } from "@whiskeysockets/baileys";
+
+import {
+  sendVortexReply,
+} from "../utils/vortex-reply.js";
+
+import {
+  formatVxProgress,
+  vxSuccess,
+  vxError,
+  vxWarning,
+  vxInfo,
+  vxSecurity,
+  VX_FOOTER,
+  VX_TITLE,
+} from "../security/vx-formatter.js";
 
 import {
   getVxBotProfile,
@@ -62,16 +57,6 @@ import {
 } from "../security/vx-reports.js";
 
 import {
-  vortexBox,
-  success,
-  error,
-  warning,
-  info,
-  security,
-  commandUsage,
-} from "../utils/message.js";
-
-import {
   getCommand,
   isVxCommand,
 } from "./registry.js";
@@ -100,16 +85,6 @@ export interface VxOperation {
   message?: string;
   error?: string;
 }
-
-/* =========================================================
-   BRAND
-========================================================= */
-
-const FOOTER =
-  "⚡ Powered by Vortex Tech";
-
-const VX_TITLE =
-  "🌑 DARK VORTEX";
 
 /* =========================================================
    OPERATION STATE
@@ -419,70 +394,69 @@ function normalizePercent(
 }
 
 /* =========================================================
-   BRAND HELPERS
+   SINGLE MESSAGE ENGINE
 ========================================================= */
-
-function vxSuccess(
-  title: string,
-  lines: string[] = [],
-): string {
-  return success(
-    title,
-    lines,
-  );
-}
-
-function vxError(
-  title: string,
-  lines: string[] = [],
-): string {
-  return error(
-    title,
-    lines,
-  );
-}
-
-function vxWarning(
-  title: string,
-  lines: string[] = [],
-): string {
-  return warning(
-    title,
-    lines,
-  );
-}
-
-function vxInfo(
-  title: string,
-  lines: string[] = [],
-): string {
-  return info(
-    title,
-    lines,
-  );
-}
-
-function vxSecurity(
-  title: string,
-  lines: string[] = [],
-): string {
-  return security(
-    title,
-    lines,
-  );
-}
 
 /* =========================================================
    SINGLE MESSAGE ENGINE
 ========================================================= */
 
-function getMessageKey(
-  message?: AnyMessage,
-): any {
-  return (
-    message?.key ||
-    message?.message?.key ||
-    undefined
+/*
+ * Every VX operation owns exactly ONE WhatsApp message.
+ *
+ * Progress updates are serialized through a queue so that
+ * multiple scanner/monitor callbacks can never edit the
+ * same WhatsApp message simultaneously.
+ *
+ * IMPORTANT:
+ * - createOperationMessage() sends exactly ONE message.
+ * - editOperationMessage() ONLY edits that message.
+ * - finishOperationMessage() ONLY edits that message.
+ * - No progress update is allowed to send a new message.
+ */
+
+interface VxMessageState {
+  key?: any;
+  initialized: boolean;
+  queue: Promise<void>;
+  lastProgress: number;
+}
+
+const operationMessages =
+  new Map<
+    string,
+    VxMessageState
+  >();
+
+function getOperationMessageState(
+  operationId: string,
+): VxMessageState {
+  let state =
+    operationMessages.get(
+      operationId,
+    );
+
+  if (!state) {
+    state = {
+      initialized: false,
+      queue: Promise.resolve(),
+      lastProgress: -1,
+    };
+
+    operationMessages.set(
+      operationId,
+      state,
+    );
+  }
+
+  return state;
+}
+
+function cleanupOperationMessageState(
+  operationId: string,
+): void {
+  operationMessages.delete(
+    operationId,
   );
 }
 
@@ -492,27 +466,17 @@ async function send(
   text: string,
   message?: AnyMessage,
 ): Promise<any> {
-  const key =
-    getMessageKey(
-      message,
-    );
-
-  const options: any = {
-    text,
-  };
-
-  if (
-    key
-  ) {
-    options.quoted =
-      message;
-  }
-
-  return sock.sendMessage(
+  return await sendVortexReply(
+    sock,
     jid,
-    options,
+    text,
+    message,
   );
 }
+
+/* ---------------------------------------------------------
+   CREATE — EXACTLY ONE MESSAGE
+--------------------------------------------------------- */
 
 async function createOperationMessage(
   sock: WASocket,
@@ -524,6 +488,11 @@ async function createOperationMessage(
   message?: string,
   originalMessage?: AnyMessage,
 ): Promise<any> {
+  const state =
+    getOperationMessageState(
+      operation.id,
+    );
+
   const safePercent =
     normalizePercent(
       percent,
@@ -539,19 +508,95 @@ async function createOperationMessage(
     },
   );
 
-  return send(
-    sock,
-    jid,
-    progressMessage(
-      title,
-      safePercent,
-      stage,
-      message,
-      operation.id,
-    ),
-    originalMessage,
-  );
+  /*
+   * If the operation already has a message,
+   * NEVER create another one.
+   */
+  if (
+    state.initialized &&
+    state.key
+  ) {
+    return {
+      key: state.key,
+    };
+  }
+
+  /*
+   * Serialize initialization as well.
+   *
+   * This protects against two callbacks attempting
+   * to initialize the operation simultaneously.
+   */
+  let createdMessage:
+    any;
+
+  state.queue =
+    state.queue.then(
+      async () => {
+        if (
+          state.initialized &&
+          state.key
+        ) {
+          return;
+        }
+
+        const progressText =
+          formatVxProgress(
+            title,
+            safePercent,
+            stage,
+            message,
+            operation.id,
+          );
+
+        createdMessage =
+          await send(
+            sock,
+            jid,
+            progressText,
+            originalMessage,
+          );
+
+        if (
+          createdMessage?.key
+        ) {
+          state.key =
+            createdMessage.key;
+
+          state.initialized =
+            true;
+
+          state.lastProgress =
+            safePercent;
+        }
+      },
+    );
+
+  await state.queue;
+
+  /*
+   * If WhatsApp failed to return a message key,
+   * we deliberately DO NOT send another message.
+   */
+  if (
+    !state.key
+  ) {
+    console.error(
+      `[VX] Could not initialize operation message: ${operation.id}`,
+    );
+
+    return createdMessage;
+  }
+
+  return {
+    key:
+      state.key,
+  };
 }
+
+/* ---------------------------------------------------------
+   QUEUED EDIT
+--------------------------------------------------------- */
 
 async function editOperationMessage(
   sock: WASocket,
@@ -563,6 +608,11 @@ async function editOperationMessage(
   stage: string,
   message?: string,
 ): Promise<void> {
+  const state =
+    getOperationMessageState(
+      operation.id,
+    );
+
   const safePercent =
     normalizePercent(
       percent,
@@ -578,35 +628,86 @@ async function editOperationMessage(
     },
   );
 
-  if (!key) {
+  /*
+   * Always prefer the key stored by the operation.
+   *
+   * The local key parameter is only a fallback.
+   */
+  const operationKey =
+    state.key ||
+    key;
+
+  if (
+    !operationKey
+  ) {
+    console.error(
+      `[VX] Progress update skipped — no message key for ${operation.id}`,
+    );
+
     return;
   }
 
-  try {
-    await sock.sendMessage(
-      jid,
-      {
-        text:
-          progressMessage(
-            title,
-            safePercent,
-            stage,
-            message,
-            operation.id,
-          ),
-        edit:
-          key,
-      } as any,
+  /*
+   * IMPORTANT:
+   *
+   * Every edit is placed behind the previous edit.
+   * This prevents concurrent WhatsApp edit requests.
+   */
+  state.queue =
+    state.queue.then(
+      async () => {
+        /*
+         * Do not allow an old/stale progress update
+         * to overwrite a newer one.
+         */
+        if (
+          safePercent <
+          state.lastProgress
+        ) {
+          return;
+        }
+
+        try {
+          await sock.sendMessage(
+            jid,
+            {
+              text:
+                formatVxProgress(
+                  title,
+                  safePercent,
+                  stage,
+                  message,
+                  operation.id,
+                ),
+              edit:
+                operationKey,
+            } as any,
+          );
+
+          state.lastProgress =
+            safePercent;
+        } catch (
+          editError
+        ) {
+          /*
+           * NEVER create a second message here.
+           *
+           * A failed edit is logged only.
+           */
+          console.error(
+            `[VX] Progress edit failed for ${operation.id}:`,
+            editError,
+          );
+        }
+      },
     );
-  } catch (
-    editError
-  ) {
-    console.error(
-      "[VX] Progress edit failed:",
-      editError,
-    );
-  }
+
+  await state.queue;
 }
+
+/* ---------------------------------------------------------
+   FINAL EDIT
+--------------------------------------------------------- */
 
 async function finishOperationMessage(
   sock: WASocket,
@@ -628,122 +729,85 @@ async function finishOperationMessage(
     text,
   );
 
-  if (!key) {
+  const state =
+    getOperationMessageState(
+      operation.id,
+    );
+
+  const operationKey =
+    state.key ||
+    key;
+
+  if (
+    !operationKey
+  ) {
+    console.error(
+      `[VX] Final response skipped — no message key for ${operation.id}`,
+    );
+
+    cleanupOperationMessageState(
+      operation.id,
+    );
+
     return;
   }
 
-  try {
-    await sock.sendMessage(
-      jid,
-      {
-        text,
-        edit:
-          key,
-      } as any,
-    );
-  } catch (
-    editError
-  ) {
-    console.error(
-      `[VX] Final response edit failed for ${title}:`,
-      editError,
-    );
-  }
-}
+  /*
+   * The final result is also queued.
+   *
+   * Therefore:
+   *
+   * 70%
+   * ↓
+   * 90%
+   * ↓
+   * 100% FINAL
+   *
+   * can never arrive out of order.
+   */
+  state.queue =
+    state.queue.then(
+      async () => {
+        try {
+          await sock.sendMessage(
+            jid,
+            {
+              text,
+              edit:
+                operationKey,
+            } as any,
+          );
 
-/* =========================================================
-   PROGRESS UI
-========================================================= */
-
-function progressBar(
-  percent: number,
-): string {
-  const total =
-    10;
-
-  const safePercent =
-    normalizePercent(
-      percent,
-    );
-
-  const filled =
-    Math.min(
-      total,
-      Math.max(
-        0,
-        Math.round(
-          safePercent /
-            10,
-        ),
-      ),
-    );
-
-  return (
-    "█".repeat(
-      filled,
-    ) +
-    "░".repeat(
-      total -
-        filled,
-    )
-  );
-}
-
-function progressMessage(
-  title: string,
-  percent: number,
-  stage: string,
-  message?: string,
-  operationId?: string,
-): string {
-  const safePercent =
-    normalizePercent(
-      percent,
+          state.lastProgress =
+            100;
+        } catch (
+          editError
+        ) {
+          /*
+           * Absolutely no fallback send.
+           *
+           * This is critical to preventing:
+           *
+           * progress message
+           * +
+           * second final message
+           */
+          console.error(
+            `[VX] Final response edit failed for ${title} (${operation.id}):`,
+            editError,
+          );
+        }
+      },
     );
 
-  const status =
-    safePercent >=
-    100
-      ? "✅ OPERATION COMPLETED"
-      : safePercent >=
-        90
-        ? "⚡ FINALIZING"
-        : "🟢 ENGINE ACTIVE";
+  await state.queue;
 
-  const lines = [
-    `┃ ${status}`,
-    "",
-    `┃ ${progressBar(
-      safePercent,
-    )} ${safePercent}%`,
-    `┃ 🔄 Stage: ${stage}`,
-  ];
-
-  if (
-    operationId
-  ) {
-    lines.push(
-      `┃ 🆔 Operation: ${operationId}`,
-    );
-  }
-
-  if (
-    message
-  ) {
-    lines.push(
-      `┃ ${message}`,
-    );
-  }
-
-  return [
-    `╭━━〔 ${title} 〕━━╮`,
-    "┃",
-    ...lines,
-    "┃",
-    `┃ ${FOOTER}`,
-    "╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯",
-  ].join(
-    "\n",
+  /*
+   * Keep operation history but release the
+   * WhatsApp message controller.
+   */
+  cleanupOperationMessageState(
+    operation.id,
   );
 }
 
@@ -833,8 +897,6 @@ async function commandScan(
             `🆔 Operation: ${operation.id}`,
             "",
             "💡 Run vxscan inside a group.",
-            "",
-            FOOTER,
           ],
         ),
       );
@@ -973,7 +1035,6 @@ async function commandScan(
             `🆔 Operation: ${operation.id}`,
             "",
             "📜 Audit activity remains preserved.",
-            FOOTER,
           ],
         ),
       );
@@ -998,7 +1059,6 @@ async function commandScan(
           `🆔 Operation: ${operation.id}`,
           "",
           "🛡️ VX intelligence remains active.",
-          FOOTER,
         ],
       ),
     );
@@ -1034,7 +1094,6 @@ async function commandScan(
           "",
           "📜 Failure recorded in the audit system.",
           "🛡️ Existing security services remain active.",
-          FOOTER,
         ],
       ),
     );
@@ -1058,10 +1117,6 @@ async function commandMonitor(
     )
       .trim()
       .toLowerCase();
-
-  /* -------------------------------------------------------
-     STOP
-  ------------------------------------------------------- */
 
   if (
     action === "off" ||
@@ -1108,8 +1163,6 @@ async function commandMonitor(
               "must be controlled from its group.",
               "",
               `🆔 Operation: ${operation.id}`,
-              "",
-              FOOTER,
             ],
           ),
         );
@@ -1150,7 +1203,6 @@ async function commandMonitor(
               "was found for this group.",
               "",
               `🆔 Operation: ${operation.id}`,
-              FOOTER,
             ],
           ),
         );
@@ -1190,7 +1242,6 @@ async function commandMonitor(
             "",
             "📜 Audit history preserved.",
             "🛡️ Security records remain available.",
-            FOOTER,
           ],
         ),
       );
@@ -1218,8 +1269,6 @@ async function commandMonitor(
             "",
             `🆔 Operation: ${operation.id}`,
             `❌ Error: ${reason}`,
-            "",
-            FOOTER,
           ],
         ),
       );
@@ -1227,10 +1276,6 @@ async function commandMonitor(
 
     return;
   }
-
-  /* -------------------------------------------------------
-     STATUS
-  ------------------------------------------------------- */
 
   if (
     action === "status"
@@ -1297,7 +1342,6 @@ async function commandMonitor(
                 "💡 Use vxmonitor to start monitoring.",
                 "",
                 `🆔 Operation: ${operation.id}`,
-                FOOTER,
               ],
             ),
           );
@@ -1318,8 +1362,6 @@ async function commandMonitor(
             ),
             "",
             `🆔 Operation: ${operation.id}`,
-            "",
-            FOOTER,
           ].join(
             "\n",
           ),
@@ -1369,7 +1411,6 @@ async function commandMonitor(
             `🆔 Operation: ${operation.id}`,
             "",
             "🛡️ VX monitoring infrastructure ready.",
-            FOOTER,
           ],
         ),
       );
@@ -1397,8 +1438,6 @@ async function commandMonitor(
             "",
             `🆔 Operation: ${operation.id}`,
             `❌ Error: ${reason}`,
-            "",
-            FOOTER,
           ],
         ),
       );
@@ -1406,10 +1445,6 @@ async function commandMonitor(
 
     return;
   }
-
-  /* -------------------------------------------------------
-     START
-  ------------------------------------------------------- */
 
   const operation =
     createOperation(
@@ -1454,8 +1489,6 @@ async function commandMonitor(
             "a WhatsApp group context.",
             "",
             `🆔 Operation: ${operation.id}`,
-            "",
-            FOOTER,
           ],
         ),
       );
@@ -1501,7 +1534,6 @@ async function commandMonitor(
             "inspect the active session.",
             "",
             `🆔 Operation: ${operation.id}`,
-            FOOTER,
           ],
         ),
       );
@@ -1582,7 +1614,6 @@ async function commandMonitor(
           "📡 DM Alerts         • ONLINE",
           "",
           "👁️ VX IS NOW MONITORING LIVE ACTIVITY.",
-          FOOTER,
         ],
       ),
     );
@@ -1617,7 +1648,6 @@ async function commandMonitor(
           "",
           "📜 The failure has been logged.",
           "🛡️ Existing security services remain protected.",
-          FOOTER,
         ],
       ),
     );
@@ -1664,10 +1694,6 @@ async function commandBot(
         .trim()
         .toLowerCase();
 
-    /* -----------------------------------------------------
-       BOT SCAN
-    ----------------------------------------------------- */
-
     if (
       action === "scan"
     ) {
@@ -1690,7 +1716,6 @@ async function commandBot(
               "a WhatsApp group context.",
               "",
               `🆔 Operation: ${operation.id}`,
-              FOOTER,
             ],
           ),
         );
@@ -1748,7 +1773,6 @@ async function commandBot(
               "🟢 Group intelligence status: CLEAR",
               "",
               `🆔 Operation: ${operation.id}`,
-              FOOTER,
             ],
           ),
         );
@@ -1795,17 +1819,12 @@ async function commandBot(
             `🆔 Operation: ${operation.id}`,
             "",
             "📜 Intelligence history preserved.",
-            FOOTER,
           ],
         ),
       );
 
       return;
     }
-
-    /* -----------------------------------------------------
-       BOT INFO
-    ----------------------------------------------------- */
 
     if (
       action === "info"
@@ -1821,10 +1840,16 @@ async function commandBot(
           operation,
           "🤖 VX BOT INTELLIGENCE",
           "COMPLETED",
-          commandUsage(
-            "vxbot info",
-            "vxbot info <phone-number>",
-            "Inspect a VX bot intelligence profile.",
+          vxInfo(
+            "VX BOT USAGE",
+            [
+              "Usage:",
+              "vxbot info <phone-number>",
+              "",
+              "Inspect a VX bot intelligence profile.",
+              "",
+              `🆔 Operation: ${operation.id}`,
+            ],
           ),
         );
 
@@ -1866,7 +1891,6 @@ async function commandBot(
               "enough intelligence history yet.",
               "",
               `🆔 Operation: ${operation.id}`,
-              FOOTER,
             ],
           ),
         );
@@ -1881,25 +1905,20 @@ async function commandBot(
         operation,
         "🤖 VX BOT INTELLIGENCE",
         "COMPLETED",
-        [
-          formatVxBotReport(
-            profile,
-          ),
-          "",
-          `🆔 Operation: ${operation.id}`,
-          "",
-          FOOTER,
-        ].join(
-          "\n",
+        vxSecurity(
+          "VX BOT PROFILE",
+          [
+            formatVxBotReport(
+              profile,
+            ),
+            "",
+            `🆔 Operation: ${operation.id}`,
+          ],
         ),
       );
 
       return;
     }
-
-    /* -----------------------------------------------------
-       BOT LOGS
-    ----------------------------------------------------- */
 
     if (
       action === "logs"
@@ -1937,7 +1956,6 @@ async function commandBot(
               "🟢 Intelligence database is empty.",
               "",
               `🆔 Operation: ${operation.id}`,
-              FOOTER,
             ],
           ),
         );
@@ -1981,17 +1999,12 @@ async function commandBot(
             `🆔 Operation: ${operation.id}`,
             "",
             "📜 Intelligence history preserved.",
-            FOOTER,
           ],
         ),
       );
 
       return;
     }
-
-    /* -----------------------------------------------------
-       BOT REPORT
-    ----------------------------------------------------- */
 
     if (
       action === "report"
@@ -2029,7 +2042,6 @@ async function commandBot(
               "contains no high-confidence suspected bots.",
               "",
               `🆔 Operation: ${operation.id}`,
-              FOOTER,
             ],
           ),
         );
@@ -2075,7 +2087,6 @@ async function commandBot(
             `🆔 Operation: ${operation.id}`,
             "",
             "📜 Intelligence history preserved.",
-            FOOTER,
           ],
         ),
       );
@@ -2095,10 +2106,18 @@ async function commandBot(
       operation,
       "🤖 VX BOT INTELLIGENCE",
       "COMPLETED",
-      commandUsage(
-        "vxbot",
-        "vxbot <scan|info|logs|report>",
-        `VX Bot Intelligence • ${profiles.length} tracked profile(s).`,
+      vxInfo(
+        "VX BOT COMMAND CENTER",
+        [
+          "Usage:",
+          "• vxbot scan",
+          "• vxbot info <number>",
+          "• vxbot logs",
+          "• vxbot report",
+          "",
+          `📊 ${profiles.length} tracked profile(s).`,
+          `🆔 Operation: ${operation.id}`,
+        ],
       ),
     );
   } catch (
@@ -2126,7 +2145,6 @@ async function commandBot(
           `❌ Error: ${reason}`,
           "",
           "📜 Failure recorded.",
-          FOOTER,
         ],
       ),
     );
@@ -2201,7 +2219,6 @@ async function commandIncident(
               "🟢 Incident queue is clear.",
               "",
               `🆔 Operation: ${operation.id}`,
-              FOOTER,
             ],
           ),
         );
@@ -2232,7 +2249,6 @@ async function commandIncident(
             "💡 Use vxincident <id> for full details.",
             "",
             `🆔 Operation: ${operation.id}`,
-            FOOTER,
           ],
         ),
       );
@@ -2274,7 +2290,6 @@ async function commandIncident(
             "💡 Use vxincident to list recent incidents.",
             "",
             `🆔 Operation: ${operation.id}`,
-            FOOTER,
           ],
         ),
       );
@@ -2289,16 +2304,15 @@ async function commandIncident(
       operation,
       "🚨 VX INCIDENT CENTER",
       "COMPLETED",
-      [
-        formatVxIncidentReport(
-          incident,
-        ),
-        "",
-        `🆔 Operation: ${operation.id}`,
-        "",
-        FOOTER,
-      ].join(
-        "\n",
+      vxSecurity(
+        "VX INCIDENT REPORT",
+        [
+          formatVxIncidentReport(
+            incident,
+          ),
+          "",
+          `🆔 Operation: ${operation.id}`,
+        ],
       ),
     );
   } catch (
@@ -2324,8 +2338,6 @@ async function commandIncident(
           "",
           `🆔 Operation: ${operation.id}`,
           `❌ Error: ${reason}`,
-          "",
-          FOOTER,
         ],
       ),
     );
@@ -2375,10 +2387,16 @@ async function commandAbort(
         operation,
         "🛑 VX EMERGENCY ABORT",
         "COMPLETED",
-        commandUsage(
-          "vxabort",
-          "vxabort <incident-id|all>",
-          "Emergency stop for active VX incidents.",
+        vxInfo(
+          "VX ABORT USAGE",
+          [
+            "Usage:",
+            "vxabort <incident-id|all>",
+            "",
+            "Emergency stop for active VX incidents.",
+            "",
+            `🆔 Operation: ${operation.id}`,
+          ],
         ),
       );
 
@@ -2432,7 +2450,6 @@ async function commandAbort(
               "The incident queue is currently clear.",
               "",
               `🆔 Operation: ${operation.id}`,
-              FOOTER,
             ],
           ),
         );
@@ -2509,7 +2526,6 @@ async function commandAbort(
             "",
             "📜 Audit history preserved.",
             "🛡️ Incident records remain intact.",
-            FOOTER,
           ],
         ),
       );
@@ -2538,7 +2554,6 @@ async function commandAbort(
             "❌ Incident not found.",
             "",
             `🆔 Operation: ${operation.id}`,
-            FOOTER,
           ],
         ),
       );
@@ -2565,7 +2580,6 @@ async function commandAbort(
             "ℹ️ This incident has already been aborted.",
             "",
             `🆔 Operation: ${operation.id}`,
-            FOOTER,
           ],
         ),
       );
@@ -2607,7 +2621,6 @@ async function commandAbort(
           "🔴 Status: ABORTED",
           `🆔 Operation: ${operation.id}`,
           "📜 Audit history preserved.",
-          FOOTER,
         ],
       ),
     );
@@ -2636,7 +2649,6 @@ async function commandAbort(
           `❌ Error: ${reason}`,
           "",
           "📜 The failure has been logged.",
-          FOOTER,
         ],
       ),
     );
@@ -2686,10 +2698,16 @@ async function commandResume(
         operation,
         "▶️ VX INCIDENT RESUME",
         "COMPLETED",
-        commandUsage(
-          "vxresume",
-          "vxresume <incident-id>",
-          "Continue an aborted VX incident lifecycle.",
+        vxInfo(
+          "VX RESUME USAGE",
+          [
+            "Usage:",
+            "vxresume <incident-id>",
+            "",
+            "Continue an aborted VX incident lifecycle.",
+            "",
+            `🆔 Operation: ${operation.id}`,
+          ],
         ),
       );
 
@@ -2728,7 +2746,6 @@ async function commandResume(
             "❌ Incident not found.",
             "",
             `🆔 Operation: ${operation.id}`,
-            FOOTER,
           ],
         ),
       );
@@ -2757,7 +2774,6 @@ async function commandResume(
             "This incident is not in an aborted state.",
             "",
             `🆔 Operation: ${operation.id}`,
-            FOOTER,
           ],
         ),
       );
@@ -2776,11 +2792,6 @@ async function commandResume(
       "Restoring incident lifecycle state...",
     );
 
-    /*
-     * Preserve the existing incident service API.
-     * The current service exposes resolveVxIncident
-     * rather than a dedicated resume method.
-     */
     await resolveVxIncident(
       id,
     );
@@ -2802,7 +2813,6 @@ async function commandResume(
           "🟢 Status: RETURNED TO VX LIFECYCLE",
           `🆔 Operation: ${operation.id}`,
           "📜 Audit history preserved.",
-          FOOTER,
         ],
       ),
     );
@@ -2831,7 +2841,6 @@ async function commandResume(
           `❌ Error: ${reason}`,
           "",
           "📜 The failure has been logged.",
-          FOOTER,
         ],
       ),
     );
@@ -2925,7 +2934,6 @@ async function commandStatus(
           `🆔 Operation: ${operation.id}`,
           "",
           "🛡️ VX SECURITY CORE OPERATIONAL",
-          FOOTER,
         ],
       ),
     );
@@ -2952,8 +2960,6 @@ async function commandStatus(
           "",
           `🆔 Operation: ${operation.id}`,
           `❌ Error: ${reason}`,
-          "",
-          FOOTER,
         ],
       ),
     );
@@ -3029,7 +3035,6 @@ async function commandHealth(
           `🆔 Operation: ${operation.id}`,
           "",
           "⚡ All reported VX services are operational.",
-          FOOTER,
         ],
       ),
     );
@@ -3056,8 +3061,6 @@ async function commandHealth(
           "",
           `🆔 Operation: ${operation.id}`,
           `❌ Error: ${reason}`,
-          "",
-          FOOTER,
         ],
       ),
     );
@@ -3146,7 +3149,6 @@ async function commandLogs(
             "🟢 Audit stream is currently empty.",
             "",
             `🆔 Operation: ${operation.id}`,
-            FOOTER,
           ],
         ),
       );
@@ -3198,7 +3200,6 @@ async function commandLogs(
           `🆔 Operation: ${operation.id}`,
           "",
           "🛡️ Audit history preserved.",
-          FOOTER,
         ],
       ),
     );
@@ -3225,8 +3226,6 @@ async function commandLogs(
           "",
           `🆔 Operation: ${operation.id}`,
           `❌ Error: ${reason}`,
-          "",
-          FOOTER,
         ],
       ),
     );
@@ -3302,7 +3301,6 @@ async function commandStats(
           `🆔 Operation: ${operation.id}`,
           "",
           "📊 VX intelligence metrics updated.",
-          FOOTER,
         ],
       ),
     );
@@ -3329,8 +3327,6 @@ async function commandStats(
           "",
           `🆔 Operation: ${operation.id}`,
           `❌ Error: ${reason}`,
-          "",
-          FOOTER,
         ],
       ),
     );
@@ -3492,7 +3488,6 @@ async function commandReport(
           "",
           "📡 VX intelligence is active.",
           "📜 Full audit history retained.",
-          FOOTER,
         ],
       ),
     );
@@ -3521,7 +3516,6 @@ async function commandReport(
           `❌ Error: ${reason}`,
           "",
           "📜 Failure recorded in the audit system.",
-          FOOTER,
         ],
       ),
     );
@@ -3611,7 +3605,6 @@ async function commandHelp(
           `🆔 Operation: ${operation.id}`,
           "",
           "⚡ VX = SECURITY INTELLIGENCE CORE",
-          FOOTER,
         ],
       ),
     );
@@ -3638,8 +3631,6 @@ async function commandHelp(
           "",
           `🆔 Operation: ${operation.id}`,
           `❌ Error: ${reason}`,
-          "",
-          FOOTER,
         ],
       ),
     );
@@ -3708,12 +3699,6 @@ function isRegisteredVxCommand(
     }
   }
 
-  /*
-   * Preserve the command interface's
-   * supported aliases while ensuring that
-   * arbitrary "vxSomething" strings do not
-   * automatically enter the VX security layer.
-   */
   return [
     "vxscan",
     "vxmonitor",
@@ -3749,12 +3734,6 @@ export async function handleVxCommand(
       command,
     );
 
-  /*
-   * Never treat every arbitrary "vx..."
-   * string as a valid security command.
-   *
-   * The command registry remains the authority.
-   */
   if (
     !isRegisteredVxCommand(
       normalized,
@@ -3764,12 +3743,6 @@ export async function handleVxCommand(
   }
 
   try {
-    /*
-     * Verify registry metadata when the command
-     * exists there. This does not replace the
-     * handler-level owner protection already
-     * enforced by commands/handler.ts.
-     */
     const registryCommand =
       getCommand(
         normalized,
@@ -3911,14 +3884,6 @@ export async function handleVxCommand(
   } catch (
     commandError
   ) {
-    /*
-     * Every command owns its operation
-     * lifecycle and response message.
-     *
-     * Do not send another WhatsApp message
-     * here because doing so could violate the
-     * one-message VX response contract.
-     */
     console.error(
       `[VX] Command router failure: ${normalized}`,
       commandError,

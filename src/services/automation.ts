@@ -1,8 +1,10 @@
-
 import fs from "node:fs";
 import path from "node:path";
 
-import type { WASocket } from "@whiskeysockets/baileys";
+import type {
+  WAMessage,
+  WASocket,
+} from "@whiskeysockets/baileys";
 
 import {
   automationStatus,
@@ -13,10 +15,15 @@ import {
   info,
 } from "../utils/message.js";
 
+import {
+  sendVortexReply,
+} from "../utils/vortex-reply.js";
+
 /* ============================================================
    🌑 DARK VORTEX — PREMIUM AUTOMATION SYSTEM
 
    Features:
+
    👋 Welcome
    👋 Goodbye
    🤖 Autoreply
@@ -24,6 +31,7 @@ import {
    📝 Custom goodbye messages
 
    Variables:
+
    @user
    {user}
    {group}
@@ -68,13 +76,10 @@ type AutomationStore =
 const DEFAULT_SETTINGS: AutomationSettings = {
   welcome: false,
   goodbye: false,
-
   welcomeMessage:
     "👋 Welcome @user to *{group}*!\n\n🌑 Dark Vortex is protecting this group.",
-
   goodbyeMessage:
     "👋 Goodbye @user!\n\n🌑 Dark Vortex wishes you the best.",
-
   autoreply: false,
 };
 
@@ -277,27 +282,29 @@ async function handleAutoreply(
   sock: WASocket,
   jid: string,
   args: string[],
+  quotedMessage?: WAMessage,
 ): Promise<boolean> {
+
   /* ==========================================================
      GROUP ONLY
   ========================================================== */
 
   if (!jid.endsWith("@g.us")) {
-    await sock.sendMessage(
+    await sendVortexReply(
+      sock,
       jid,
-      {
-        text: error(
-          "GROUP ONLY",
-          [
-            "🤖 Autoreply settings",
-            "can only be managed",
-            "inside a WhatsApp group.",
-            "",
-            "💡 Open a group and",
-            "try again.",
-          ],
-        ),
-      },
+      error(
+        "GROUP ONLY",
+        [
+          "🤖 Autoreply settings",
+          "can only be managed",
+          "inside a WhatsApp group.",
+          "",
+          "💡 Open a group and",
+          "try again.",
+        ],
+      ),
+      quotedMessage,
     );
 
     return true;
@@ -318,19 +325,19 @@ async function handleAutoreply(
       err,
     );
 
-    await sock.sendMessage(
+    await sendVortexReply(
+      sock,
       jid,
-      {
-        text: error(
-          "GROUP DATA ERROR",
-          [
-            "Unable to read group",
-            "information.",
-            "",
-            "💡 Try again in a moment.",
-          ],
-        ),
-      },
+      error(
+        "GROUP DATA ERROR",
+        [
+          "Unable to read group",
+          "information.",
+          "",
+          "💡 Try again in a moment.",
+        ],
+      ),
+      quotedMessage,
     );
 
     return true;
@@ -358,21 +365,21 @@ async function handleAutoreply(
     botParticipant?.admin === "superadmin";
 
   if (!botIsAdmin) {
-    await sock.sendMessage(
+    await sendVortexReply(
+      sock,
       jid,
-      {
-        text: error(
-          "ADMIN ACCESS REQUIRED",
-          [
-            "🛡️ Dark Vortex must be",
-            "a group administrator",
-            "to manage autoreply.",
-            "",
-            "💡 Promote Dark Vortex",
-            "to admin and try again.",
-          ],
-        ),
-      },
+      error(
+        "ADMIN ACCESS REQUIRED",
+        [
+          "🛡️ Dark Vortex must be",
+          "a group administrator",
+          "to manage autoreply.",
+          "",
+          "💡 Promote Dark Vortex",
+          "to admin and try again.",
+        ],
+      ),
+      quotedMessage,
     );
 
     return true;
@@ -392,52 +399,44 @@ async function handleAutoreply(
     !value ||
     value === "status"
   ) {
-    await sock.sendMessage(
+    await sendVortexReply(
+      sock,
       jid,
-      {
-        text: system(
-          "AUTOMATION CONTROL",
-          [
-            `👋 Welcome: ${
-              settings.welcome
-                ? "🟢 ON"
-                : "🔴 OFF"
-            }`,
-
-            `👋 Goodbye: ${
-              settings.goodbye
-                ? "🟢 ON"
-                : "🔴 OFF"
-            }`,
-
-            `🤖 Autoreply: ${
-              settings.autoreply
-                ? "🟢 ON"
-                : "🔴 OFF"
-            }`,
-
-            "",
-
-            "🤖 AUTOREPLY",
-
-            `Status: ${
-              settings.autoreply
-                ? "🟢 ENABLED"
-                : "🔴 DISABLED"
-            }`,
-
-            "",
-
-            "💡 Use",
-
-            `${
-              args.length === 0
-                ? "/autoreply on"
-                : "/autoreply <on|off>"
-            }`,
-          ],
-        ),
-      },
+      system(
+        "AUTOMATION CONTROL",
+        [
+          `👋 Welcome: ${
+            settings.welcome
+              ? "🟢 ON"
+              : "🔴 OFF"
+          }`,
+          `👋 Goodbye: ${
+            settings.goodbye
+              ? "🟢 ON"
+              : "🔴 OFF"
+          }`,
+          `🤖 Autoreply: ${
+            settings.autoreply
+              ? "🟢 ON"
+              : "🔴 OFF"
+          }`,
+          "",
+          "🤖 AUTOREPLY",
+          `Status: ${
+            settings.autoreply
+              ? "🟢 ENABLED"
+              : "🔴 DISABLED"
+          }`,
+          "",
+          "💡 Use",
+          `${
+            args.length === 0
+              ? "/autoreply on"
+              : "/autoreply <on|off>"
+          }`,
+        ],
+      ),
+      quotedMessage,
     );
 
     return true;
@@ -455,23 +454,23 @@ async function handleAutoreply(
       },
     );
 
-    await sock.sendMessage(
+    await sendVortexReply(
+      sock,
       jid,
-      {
-        text: success(
-          "AUTOREPLY ENABLED",
-          [
-            "🤖 Dark Vortex autoreply",
-            "is now active.",
-            "",
-            "⚡ Custom trigger responses",
-            "will be handled by the",
-            "trigger system.",
-            "",
-            "🟢 Status: ACTIVE",
-          ],
-        ),
-      },
+      success(
+        "AUTOREPLY ENABLED",
+        [
+          "🤖 Dark Vortex autoreply",
+          "is now active.",
+          "",
+          "⚡ Custom trigger responses",
+          "will be handled by the",
+          "trigger system.",
+          "",
+          "🟢 Status: ACTIVE",
+        ],
+      ),
+      quotedMessage,
     );
 
     return true;
@@ -489,20 +488,20 @@ async function handleAutoreply(
       },
     );
 
-    await sock.sendMessage(
+    await sendVortexReply(
+      sock,
       jid,
-      {
-        text: success(
-          "AUTOREPLY DISABLED",
-          [
-            "🤖 Dark Vortex will no",
-            "longer process automatic",
-            "replies.",
-            "",
-            "🔴 Status: INACTIVE",
-          ],
-        ),
-      },
+      success(
+        "AUTOREPLY DISABLED",
+        [
+          "🤖 Dark Vortex will no",
+          "longer process automatic",
+          "replies.",
+          "",
+          "🔴 Status: INACTIVE",
+        ],
+      ),
+      quotedMessage,
     );
 
     return true;
@@ -512,18 +511,18 @@ async function handleAutoreply(
      INVALID
   ========================================================== */
 
-  await sock.sendMessage(
+  await sendVortexReply(
+    sock,
     jid,
-    {
-      text: commandUsage(
-        "autoreply",
-        "/autoreply on",
-        [
-          "/autoreply off",
-          "/autoreply status",
-        ].join("\n"),
-      ),
-    },
+    commandUsage(
+      "autoreply",
+      "/autoreply on",
+      [
+        "/autoreply off",
+        "/autoreply status",
+      ].join("\n"),
+    ),
+    quotedMessage,
   );
 
   return true;
@@ -538,7 +537,9 @@ export async function handleAutomationCommand(
   jid: string,
   command: string,
   args: string[],
+  quotedMessage?: WAMessage,
 ): Promise<boolean> {
+
   /* ==========================================================
      AUTOREPLY
   ========================================================== */
@@ -548,6 +549,7 @@ export async function handleAutomationCommand(
       sock,
       jid,
       args,
+      quotedMessage,
     );
   }
 
@@ -566,23 +568,23 @@ export async function handleAutomationCommand(
       value !== "on" &&
       value !== "off"
     ) {
-      await sock.sendMessage(
+      await sendVortexReply(
+        sock,
         jid,
-        {
-          text: commandUsage(
-            "welcome",
-            "/welcome on",
-            [
-              "/welcome off",
-              "",
-              `Current status: ${
-                settings.welcome
-                  ? "🟢 Enabled"
-                  : "🔴 Disabled"
-              }`,
-            ].join("\n"),
-          ),
-        },
+        commandUsage(
+          "welcome",
+          "/welcome on",
+          [
+            "/welcome off",
+            "",
+            `Current status: ${
+              settings.welcome
+                ? "🟢 Enabled"
+                : "🔴 Disabled"
+            }`,
+          ].join("\n"),
+        ),
+        quotedMessage,
       );
 
       return true;
@@ -598,34 +600,32 @@ export async function handleAutomationCommand(
       },
     );
 
-    await sock.sendMessage(
+    await sendVortexReply(
+      sock,
       jid,
-      {
-        text: success(
-          enabled
-            ? "WELCOME ENABLED"
-            : "WELCOME DISABLED",
-          [
-            `👋 Status: ${
-              enabled
-                ? "🟢 ENABLED"
-                : "🔴 DISABLED"
-            }`,
-
-            "",
-
-            ...(enabled
-              ? [
-                  "New members will receive",
-                  "the configured welcome message.",
-                ]
-              : [
-                  "Welcome automation is now",
-                  "disabled.",
-                ]),
-          ],
-        ),
-      },
+      success(
+        enabled
+          ? "WELCOME ENABLED"
+          : "WELCOME DISABLED",
+        [
+          `👋 Status: ${
+            enabled
+              ? "🟢 ENABLED"
+              : "🔴 DISABLED"
+          }`,
+          "",
+          ...(enabled
+            ? [
+                "New members will receive",
+                "the configured welcome message.",
+              ]
+            : [
+                "Welcome automation is now",
+                "disabled.",
+              ]),
+        ],
+      ),
+      quotedMessage,
     );
 
     return true;
@@ -646,23 +646,23 @@ export async function handleAutomationCommand(
       value !== "on" &&
       value !== "off"
     ) {
-      await sock.sendMessage(
+      await sendVortexReply(
+        sock,
         jid,
-        {
-          text: commandUsage(
-            "goodbye",
-            "/goodbye on",
-            [
-              "/goodbye off",
-              "",
-              `Current status: ${
-                settings.goodbye
-                  ? "🟢 Enabled"
-                  : "🔴 Disabled"
-              }`,
-            ].join("\n"),
-          ),
-        },
+        commandUsage(
+          "goodbye",
+          "/goodbye on",
+          [
+            "/goodbye off",
+            "",
+            `Current status: ${
+              settings.goodbye
+                ? "🟢 Enabled"
+                : "🔴 Disabled"
+            }`,
+          ].join("\n"),
+        ),
+        quotedMessage,
       );
 
       return true;
@@ -678,34 +678,32 @@ export async function handleAutomationCommand(
       },
     );
 
-    await sock.sendMessage(
+    await sendVortexReply(
+      sock,
       jid,
-      {
-        text: success(
-          enabled
-            ? "GOODBYE ENABLED"
-            : "GOODBYE DISABLED",
-          [
-            `👋 Status: ${
-              enabled
-                ? "🟢 ENABLED"
-                : "🔴 DISABLED"
-            }`,
-
-            "",
-
-            ...(enabled
-              ? [
-                  "Members leaving the group",
-                  "will receive the goodbye message.",
-                ]
-              : [
-                  "Goodbye automation is now",
-                  "disabled.",
-                ]),
-          ],
-        ),
-      },
+      success(
+        enabled
+          ? "GOODBYE ENABLED"
+          : "GOODBYE DISABLED",
+        [
+          `👋 Status: ${
+            enabled
+              ? "🟢 ENABLED"
+              : "🔴 DISABLED"
+          }`,
+          "",
+          ...(enabled
+            ? [
+                "Members leaving the group",
+                "will receive the goodbye message.",
+              ]
+            : [
+                "Goodbye automation is now",
+                "disabled.",
+              ]),
+        ],
+      ),
+      quotedMessage,
     );
 
     return true;
@@ -720,24 +718,24 @@ export async function handleAutomationCommand(
       args.join(" ").trim();
 
     if (!message) {
-      await sock.sendMessage(
+      await sendVortexReply(
+        sock,
         jid,
-        {
-          text: commandUsage(
-            "setwelcome",
-            "/setwelcome Welcome @user to {group}!",
-            [
-              "",
-              "VARIABLES",
-              "👤 @user",
-              "👤 {user}",
-              "👥 {group}",
-              "",
-              "💡 Example",
-              "/setwelcome 👋 Welcome @user to {group}!",
-            ].join("\n"),
-          ),
-        },
+        commandUsage(
+          "setwelcome",
+          "/setwelcome Welcome @user to {group}!",
+          [
+            "",
+            "VARIABLES",
+            "👤 @user",
+            "👤 {user}",
+            "👥 {group}",
+            "",
+            "💡 Example",
+            "/setwelcome 👋 Welcome @user to {group}!",
+          ].join("\n"),
+        ),
+        quotedMessage,
       );
 
       return true;
@@ -750,26 +748,26 @@ export async function handleAutomationCommand(
       },
     );
 
-    await sock.sendMessage(
+    await sendVortexReply(
+      sock,
       jid,
-      {
-        text: success(
-          "WELCOME MESSAGE SAVED",
-          [
-            "👋 Your custom welcome",
-            "message has been saved.",
-            "",
-            "AVAILABLE VARIABLES",
-            "👤 @user / {user}",
-            "👥 {group}",
-            "",
-            "🟢 Configuration updated.",
-            "",
-            "💡 Enable it with",
-            "/welcome on",
-          ],
-        ),
-      },
+      success(
+        "WELCOME MESSAGE SAVED",
+        [
+          "👋 Your custom welcome",
+          "message has been saved.",
+          "",
+          "AVAILABLE VARIABLES",
+          "👤 @user / {user}",
+          "👥 {group}",
+          "",
+          "🟢 Configuration updated.",
+          "",
+          "💡 Enable it with",
+          "/welcome on",
+        ],
+      ),
+      quotedMessage,
     );
 
     return true;
@@ -784,24 +782,24 @@ export async function handleAutomationCommand(
       args.join(" ").trim();
 
     if (!message) {
-      await sock.sendMessage(
+      await sendVortexReply(
+        sock,
         jid,
-        {
-          text: commandUsage(
-            "setgoodbye",
-            "/setgoodbye Goodbye @user!",
-            [
-              "",
-              "VARIABLES",
-              "👤 @user",
-              "👤 {user}",
-              "👥 {group}",
-              "",
-              "💡 Example",
-              "/setgoodbye 👋 Goodbye @user!",
-            ].join("\n"),
-          ),
-        },
+        commandUsage(
+          "setgoodbye",
+          "/setgoodbye Goodbye @user!",
+          [
+            "",
+            "VARIABLES",
+            "👤 @user",
+            "👤 {user}",
+            "👥 {group}",
+            "",
+            "💡 Example",
+            "/setgoodbye 👋 Goodbye @user!",
+          ].join("\n"),
+        ),
+        quotedMessage,
       );
 
       return true;
@@ -814,26 +812,26 @@ export async function handleAutomationCommand(
       },
     );
 
-    await sock.sendMessage(
+    await sendVortexReply(
+      sock,
       jid,
-      {
-        text: success(
-          "GOODBYE MESSAGE SAVED",
-          [
-            "👋 Your custom goodbye",
-            "message has been saved.",
-            "",
-            "AVAILABLE VARIABLES",
-            "👤 @user / {user}",
-            "👥 {group}",
-            "",
-            "🟢 Configuration updated.",
-            "",
-            "💡 Enable it with",
-            "/goodbye on",
-          ],
-        ),
-      },
+      success(
+        "GOODBYE MESSAGE SAVED",
+        [
+          "👋 Your custom goodbye",
+          "message has been saved.",
+          "",
+          "AVAILABLE VARIABLES",
+          "👤 @user / {user}",
+          "👥 {group}",
+          "",
+          "🟢 Configuration updated.",
+          "",
+          "💡 Enable it with",
+          "/goodbye on",
+        ],
+      ),
+      quotedMessage,
     );
 
     return true;
@@ -847,42 +845,35 @@ export async function handleAutomationCommand(
     const settings =
       getAutomationSettings(jid);
 
-    await sock.sendMessage(
+    await sendVortexReply(
+      sock,
       jid,
-      {
-        text:
-          automationStatus(
-            settings.welcome,
-            settings.goodbye,
-            settings.autoreply,
-          ) +
-          "\n\n" +
-          info(
-            "CONFIGURATION",
-            [
-              "📝 WELCOME MESSAGE",
-              settings.welcomeMessage,
-
-              "",
-
-              "📝 GOODBYE MESSAGE",
-              settings.goodbyeMessage,
-
-              "",
-
-              "⚙️ Use the commands below",
-              "to modify automation.",
-
-              "",
-
-              "👋 /welcome on|off",
-              "👋 /goodbye on|off",
-              "🤖 /autoreply on|off",
-              "📝 /setwelcome <message>",
-              "📝 /setgoodbye <message>",
-            ],
-          ),
-      },
+      automationStatus(
+        settings.welcome,
+        settings.goodbye,
+        settings.autoreply,
+      ) +
+        "\n\n" +
+        info(
+          "CONFIGURATION",
+          [
+            "📝 WELCOME MESSAGE",
+            settings.welcomeMessage,
+            "",
+            "📝 GOODBYE MESSAGE",
+            settings.goodbyeMessage,
+            "",
+            "⚙️ Use the commands below",
+            "to modify automation.",
+            "",
+            "👋 /welcome on|off",
+            "👋 /goodbye on|off",
+            "🤖 /autoreply on|off",
+            "📝 /setwelcome <message>",
+            "📝 /setgoodbye <message>",
+          ],
+        ),
+      quotedMessage,
     );
 
     return true;
@@ -890,4 +881,3 @@ export async function handleAutomationCommand(
 
   return false;
 }
-

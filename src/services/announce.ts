@@ -1,4 +1,3 @@
-
 import type {
   WAMessage,
   WASocket,
@@ -9,6 +8,10 @@ import {
   commandUsage,
   success,
 } from "../utils/message.js";
+
+import {
+  sendVortexReply,
+} from "../utils/vortex-reply.js";
 
 // =========================================================
 // 🌑 DARK VORTEX — ANNOUNCEMENT SYSTEM
@@ -77,25 +80,41 @@ export async function handleAnnouncementCommand(
   jid: string,
   command: string,
   args: string[],
+  quotedMessage?: WAMessage,
 ): Promise<boolean> {
   if (command !== "announce") {
     return false;
   }
 
   // ---------------------------------------------------------
+  // LOCAL REPLY HELPER
+  // ---------------------------------------------------------
+
+  const reply = async (
+    text: string,
+  ) => {
+    await sendVortexReply(
+      sock,
+      jid,
+      text,
+      quotedMessage,
+    );
+  };
+
+  // ---------------------------------------------------------
   // GROUP ONLY
   // ---------------------------------------------------------
 
   if (!isGroup(jid)) {
-    await sock.sendMessage(jid, {
-      text: error(
+    await reply(
+      error(
         "GROUP ONLY",
         [
           "📢 Announcements can only",
           "be sent inside a WhatsApp group.",
         ],
       ),
-    });
+    );
 
     return true;
   }
@@ -118,8 +137,8 @@ export async function handleAnnouncementCommand(
       err,
     );
 
-    await sock.sendMessage(jid, {
-      text: error(
+    await reply(
+      error(
         "GROUP DATA ERROR",
         [
           "Unable to read group",
@@ -129,7 +148,7 @@ export async function handleAnnouncementCommand(
           "is still a group member.",
         ],
       ),
-    });
+    );
 
     return true;
   }
@@ -165,8 +184,8 @@ export async function handleAnnouncementCommand(
     );
 
   if (!botIsAdmin) {
-    await sock.sendMessage(jid, {
-      text: error(
+    await reply(
+      error(
         "BOT NOT ADMIN",
         [
           "🛡️ Dark Vortex needs",
@@ -177,7 +196,7 @@ export async function handleAnnouncementCommand(
           "to admin and try again.",
         ],
       ),
-    });
+    );
 
     return true;
   }
@@ -187,8 +206,8 @@ export async function handleAnnouncementCommand(
   // ---------------------------------------------------------
 
   if (args.length === 0) {
-    await sock.sendMessage(jid, {
-      text: commandUsage(
+    await reply(
+      commandUsage(
         "announce",
         "/announce Your message",
         [
@@ -198,7 +217,7 @@ export async function handleAnnouncementCommand(
           "creates real WhatsApp mentions.",
         ].join("\n"),
       ),
-    });
+    );
 
     return true;
   }
@@ -231,13 +250,13 @@ export async function handleAnnouncementCommand(
   // ---------------------------------------------------------
 
   if (!announcementText) {
-    await sock.sendMessage(jid, {
-      text: commandUsage(
+    await reply(
+      commandUsage(
         "announce",
         "/announce @everyone Meeting starts at 7 PM",
         "Please provide an announcement message.",
       ),
-    });
+    );
 
     return true;
   }
@@ -267,8 +286,8 @@ export async function handleAnnouncementCommand(
         err,
       );
 
-      await sock.sendMessage(jid, {
-        text: error(
+      await reply(
+        error(
           "SEND FAILED",
           [
             "📢 The announcement could",
@@ -277,7 +296,7 @@ export async function handleAnnouncementCommand(
             "💡 Please try again.",
           ],
         ),
-      });
+      );
 
       return true;
     }
@@ -305,8 +324,8 @@ export async function handleAnnouncementCommand(
     [...new Set(participants)];
 
   if (mentions.length === 0) {
-    await sock.sendMessage(jid, {
-      text: error(
+    await reply(
+      error(
         "MENTIONS UNAVAILABLE",
         [
           "📢 WhatsApp did not provide",
@@ -316,7 +335,7 @@ export async function handleAnnouncementCommand(
           "again in a moment.",
         ],
       ),
-    });
+    );
 
     return true;
   }
@@ -372,8 +391,8 @@ export async function handleAnnouncementCommand(
       err,
     );
 
-    await sock.sendMessage(jid, {
-      text: error(
+    await reply(
+      error(
         "SEND FAILED",
         [
           "📢 The announcement could",
@@ -382,9 +401,8 @@ export async function handleAnnouncementCommand(
           "💡 Please try again.",
         ],
       ),
-    });
+    );
 
     return true;
   }
 }
-

@@ -262,6 +262,18 @@ const COMMANDS: CommandDefinition[] = [
   },
 
   {
+    name: "session",
+    description:
+      "Display the current WhatsApp session and connection state.",
+    category: "core",
+    usage: "session",
+    aliases: ["sess"],
+    order: 8,
+    access: "owner",
+    scope: "private",
+  },
+
+  {
     name: "system",
     description:
       "Display system and runtime information.",
@@ -488,6 +500,31 @@ const COMMANDS: CommandDefinition[] = [
     order: 10,
     access: "owner",
     scope: "private",
+  },
+
+  {
+    name: "settings",
+    description:
+      "Display and manage Dark Vortex settings.",
+    category: "owner",
+    usage: "settings [section]",
+    aliases: ["config", "configuration"],
+    order: 11,
+    access: "owner",
+    scope: "private",
+  },
+
+  {
+    name: "backup",
+    description:
+      "Create a protected backup of Dark Vortex configuration and settings.",
+    category: "owner",
+    usage: "backup",
+    aliases: ["backupconfig", "savebackup"],
+    order: 12,
+    access: "owner",
+    scope: "private",
+    confirmation: true,
   },
 
 
@@ -787,6 +824,18 @@ const COMMANDS: CommandDefinition[] = [
     usage: "members",
     aliases: ["memberlist"],
     order: 3,
+    access: "owner",
+    scope: "group",
+  },
+
+  {
+    name: "whois",
+    description:
+      "Display detailed information about a selected group member.",
+    category: "groupTools",
+    usage: "whois @user",
+    aliases: ["userinfo", "user"],
+    order: 4,
     access: "owner",
     scope: "group",
   },
@@ -1827,10 +1876,9 @@ function normalizeCommandName(
 ): string {
   return String(value || "")
     .trim()
-    .replace(/^[./!#]+/, "")
+    .replace(/^[^\p{L}\p{N}_-]+/u, "")
     .toLowerCase();
 }
-
 
 /* =========================================================
    INTERNAL COMMAND INDEX
@@ -1871,11 +1919,35 @@ export function getCommand(
     return undefined;
   }
 
-  return COMMAND_INDEX.get(
-    normalized,
-  );
-}
+  const direct =
+    COMMAND_INDEX.get(normalized);
 
+  if (direct) {
+    return direct;
+  }
+
+  // Fallback: compare against every registered
+  // command and alias using the same normalization.
+  for (const command of COMMANDS) {
+    if (
+      normalizeCommandName(command.name) ===
+      normalized
+    ) {
+      return command;
+    }
+
+    for (const alias of command.aliases ?? []) {
+      if (
+        normalizeCommandName(alias) ===
+        normalized
+      ) {
+        return command;
+      }
+    }
+  }
+
+  return undefined;
+}
 
 /* =========================================================
    GET ALL COMMANDS
