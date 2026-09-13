@@ -39,10 +39,10 @@ import {
 // ============================================================
 
 const ASSISTANT_DELAY_MS =
-  2 * 60 * 1000;
+   20 * 1000;
 
 const CONVERSATION_EXPIRY_MS =
-  60 * 60 * 1000;
+  30 * 60 * 1000;
 
 const MAX_HISTORY_MESSAGES =
   10;
@@ -54,7 +54,7 @@ const AI_TIMEOUT_MS =
   30000;
 
 const FOLLOWUP_COOLDOWN_MS =
-  30 * 1000;
+  20 * 1000;
 
 const TYPING_DELAY_MS =
   1200;
@@ -187,8 +187,7 @@ function getMessageText(
   }
 
   if (
-    content.extendedTextMessage
-      ?.text
+    content.extendedTextMessage?.text
   ) {
     return (
       content.extendedTextMessage.text
@@ -196,8 +195,7 @@ function getMessageText(
   }
 
   if (
-    content.imageMessage
-      ?.caption
+    content.imageMessage?.caption
   ) {
     return (
       content.imageMessage.caption
@@ -205,8 +203,7 @@ function getMessageText(
   }
 
   if (
-    content.videoMessage
-      ?.caption
+    content.videoMessage?.caption
   ) {
     return (
       content.videoMessage.caption
@@ -214,15 +211,63 @@ function getMessageText(
   }
 
   if (
-    content.documentMessage
-      ?.caption
+    content.documentMessage?.caption
   ) {
     return (
       content.documentMessage.caption
     );
   }
 
-  return "";
+  /*
+   * Non-text messages still count as
+   * incoming activity.
+   */
+
+  if (content.imageMessage) {
+    return "[IMAGE MESSAGE]";
+  }
+
+  if (content.videoMessage) {
+    return "[VIDEO MESSAGE]";
+  }
+
+  if (content.audioMessage) {
+    return "[VOICE/AUDIO MESSAGE]";
+  }
+
+  if (content.documentMessage) {
+    return "[DOCUMENT MESSAGE]";
+  }
+
+  if (content.stickerMessage) {
+    return "[STICKER MESSAGE]";
+  }
+
+  if (content.contactMessage) {
+    return "[CONTACT MESSAGE]";
+  }
+
+  if (content.contactsArrayMessage) {
+    return "[CONTACTS MESSAGE]";
+  }
+
+  if (content.locationMessage) {
+    return "[LOCATION MESSAGE]";
+  }
+
+  if (content.liveLocationMessage) {
+    return "[LIVE LOCATION MESSAGE]";
+  }
+
+  if (content.pollCreationMessage) {
+    return "[POLL MESSAGE]";
+  }
+
+  if (content.pollUpdateMessage) {
+    return "[POLL RESPONSE]";
+  }
+
+  return "[WHATSAPP MESSAGE]";
 }
 
 
@@ -876,9 +921,6 @@ export function markPersonalAssistantOwnerResponse(
 
   /*
    * PRIVATE CHAT
-   *
-   * In a private conversation, the remote JID
-   * identifies the person Brian is speaking to.
    */
 
   if (
@@ -917,49 +959,38 @@ export function markPersonalAssistantOwnerResponse(
   /*
    * GROUP CHAT
    *
-   * A quoted reply identifies the person Brian
-   * responded to.
+   * Any genuine Brian message in the group
+   * means Brian is active again.
+   *
+   * Cancel pending assistant responses for
+   * conversations in that group.
    */
 
-  const context =
-    message.message
-      ?.extendedTextMessage
-      ?.contextInfo;
-
-  const quotedParticipant =
-    context?.participant;
-
-  if (
-    !quotedParticipant
+  for (
+    const conversation of
+      conversations.values()
   ) {
-    return;
-  }
+    if (
+      normalizeJid(
+        conversation.jid,
+      ) !== normalizedJid
+    ) {
+      continue;
+    }
 
-  const key =
-    createConversationKey(
-      jid,
-      quotedParticipant,
+    conversation.ownerResponded =
+      true;
+
+    cancelConversationTimer(
+      conversation,
     );
 
-  const conversation =
-    conversations.get(key);
-
-  if (!conversation) {
-    return;
+    conversation.processing =
+      false;
   }
 
-  conversation.ownerResponded =
-    true;
-
-  cancelConversationTimer(
-    conversation,
-  );
-
-  conversation.processing =
-    false;
-
   console.log(
-    `🟢 [PERSONAL ASSISTANT] Brian responded to ${quotedParticipant} in ${jid}.`,
+    `🟢 [PERSONAL ASSISTANT] Brian responded in ${normalizedJid}. Assistant state reset.`,
   );
 }
 
@@ -1035,6 +1066,62 @@ async function sendAssistantResponse(
   return true;
 }
 
+function isImmediateBrianFollowUp(
+  text: string,
+): boolean {
+  const normalized =
+    text
+      .trim()
+      .toLowerCase();
+
+  if (!normalized) {
+    return false;
+  }
+
+  /*
+   * Explicit questions about Brian.
+   */
+
+  const brianQuestion =
+    /\bbrian\b/.test(normalized) &&
+    (
+      normalized.includes("?") ||
+      /\b(can|could|will|would|is|are|was|were|has|have|did|does|do|when|where|what|why|how|who)\b/
+        .test(normalized)
+    );
+
+  if (brianQuestion) {
+    return true;
+  }
+
+  /*
+   * Direct requests involving Brian.
+   */
+
+  const brianRequest =
+    /\b(tell|ask|remind|inform|let|message|call|contact|notify|send)\b/
+      .test(normalized) &&
+    /\bbrian\b/.test(normalized);
+
+  if (brianRequest) {
+    return true;
+  }
+
+  /*
+   * Follow-up questions that clearly continue
+   * the existing conversation.
+   */
+
+  if (
+    normalized.includes("?") &&
+    /\b(he|him|his|you|can|could|would|will|when|where|what|why|how)\b/
+      .test(normalized)
+  ) {
+    return true;
+  }
+
+  return false;
+}
 
 // ============================================================
 // DELAYED FIRST RESPONSE
@@ -1062,10 +1149,9 @@ function scheduleInitialResponse(
     );
 
   console.log(
-    `⏳ [PERSONAL ASSISTANT] Waiting 2 minutes for Brian: ${conversation.key}`,
+    `⏳ [PERSONAL ASSISTANT] Waiting 30 seconds for Brian: ${conversation.key}`,
   );
 }
-
 
 // ============================================================
 // PROCESS DELAYED RESPONSE
@@ -1159,14 +1245,6 @@ async function processFollowUp(
 ): Promise<boolean> {
   if (
     conversation.processing
-  ) {
-    return false;
-  }
-
-  if (
-    Date.now() -
-      conversation.lastAssistantReplyAt <
-    FOLLOWUP_COOLDOWN_MS
   ) {
     return false;
   }
@@ -1315,6 +1393,13 @@ export async function processPersonalAssistant(
   conversation.ownerResponded =
     false;
 
+    /*
+   * A new message means the person is active.
+   *
+   * Do NOT blindly reset ownerResponded here.
+   * Brian's response handler controls that state.
+   */
+
   conversation.lastMessageAt =
     Date.now();
 
@@ -1325,9 +1410,38 @@ export async function processPersonalAssistant(
   );
 
   /*
-   * First message:
+   * IMMEDIATE BRIAN FOLLOW-UP
    *
-   * Wait two minutes before responding.
+   * Questions or requests specifically involving
+   * Brian should never wait for the 60-second timer.
+   */
+
+  if (
+    isImmediateBrianFollowUp(
+      text,
+    )
+  ) {
+    cancelConversationTimer(
+      conversation,
+    );
+
+    console.log(
+      `⚡ [PERSONAL ASSISTANT] Immediate Brian follow-up: ${conversation.key}`,
+    );
+
+    return await processFollowUp(
+      sock,
+      conversation,
+      message,
+    );
+  }
+
+  /*
+   * FIRST / UNANSWERED MESSAGE
+   *
+   * Wait 60 seconds for Brian.
+   *
+   * Every new ordinary message resets this timer.
    */
 
   if (
@@ -1343,12 +1457,13 @@ export async function processPersonalAssistant(
   }
 
   /*
-   * Follow-up:
-   *
-   * The assistant already introduced itself,
-   * so subsequent messages can be handled
-   * contextually.
+   * Once the assistant has already replied,
+   * normal follow-up messages are handled immediately.
    */
+
+  cancelConversationTimer(
+    conversation,
+  );
 
   return await processFollowUp(
     sock,
