@@ -2602,43 +2602,64 @@ if (
       `Owner account: ${maskedOwner}`,
     );
 
-    if (
-  !state.creds.registered
-  ) {
-  if (isPairingMode()) {
-    const pairingNumber =
-      getPairingNumber();
+    if (!state.creds.registered) {
+  // ========================================================
+  // DETERMINE AUTHENTICATION MODE
+  // ========================================================
+  //
+  // Website/API selection takes priority when an API
+  // session has been requested.
+  //
+  // Otherwise fall back to the .env configuration.
+  //
 
-    if (!pairingNumber) {
+  const activePairingMode =
+    apiSessionRequested
+      ? runtimePairingMode
+      : isPairingMode()
+        ? "pairing"
+        : "qr";
+
+  const activePairingNumber =
+    apiSessionRequested
+      ? runtimePairingNumber
+      : getPairingNumber();
+
+  if (activePairingMode === "pairing") {
+    if (!activePairingNumber) {
       log.error(
-        "Phone-number pairing is enabled but PAIRING_NUMBER is missing.",
+        "Phone-number pairing was selected but no phone number was provided.",
       );
 
       log.info(
-        "Set PAIRING_NUMBER in .env using international format without +, spaces, or dashes.",
-      );
-    } else {
-      log.connect(
-        "Authentication required • phone-number pairing",
+        "Provide the phone number in international format without +, spaces, or dashes.",
       );
 
-      log.info(
-        `Pairing account: ${maskPhoneNumber(
-          pairingNumber,
-        )}`,
-      );
-
-      log.info(
-        "A real WhatsApp pairing code will be requested from Baileys.",
+      throw new Error(
+        "A phone number is required for pairing mode.",
       );
     }
+
+    log.connect(
+      "Authentication required • phone-number pairing",
+    );
+
+    log.info(
+      `Pairing account: ${maskPhoneNumber(
+        activePairingNumber,
+      )}`,
+    );
+
+    log.info(
+      "A real WhatsApp pairing code will be requested from Baileys.",
+    );
   } else {
     log.connect(
       "Authentication required • QR pairing",
     );
 
     log.info(
-      "Scan the QR code displayed in this terminal with WhatsApp.",
+      "A QR code will be generated for WhatsApp authentication.",
     );
   }
 } else {
@@ -2828,60 +2849,81 @@ sock.sendMessage = async (
           setSessionStatus("CONNECTING");
           setPairingConnecting();
         }
-    // ─────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────
 // PHONE-NUMBER PAIRING
-// Request only after Baileys has produced its registration QR
-// event. This keeps QR mode completely independent.
+// Website/API selection takes priority over .env configuration.
 // ─────────────────────────────────────────────────────────────
+const activePairingMode =
+  apiSessionRequested
+    ? runtimePairingMode
+    : isPairingMode()
+      ? "pairing"
+      : "qr";
+
+const activePairingNumber =
+  apiSessionRequested
+    ? runtimePairingNumber
+    : getPairingNumber();
+
 if (
   qr &&
   !state.creds.registered &&
-  isPairingMode() &&
+  activePairingMode === "pairing" &&
   !pairingCodeRequested
 ) {
-  const pairingNumber = getPairingNumber();
+  const pairingNumber =
+    activePairingNumber;
 
   if (!pairingNumber) {
     pairingCodeRequested = false;
 
     log.error(
-      "Phone-number pairing enabled but PAIRING_NUMBER is missing.",
+      "Phone-number pairing selected but no phone number was provided.",
     );
-  } else if (pairingNumber.length < 8) {
+  } else if (
+    pairingNumber.length < 8
+  ) {
     pairingCodeRequested = false;
 
     log.error(
-      `Invalid pairing number: ${maskPhoneNumber(pairingNumber)}`,
+      `Invalid pairing number: ${maskPhoneNumber(
+        pairingNumber,
+      )}`,
     );
   } else {
     pairingCodeRequested = true;
 
     log.connect(
-      `Phone-number pairing ready • requesting code for ${maskPhoneNumber(pairingNumber)}`,
+      `Phone-number pairing ready • requesting code for ${maskPhoneNumber(
+        pairingNumber,
+      )}`,
     );
 
     try {
       const pairingCode =
-  await sock.requestPairingCode(
-    pairingNumber,
-  );
+        await sock.requestPairingCode(
+          pairingNumber,
+        );
 
-const formattedPairingCode =
-  pairingCode.length === 8
-    ? `${pairingCode.slice(0, 4)}-${pairingCode.slice(4)}`
-    : pairingCode;
+      const formattedPairingCode =
+        pairingCode.length === 8
+          ? `${pairingCode.slice(
+              0,
+              4,
+            )}-${pairingCode.slice(4)}`
+          : pairingCode;
 
-setPairingCode(
-  formattedPairingCode,
-);
+      setPairingCode(
+        formattedPairingCode,
+      );
 
-log.connect(
-  `🔑 PAIRING CODE: ${formattedPairingCode}`,
-);
+      log.connect(
+        `🔑 PAIRING CODE: ${formattedPairingCode}`,
+      );
 
-log.info(
-  "Open WhatsApp → Linked Devices → Link with phone number and enter the displayed code.",
-);
+      log.info(
+        "Open WhatsApp → Linked Devices → Link with phone number and enter the displayed code.",
+      );
     } catch (error) {
       pairingCodeRequested = false;
 
@@ -2917,61 +2959,63 @@ log.info(
         }
 
         // ----------------------------------------------------
-        // QR AUTHENTICATION
-        // ----------------------------------------------------
+// QR AUTHENTICATION
+// ----------------------------------------------------
 
-        if (
-          qr &&
-          !isPairingMode()
-        ) {
-          setPairingQr(qr);
-          console.log("");
+if (
+  qr &&
+  !state.creds.registered &&
+  activePairingMode === "qr"
+) {
+  setPairingQr(qr);
 
-          console.log(
-            "╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮",
-          );
+  console.log("");
 
-          console.log(
-            "┃ 🌑 DARK VORTEX — QR PAIRING",
-          );
+  console.log(
+    "╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮",
+  );
 
-          console.log(
-            "┃",
-          );
+  console.log(
+    "┃ 🌑 DARK VORTEX — QR PAIRING",
+  );
 
-          console.log(
-            "┃ Scan this QR with WhatsApp:",
-          );
+  console.log(
+    "┃",
+  );
 
-          console.log(
-            "┃ WhatsApp → Linked Devices → Link a Device",
-          );
+  console.log(
+    "┃ Scan this QR with WhatsApp:",
+  );
 
-          console.log(
-            "╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯",
-          );
+  console.log(
+    "┃ WhatsApp → Linked Devices → Link a Device",
+  );
 
-          console.log("");
+  console.log(
+    "╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯",
+  );
 
-          qrcode.generate(
-            qr,
-            {
-              small: true,
-            },
-          );
+  console.log("");
 
-          console.log("");
+  qrcode.generate(
+    qr,
+    {
+      small: true,
+    },
+  );
 
-          log.connect(
-            "QR code displayed • waiting for WhatsApp scan...",
-          );
+  console.log("");
 
-          addDashboardEvent(
-            "AUTH",
-            "WHATSAPP",
-            "QR authentication code displayed.",
-          );
-        }
+  log.connect(
+    "QR code displayed • waiting for WhatsApp scan...",
+  );
+
+  addDashboardEvent(
+    "AUTH",
+    "WHATSAPP",
+    "QR authentication code displayed.",
+  );
+}
 
         // ----------------------------------------------------
         // OPEN
