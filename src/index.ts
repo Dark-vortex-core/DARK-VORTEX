@@ -6,6 +6,10 @@ import {
   clearWhatsAppAuth,
 } from "./services/auth-recovery.js";
 
+import {
+  sendVortexReply,
+} from "./utils/vortex-reply.js";
+
 import makeWASocket, {
   type WAMessage,
   DisconnectReason,
@@ -99,6 +103,10 @@ import {
 } from "./commands/moderation.js";
 
 import {
+  isGroupStatusBlocked,
+} from "./services/group-status-control.js";
+
+import {
   trackOutgoingMessage,
   isTrackedOutgoingMessage,
 } from "./utils/outgoing-message-tracker.js";
@@ -118,6 +126,10 @@ import {
 import {
   processDarkVortexAI,
 } from "./services/dark-vortex-ai.js";
+
+import {
+  processDeleteAllFrom,
+} from "./services/deleteallfrom.js";
 
 import {
   getPrefix,
@@ -4014,6 +4026,25 @@ if (apiSessionRequested) {
             if (!jid) {
               continue;
             }
+            // ------------------------------------------------
+// 🌑 DARK VORTEX — DELETE ALL FROM
+// ------------------------------------------------
+
+if (
+  jid.endsWith("@g.us") &&
+  !msg.key.fromMe
+) {
+  const deletedByRule =
+    await processDeleteAllFrom(
+      sock,
+      jid,
+      msg,
+    );
+
+  if (deletedByRule) {
+    continue;
+  }
+}
 
             let groupMetadata:
               | any
@@ -4278,25 +4309,61 @@ if (msg.key.fromMe) {
             }
 
             // ------------------------------------------------
-            // SPECIAL STATUS SHARE
-            // ------------------------------------------------
+// 👥 GROUP STATUS CONTROL
+// ------------------------------------------------
 
-            if (
-              specialStatusShare &&
-              jid.endsWith(
-                "@g.us",
-              ) &&
-              !msg.key.fromMe
-            ) {
-              await processProtection(
-                sock,
-                jid,
-                msg,
-                sender,
-              );
+if (
+  specialStatusShare &&
+  jid.endsWith("@g.us") &&
+  !msg.key.fromMe
+) {
+  const groupStatusBlocked =
+    await isGroupStatusBlocked(
+      jid,
+    );
 
-              continue;
-            }
+  if (groupStatusBlocked) {
+    log.security(
+      `Group Status blocked • ${jid} • ${sender}`,
+    );
+
+    addDashboardEvent(
+      "SECURITY",
+      "GROUP STATUS",
+      `Blocked Group Status attempt • ${sender}`,
+    );
+
+    try {
+      await sendVortexReply(
+        sock,
+        jid,
+        [
+          "🛑 Group Status blocked.",
+          "",
+          "Group Status posting is currently",
+          "disabled for this group.",
+        ].join("\n"),
+        msg,
+      );
+    } catch (error) {
+      log.error(
+        "Failed to send Group Status block notice.",
+        error,
+      );
+    }
+
+    continue;
+  }
+
+  await processProtection(
+    sock,
+    jid,
+    msg,
+    sender,
+  );
+
+  continue;
+}
 
             // ------------------------------------------------
             // NORMAL EMPTY MESSAGE FILTER

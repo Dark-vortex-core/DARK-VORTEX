@@ -1,4 +1,4 @@
-/* =========================================================
+ /* =========================================================
    🌑 DARK VORTEX — VX SECURITY REPORTS
 
    ⚡ Security / Bot / Scan / Monitor Reports
@@ -31,7 +31,8 @@ import type {
    CONSTANTS
 ========================================================= */
 
-const FOOTER = "⚡ Powered by Vortex Tech";
+const FOOTER =
+  "╰─── ⚡ VORTEX TECH ───╯";
 
 const MAX_NAME_LENGTH = 80;
 const MAX_REASON_LENGTH = 240;
@@ -351,6 +352,63 @@ function safeRate(
 }
 
 /* =========================================================
+   REPORT HELPERS
+========================================================= */
+
+function reportHeader(
+  title: string,
+): string[] {
+  return [
+    "🌑 *DARK VORTEX*",
+    "",
+    `⚡ *${title}*`,
+    "",
+  ];
+}
+
+function reportSection(
+  title: string,
+): string {
+  return `╭─「 ${title} 」`;
+}
+
+function reportSectionEnd(): string {
+  return "╰────────────────────";
+}
+
+function reportLine(
+  label: string,
+  value: string | number,
+): string {
+  return `│ ${label.padEnd(14)}: ${value}`;
+}
+
+function finalizeReport(
+  lines: string[],
+): string {
+  const sanitized =
+    lines
+      .map(line =>
+        cleanText(
+          line,
+          1000,
+        ),
+      )
+      .filter(Boolean);
+
+  const limited =
+    limitReportLines(
+      sanitized,
+    );
+
+  return [
+    ...limited,
+    "",
+    FOOTER,
+  ].join("\n");
+}
+
+/* =========================================================
    INDICATORS
 ========================================================= */
 
@@ -367,7 +425,7 @@ function formatIndicators(
     )
   ) {
     return [
-      `┃ • ${emptyText}`,
+      `│ • ${emptyText}`,
     ];
   }
 
@@ -417,13 +475,13 @@ function formatIndicators(
     cleaned.length === 0
   ) {
     return [
-      `┃ • ${emptyText}`,
+      `│ • ${emptyText}`,
     ];
   }
 
   return cleaned.map(
     indicator =>
-      `┃ • ${indicator}`,
+      `│ • ${indicator}`,
   );
 }
 
@@ -441,7 +499,7 @@ function formatActions(
     actions.length === 0
   ) {
     return [
-      "┃ • NONE",
+      "│ • NONE",
     ];
   }
 
@@ -479,7 +537,7 @@ function formatActions(
     seen.add(key);
 
     output.push(
-      `┃ • ${value}`,
+      `│ • ${value}`,
     );
 
     if (
@@ -492,7 +550,7 @@ function formatActions(
 
   return output.length
     ? output
-    : ["┃ • NONE"];
+    : ["│ • NONE"];
 }
 
 /* =========================================================
@@ -514,27 +572,9 @@ function limitReportLines(
       0,
       MAX_REPORT_LINES - 2,
     ),
-    "┃",
-    "┃ • Report output truncated for safety.",
+    "│",
+    "│ • Report output truncated for safety.",
   ];
-}
-
-function finalizeReport(
-  lines: string[],
-): string {
-  const sanitized =
-    lines
-      .map(line =>
-        cleanText(
-          line,
-          1000,
-        ),
-      )
-      .filter(Boolean);
-
-  return limitReportLines(
-    sanitized,
-  ).join("\n");
 }
 
 /* =========================================================
@@ -614,76 +654,123 @@ export function formatVxBotReport(
 
   const detectionLabel =
     severity === "CRITICAL"
-      ? "🚨 CRITICAL BOT-LIKE BEHAVIOR"
+      ? "CRITICAL BOT-LIKE BEHAVIOR"
       : severity === "HIGH"
-        ? "🚨 HIGH-RISK BOT-LIKE BEHAVIOR"
+        ? "HIGH-RISK BOT-LIKE BEHAVIOR"
         : severity === "MEDIUM"
-          ? "⚠️ MODERATE BOT-LIKE BEHAVIOR"
-          : "🟢 LOW-RISK BOT-LIKE ACTIVITY";
-
-  const incidentLine =
-    incident
-      ? `┃ 🆔 Incident: ${safeId(
-          incident.id,
-        )}`
-      : "";
+          ? "MODERATE BOT-LIKE BEHAVIOR"
+          : "LOW-RISK BOT-LIKE ACTIVITY";
 
   const lines = [
-    "╭━━━〔 🤖 VX BOT INTELLIGENCE 〕━━━╮",
-    "┃",
-    `┃ ${detectionLabel}`,
-    "┃",
-    `┃ 👤 Name: ${safeName(
-      profile.name,
-    )}`,
-    `┃ 📱 Number: ${safePhone(
-      profile.phoneNumber,
-    )}`,
-    "┃",
-    `┃ 🎯 Confidence: ${confidence}%`,
-    `┃ ⚠️ Risk: ${risk}/100`,
-    `┃ ${severityIcon(
+    ...reportHeader(
+      "VX BOT INTELLIGENCE",
+    ),
+
+    reportSection(
+      "DETECTION",
+    ),
+    `│ ${severityIcon(
       severity,
-    )} Severity: ${severity}`,
-    "┃",
-    `┃ 📍 Group: ${safeGroupName(
-      groupName,
-    )}`,
-    incidentLine,
-    "┃",
-    "┃ 📊 BEHAVIOR",
-    `┃ 📨 Messages: ${formatNumber(
-      profile.messageCount,
-    )}`,
-    `┃ ⚡ Commands: ${formatNumber(
-      profile.commandCount,
-    )}`,
-    `┃ 🔗 Links: ${formatNumber(
-      profile.linkCount,
-    )}`,
-    `┃ 🔁 Repeated: ${formatNumber(
-      profile.repeatedMessageCount,
-    )}`,
-    `┃ 👥 Groups: ${formatNumber(
-      profile.groupsSeen,
-    )}`,
-    `┃ ⏱️ Activity: ${safeRate(
-      profile.averageMessagesPerMinute,
-    )}/min`,
-    "┃",
-    "┃ 🔎 INDICATORS",
+    )} ${detectionLabel}`,
+    `│ Risk          : ${risk}/100`,
+    `│ Confidence    : ${confidence}%`,
+    `│ Severity      : ${severity}`,
+    reportSectionEnd(),
+
+    "",
+    reportSection(
+      "TARGET",
+    ),
+    reportLine(
+      "Name",
+      safeName(
+        profile.name,
+      ),
+    ),
+    reportLine(
+      "Number",
+      safePhone(
+        profile.phoneNumber,
+      ),
+    ),
+    reportLine(
+      "Group",
+      safeGroupName(
+        groupName,
+      ),
+    ),
+    ...(incident
+      ? [
+          reportLine(
+            "Incident",
+            safeId(
+              incident.id,
+            ),
+          ),
+        ]
+      : []),
+    reportSectionEnd(),
+
+    "",
+    reportSection(
+      "BEHAVIOR",
+    ),
+    reportLine(
+      "Messages",
+      formatNumber(
+        profile.messageCount,
+      ),
+    ),
+    reportLine(
+      "Commands",
+      formatNumber(
+        profile.commandCount,
+      ),
+    ),
+    reportLine(
+      "Links",
+      formatNumber(
+        profile.linkCount,
+      ),
+    ),
+    reportLine(
+      "Repeated",
+      formatNumber(
+        profile.repeatedMessageCount,
+      ),
+    ),
+    reportLine(
+      "Groups Seen",
+      formatNumber(
+        profile.groupsSeen,
+      ),
+    ),
+    reportLine(
+      "Activity",
+      `${safeRate(
+        profile.averageMessagesPerMinute,
+      )}/min`,
+    ),
+    reportSectionEnd(),
+
+    "",
+    reportSection(
+      "INDICATORS",
+    ),
     ...indicators,
-    "┃",
-    "┃ 🛡️ VX STATUS",
-    "┃ ✓ Threat profile recorded",
-    "┃ ✓ Behavioral intelligence updated",
+    reportSectionEnd(),
+
+    "",
+    reportSection(
+      "VX STATUS",
+    ),
+    "│ Threat profile recorded",
+    "│ Behavioral intelligence updated",
     incident
-      ? "┃ ✓ Security incident linked"
-      : "┃ ✓ Activity recorded",
-    "┃ ✓ Continued monitoring supported",
-    "┃",
-    "╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯",
-    FOOTER,
+      ? "│ Security incident linked"
+      : "│ Activity recorded",
+    "│ Continued monitoring supported",
+    reportSectionEnd(),
   ];
 
   return finalizeReport(
@@ -733,68 +820,120 @@ export function formatVxIncidentReport(
       : 0;
 
   const lines = [
-    "╭━━━〔 🛡️ VX SECURITY INCIDENT 〕━━━╮",
-    "┃",
-    `┃ ${severityIcon(
+    ...reportHeader(
+      "VX SECURITY INCIDENT",
+    ),
+
+    reportSection(
+      "THREAT",
+    ),
+    `│ ${severityIcon(
       severity,
     )} ${severity} INCIDENT`,
-    "┃",
-    `┃ 🆔 ID: ${safeId(
-      incident.id,
-    )}`,
-    `┃ 📌 Type: ${
+    `│ Risk          : ${risk}/100`,
+    `│ Confidence    : ${confidence}%`,
+    reportSectionEnd(),
+
+    "",
+    reportSection(
+      "INCIDENT",
+    ),
+    reportLine(
+      "ID",
+      safeId(
+        incident.id,
+      ),
+    ),
+    reportLine(
+      "Type",
       cleanText(
         incident.type,
         60,
-      ) || "UNKNOWN"
-    }`,
-    `┃ 📍 Group: ${safeGroupName(
-      incident.group?.name,
-    )}`,
-    `┃ 👤 Name: ${safeName(
-      incident.actor?.name,
-    )}`,
-    `┃ 📱 Number: ${safePhone(
-      incident.actor?.phoneNumber,
-    )}`,
-    "┃",
-    `┃ ⚠️ Risk: ${risk}/100`,
-    `┃ 🎯 Confidence: ${confidence}%`,
-    `┃ 📊 Status: ${
+      ) || "UNKNOWN",
+    ),
+    reportLine(
+      "Status",
       cleanText(
         incident.status,
         40,
-      ) || "UNKNOWN"
-    }`,
-    "┃",
-    `┃ 📝 ${safeReason(
+      ) || "UNKNOWN",
+    ),
+    reportLine(
+      "Group",
+      safeGroupName(
+        incident.group?.name,
+      ),
+    ),
+    reportLine(
+      "Name",
+      safeName(
+        incident.actor?.name,
+      ),
+    ),
+    reportLine(
+      "Number",
+      safePhone(
+        incident.actor?.phoneNumber,
+      ),
+    ),
+    reportSectionEnd(),
+
+    "",
+    reportSection(
+      "REASON",
+    ),
+    `│ ${safeReason(
       incident.reason,
     )}`,
-    "┃",
-    "┃ 🔎 INDICATORS",
+    reportSectionEnd(),
+
+    "",
+    reportSection(
+      "INDICATORS",
+    ),
     ...indicators,
-    "┃",
-    "┃ 🛡️ ACTIONS",
+    reportSectionEnd(),
+
+    "",
+    reportSection(
+      "ACTIONS",
+    ),
     ...actions,
-    "┃",
-    "┃ 📚 EVENT HISTORY",
-    `┃ Events linked: ${formatNumber(
-      eventCount,
-    )}`,
-    `┃ Created: ${formatDate(
-      incident.createdAt,
-    )}`,
-    `┃ Updated: ${formatDate(
-      incident.updatedAt,
-    )}`,
-    incident.resolvedAt
-      ? `┃ Resolved: ${formatDate(
-          incident.resolvedAt,
-        )}`
-      : "",
-    "┃",
-    "╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯",
-    FOOTER,
+    reportSectionEnd(),
+
+    "",
+    reportSection(
+      "EVENT HISTORY",
+    ),
+    reportLine(
+      "Events Linked",
+      formatNumber(
+        eventCount,
+      ),
+    ),
+    reportLine(
+      "Created",
+      formatDate(
+        incident.createdAt,
+      ),
+    ),
+    reportLine(
+      "Updated",
+      formatDate(
+        incident.updatedAt,
+      ),
+    ),
+    ...(incident.resolvedAt
+      ? [
+          reportLine(
+            "Resolved",
+            formatDate(
+              incident.resolvedAt,
+            ),
+          ),
+        ]
+      : []),
+    reportSectionEnd(),
   ];
 
   return finalizeReport(
@@ -899,61 +1038,116 @@ export function formatVxScanReport(
 
   const status =
     result.aborted
-      ? "🛑 SCAN ABORTED"
+      ? "ABORTED"
       : completed
-        ? "✅ SCAN COMPLETED"
-        : "⚙️ SCAN IN PROGRESS";
+        ? "COMPLETE"
+        : "IN PROGRESS";
 
   const lines = [
-    "╭━━━〔 🔎 VX SECURITY SCAN 〕━━━╮",
-    "┃",
-    `┃ ${status}`,
-    "┃",
-    `┃ 🆔 Scan: ${scanId}`,
-    `┃ 📍 Group: ${safeGroupName(
-      result.group?.name,
-    )}`,
-    "┃",
-    `┃ 👥 Participants: ${formatNumber(
-      result.participantsScanned,
-    )}`,
-    `┃ 🧠 Events analyzed: ${formatNumber(
-      eventsAnalyzed,
-    )}`,
-    `┃ 🚨 Suspicious activity: ${formatNumber(
-      threatsDetected,
-    )}`,
-    `┃ 🔎 Findings: ${formatNumber(
-      findingsCount,
-    )}`,
-    `┃ 🟠 High risk: ${formatNumber(
-      highRisk,
-    )}`,
-    `┃ 🔴 Critical risk: ${formatNumber(
-      criticalRisk,
-    )}`,
-    `┃ 🛡️ Incidents: ${formatNumber(
-      incidentsCreated,
-    )}`,
-    "┃",
-    `┃ ⚠️ Highest risk: ${highestRisk}/100`,
-    `┃ ${severityIcon(
+    ...reportHeader(
+      "VX SECURITY SCAN",
+    ),
+
+    reportSection(
+      "SCAN STATUS",
+    ),
+    `│ Status        : ${status}`,
+    reportLine(
+      "Scan",
+      scanId,
+    ),
+    reportLine(
+      "Group",
+      safeGroupName(
+        result.group?.name,
+      ),
+    ),
+    reportSectionEnd(),
+
+    "",
+    reportSection(
+      "ANALYSIS",
+    ),
+    reportLine(
+      "Participants",
+      formatNumber(
+        result.participantsScanned,
+      ),
+    ),
+    reportLine(
+      "Events",
+      formatNumber(
+        eventsAnalyzed,
+      ),
+    ),
+    reportLine(
+      "Suspicious",
+      formatNumber(
+        threatsDetected,
+      ),
+    ),
+    reportLine(
+      "Findings",
+      formatNumber(
+        findingsCount,
+      ),
+    ),
+    reportSectionEnd(),
+
+    "",
+    reportSection(
+      "RISK",
+    ),
+    reportLine(
+      "High Risk",
+      formatNumber(
+        highRisk,
+      ),
+    ),
+    reportLine(
+      "Critical",
+      formatNumber(
+        criticalRisk,
+      ),
+    ),
+    reportLine(
+      "Incidents",
+      formatNumber(
+        incidentsCreated,
+      ),
+    ),
+    `│ Highest Risk  : ${highestRisk}/100`,
+    `│ Severity      : ${severityIcon(
       riskSeverity,
-    )} Severity: ${riskSeverity}`,
-    result.completedAt
-      ? `┃ 🕐 Completed: ${formatDate(
-          result.completedAt,
-        )}`
-      : "",
-    "┃",
+    )} ${riskSeverity}`,
+    reportSectionEnd(),
+
+    ...(result.completedAt
+      ? [
+          "",
+          reportSection(
+            "TIMING",
+          ),
+          reportLine(
+            "Completed",
+            formatDate(
+              result.completedAt,
+            ),
+          ),
+          reportSectionEnd(),
+        ]
+      : []),
+
+    "",
+    reportSection(
+      "VX RESULT",
+    ),
     completed
-      ? "┃ ✓ Scan data finalized"
+      ? "│ Scan data finalized"
       : result.aborted
-        ? "┃ ✓ Scan safely terminated"
-        : "┃ ⏳ Scan is still running",
-    "┃",
-    "╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯",
-    FOOTER,
+        ? "│ Scan safely terminated"
+        : "│ Scan is still running",
+    reportSectionEnd(),
   ];
 
   return finalizeReport(
@@ -979,8 +1173,8 @@ export function formatVxMonitorReport(
 ): string {
   const state =
     monitor.active
-      ? "🟢 LIVE MONITORING"
-      : "🔴 MONITOR OFFLINE";
+      ? "LIVE"
+      : "OFFLINE";
 
   const events =
     safeCount(
@@ -998,39 +1192,67 @@ export function formatVxMonitorReport(
     );
 
   const lines = [
-    "╭━━━〔 👁️ VX MONITOR 〕━━━╮",
-    "┃",
-    `┃ ${state}`,
-    "┃",
-    `┃ 🆔 Session: ${safeId(
-      monitor.id,
-    )}`,
-    `┃ 📍 Group: ${safeGroupName(
-      monitor.groupName,
-    )}`,
-    "┃",
-    `┃ 📨 Events: ${formatNumber(
-      events,
-    )}`,
-    `┃ 🚨 Threats: ${formatNumber(
-      threats,
-    )}`,
-    `┃ 🛡️ Incidents: ${formatNumber(
-      incidents,
-    )}`,
-    "┃",
-    "┃ 🤖 Bot Intelligence • ACTIVE",
-    "┃ 📨 Behavioral Analysis • ACTIVE",
-    "┃ 🔗 Link Analysis • ACTIVE",
-    "┃ 👥 Activity Analysis • ACTIVE",
-    "┃ 📜 Audit Logging • ACTIVE",
-    "┃",
+    ...reportHeader(
+      "VX MONITOR",
+    ),
+
+    reportSection(
+      "MONITOR STATUS",
+    ),
+    `│ Status        : ${state}`,
+    reportLine(
+      "Session",
+      safeId(
+        monitor.id,
+      ),
+    ),
+    reportLine(
+      "Group",
+      safeGroupName(
+        monitor.groupName,
+      ),
+    ),
+    reportSectionEnd(),
+
+    "",
+    reportSection(
+      "ACTIVITY",
+    ),
+    reportLine(
+      "Events",
+      formatNumber(
+        events,
+      ),
+    ),
+    reportLine(
+      "Threats",
+      formatNumber(
+        threats,
+      ),
+    ),
+    reportLine(
+      "Incidents",
+      formatNumber(
+        incidents,
+      ),
+    ),
+    reportSectionEnd(),
+
+    "",
+    reportSection(
+      "VX ENGINES",
+    ),
+    "│ Bot Intelligence    : ACTIVE",
+    "│ Behavioral Analysis : ACTIVE",
+    "│ Link Analysis       : ACTIVE",
+    "│ Activity Analysis   : ACTIVE",
+    "│ Audit Logging       : ACTIVE",
+    reportSectionEnd(),
+
+    "",
     monitor.active
-      ? "┃ 👁️ VX IS MONITORING LIVE ACTIVITY."
-      : "┃ 🛑 VX IS NOT MONITORING THIS SESSION.",
-    "┃",
-    "╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯",
-    FOOTER,
+      ? "👁️ VX is monitoring live activity."
+      : "🛑 VX is not monitoring this session.",
   ];
 
   return finalizeReport(
@@ -1086,44 +1308,80 @@ export function formatVxScanFindingReport(
     );
 
   const lines = [
-    "╭━━━〔 🔎 VX SCAN FINDING 〕━━━╮",
-    "┃",
-    `┃ ${severityIcon(
+    ...reportHeader(
+      "VX SCAN FINDING",
+    ),
+
+    reportSection(
+      "THREAT",
+    ),
+    `│ ${severityIcon(
       severity,
     )} ${severity} FINDING`,
-    "┃",
-    `┃ 👤 Name: ${safeName(
-      finding.name,
-    )}`,
-    `┃ 📱 JID: ${safeJid(
-      finding.jid,
-    )}`,
-    "┃",
-    `┃ ⚠️ Risk: ${risk}/100`,
-    `┃ 🎯 Confidence: ${confidence}%`,
-    "┃",
-    "┃ 📊 ACTIVITY",
-    `┃ 📨 Messages: ${formatNumber(
-      finding.messagesAnalyzed,
-    )}`,
-    `┃ ⚡ Commands: ${formatNumber(
-      finding.commands,
-    )}`,
-    `┃ 🔗 Links: ${formatNumber(
-      finding.links,
-    )}`,
-    `┃ 🕐 First seen: ${formatDate(
-      finding.firstSeen,
-    )}`,
-    `┃ 🕐 Last seen: ${formatDate(
-      finding.lastSeen,
-    )}`,
-    "┃",
-    "┃ 🔎 INDICATORS",
+    `│ Risk          : ${risk}/100`,
+    `│ Confidence    : ${confidence}%`,
+    reportSectionEnd(),
+
+    "",
+    reportSection(
+      "TARGET",
+    ),
+    reportLine(
+      "Name",
+      safeName(
+        finding.name,
+      ),
+    ),
+    reportLine(
+      "JID",
+      safeJid(
+        finding.jid,
+      ),
+    ),
+    reportSectionEnd(),
+
+    "",
+    reportSection(
+      "ACTIVITY",
+    ),
+    reportLine(
+      "Messages",
+      formatNumber(
+        finding.messagesAnalyzed,
+      ),
+    ),
+    reportLine(
+      "Commands",
+      formatNumber(
+        finding.commands,
+      ),
+    ),
+    reportLine(
+      "Links",
+      formatNumber(
+        finding.links,
+      ),
+    ),
+    reportLine(
+      "First Seen",
+      formatDate(
+        finding.firstSeen,
+      ),
+    ),
+    reportLine(
+      "Last Seen",
+      formatDate(
+        finding.lastSeen,
+      ),
+    ),
+    reportSectionEnd(),
+
+    "",
+    reportSection(
+      "INDICATORS",
+    ),
     ...indicators,
-    "┃",
-    "╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯",
-    FOOTER,
+    reportSectionEnd(),
   ];
 
   return finalizeReport(

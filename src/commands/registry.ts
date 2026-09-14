@@ -986,6 +986,30 @@ const COMMANDS: CommandDefinition[] = [
     scope: "group",
   },
 
+  {
+    name: "togcstatus",
+    description:
+      "Publish a replied text, photo, or video directly to the group's WhatsApp Status.",
+    category: "groupTools",
+    usage: "togcstatus",
+    aliases: ["groupstatus", "gstatus"],
+    order: 16,
+    access: "owner",
+    scope: "group",
+  },
+
+  {
+    name: "blockgcstatus",
+    description:
+      "Block or allow members from posting to the group's WhatsApp Status.",
+    category: "groupTools",
+    usage: "blockgcstatus <on|off|status>",
+    aliases: ["gcstatusblock", "statusblock"],
+    order: 17,
+    access: "owner",
+    scope: "group",
+  },
+
 
   /* =======================================================
      ⚔️ MODERATION

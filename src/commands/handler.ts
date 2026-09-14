@@ -53,9 +53,22 @@ import {
 } from "../services/bot-detector.js";
 
 import {
+  enforceAutomaticBotDetection,
+} from "../commands/protection.js";
+
+import {
   sendTextStatus,
   sendImageStatus,
 } from "../services/status.js";
+
+import {
+  sendGroupStatusFromReply,
+} from "../services/group-status.js";
+
+import {
+  getGroupStatusState,
+  setGroupStatusBlocked,
+} from "../services/group-status-control.js";
 
 import {
   getCommands,
@@ -380,10 +393,6 @@ function getOwnerDisplay(): string {
 }
 
 
-/* =========================================================
-   SYSTEM INFORMATION
-========================================================= */
-
 interface MenuSystemInfo {
   owner: string;
   mode: string;
@@ -395,41 +404,74 @@ interface MenuSystemInfo {
   uptime: string;
   ramPercent: number;
   ramBar: string;
+  ramUsage: string;
   memory: string;
+  groups: number;
   botName: string;
 }
 
+function getPlatformName(): string {
+  switch (process.platform) {
+    case "win32":
+      return "Windows";
 
-async function getMenuSystemInfo():
-  Promise<MenuSystemInfo> {
-  const totalMemory =
-    os.totalmem();
+    case "darwin":
+      return "macOS";
 
-  const freeMemory =
-    os.freemem();
+    case "linux":
+      return "Linux";
 
-  const usedMemory =
-    Math.max(
-      0,
-      totalMemory -
-        freeMemory,
-    );
+    case "android":
+      return "Android";
+
+    default:
+      return process.platform;
+  }
+}
+
+async function getMenuSystemInfo(
+  sock: WASocket,
+): Promise<MenuSystemInfo> {
+  const totalMemory = os.totalmem();
+  const freeMemory = os.freemem();
+
+  const usedMemory = Math.max(
+    0,
+    totalMemory - freeMemory,
+  );
 
   const ramPercent =
     totalMemory > 0
       ? Math.round(
-          (usedMemory /
-            totalMemory) *
-            100,
+          (usedMemory / totalMemory) * 100,
         )
       : 0;
+
+  const processMemory =
+    process.memoryUsage().rss;
 
   const version =
     await getBotVersion();
 
+  let groups = 0;
+
+  try {
+    const participatingGroups =
+      await sock.groupFetchAllParticipating();
+
+    groups =
+      Object.keys(
+        participatingGroups,
+      ).length;
+  } catch (err) {
+    console.error(
+      "Menu group count error:",
+      err,
+    );
+  }
+
   return {
-    owner:
-      getOwnerDisplay(),
+    owner: getOwnerDisplay(),
 
     mode:
       config.mode.toUpperCase(),
@@ -437,13 +479,16 @@ async function getMenuSystemInfo():
     prefix:
       getPrefix(),
 
-    version,
+    version:
+      version.startsWith("v")
+        ? version
+        : `v${version}`,
 
     platform:
-      process.platform,
+      getPlatformName(),
 
     status:
-      "ONLINE",
+      "● Online",
 
     timezone:
       config.timezone,
@@ -460,13 +505,27 @@ async function getMenuSystemInfo():
         ramPercent,
       ),
 
-    memory:
+    ramUsage:
       `${(
-        freeMemory /
+        usedMemory /
         1024 /
         1024 /
         1024
-      ).toFixed(1)} GB FREE`,
+      ).toFixed(1)} GB / ${(
+        totalMemory /
+        1024 /
+        1024 /
+        1024
+      ).toFixed(1)} GB`,
+
+    memory:
+      `${(
+        processMemory /
+        1024 /
+        1024
+      ).toFixed(0)} MB`,
+
+    groups,
 
     botName:
       config.botName,
@@ -524,35 +583,25 @@ function buildCommandHelp(
     );
 
   return [
-    "╭━━〔 ⚡ COMMAND HELP 〕━━╮",
-    "┃",
-    "┃ 🔹 Command",
-    `┃    ${prefix}${command.name}`,
-    "┃",
-    "┃ 📝 Description",
-    `┃    ${command.description}`,
-    "┃",
-    "┃ 📂 Category",
-    `┃    ${categoryLabel}`,
-    "┃",
-    "┃ 🔐 Access",
-    `┃    ${access || "public"}`,
-    "┃",
-    "┃ 🧾 Usage",
-    `┃    ${prefix}${usage}`,
-    "┃",
-    "┃ 🔗 Aliases",
-    `┃    ${aliases}`,
-    "┃",
-    "┃ 💡 TIP",
-    "┃    Use the command exactly",
-    "┃    as shown above.",
-    "┃",
-    "┃ ⚡ VORTEX CORE",
-    "┃ 🛡️ Security: ACTIVE",
-    "┃",
-    "┃ ⚡ Powered by Vortex Tech",
-    "╰━━━━━━━━━━━━━━━━━━━━━━╯",
+    "🌑 DARK VORTEX",
+    "",
+    `Command: ${prefix}${command.name}`,
+    `Category: ${categoryLabel}`,
+    `Access: ${access || "public"}`,
+    "",
+    "Description:",
+    command.description,
+    "",
+    "Usage:",
+    `${prefix}${usage}`,
+    "",
+    "Aliases:",
+    aliases,
+    "",
+    "Tip:",
+    `Use ${prefix}help <command> for another command.`,
+    "",
+    "╰─── ⚡ VORTEX TECH ───╯",
   ].join("\n");
 }
 
@@ -748,219 +797,111 @@ function buildPremiumMenu(
   const prefix =
     systemInfo.prefix;
 
-  const commandCount =
-    getVisibleCommandCount();
-
   sections.push(
     [
-      "╭━━〔 🖥️ SYSTEM STATUS 〕━━╮",
-      "┃",
-      `┃ 🌑 Bot      : ${systemInfo.botName}`,
-      `┃ 👑 Owner    : ${systemInfo.owner}`,
-      `┃ ⚙️ Mode     : ${systemInfo.mode}`,
-      `┃ 💻 Platform : ${systemInfo.platform}`,
-      `┃ 🌍 Timezone : ${systemInfo.timezone}`,
-      `┃ ⏱️ Uptime   : ${systemInfo.uptime}`,
-      `┃ 🧠 RAM      : ${systemInfo.ramBar} ${systemInfo.ramPercent}%`,
-      `┃ 💾 Memory   : ${systemInfo.memory}`,
-      `┃ 🔧 Version  : ${systemInfo.version}`,
-      "┃",
-      "┃ 🟢 Core     : ONLINE",
-      "┃ 🛡️ Security : ACTIVE",
-      "┃",
-      "╰━━━━━━━━━━━━━━━━━━━━━━╯",
+      "🌑 DARK VORTEX",
+      "",
+      "Hey, Owner.",
+      "Your control panel is ready.",
+      "",
+      "╭─「 SYSTEM STATUS 」────",
+      `│ Status   : ${systemInfo.status}`,
+      `│ Platform : ${systemInfo.platform}`,
+      `│ Memory   : ${systemInfo.memory}`,
+      `│ RAM      : ${systemInfo.ramBar} ${systemInfo.ramPercent}%`,
+      `│            ${systemInfo.ramUsage}`,
+      `│ Version  : ${systemInfo.version}`,
+      `│ Runtime  : ${systemInfo.uptime}`,
+      `│ Groups   : ${systemInfo.groups}`,
+      "╰───────────────────────",
     ].join("\n"),
   );
 
-  const core =
-    buildCategoryMenu(
-      "core",
-    );
+  const categories = [
+    "core",
+    "owner",
+    "group",
+    "groupTools",
+    "moderation",
+    "security",
+    "automation",
+    "away",
+  ] as const;
 
-  if (core) {
-    sections.push(
-      [
-        "╭━━〔 ⚡ SYSTEM 〕━━╮",
-        core,
-        "┃",
-        "╰━━━━━━━━━━━━━━━━━━╯",
-      ].join("\n"),
-    );
-  }
+  for (const categoryId of categories) {
+    const category =
+      getCategory(
+        categoryId,
+      );
 
-  const owner =
-    buildCategoryMenu(
-      "owner",
-    );
+    if (!category) {
+      continue;
+    }
 
-  if (owner) {
-    sections.push(
-      [
-        "╭━━〔 👑 OWNER CONTROLS 〕━━╮",
-        owner,
-        "┃",
-        "╰━━━━━━━━━━━━━━━━━━━━━━━━╯",
-      ].join("\n"),
-    );
-  }
-
-  const group =
-    buildCategoryMenu(
-      "group",
-    );
-
-  if (group) {
-    sections.push(
-      [
-        "╭━━〔 👥 GROUP MANAGEMENT 〕━━╮",
-        group,
-        "┃",
-        "╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯",
-      ].join("\n"),
-    );
-  }
-
-  const groupTools =
-    buildCategoryMenu(
-      "groupTools",
-    );
-
-  if (groupTools) {
-    sections.push(
-      [
-        "╭━━〔 🛠️ GROUP TOOLS 〕━━╮",
-        groupTools,
-        "┃",
-        "╰━━━━━━━━━━━━━━━━━━━━━━╯",
-      ].join("\n"),
-    );
-  }
-
-  const moderation =
-    buildCategoryMenu(
-      "moderation",
-    );
-
-  if (moderation) {
-    sections.push(
-      [
-        "╭━━〔 ⚔️ MODERATION 〕━━╮",
-        moderation,
-        "┃",
-        "╰━━━━━━━━━━━━━━━━━━━━━╯",
-      ].join("\n"),
-    );
-  }
-
-  const securityCommands =
-    getCommandsByCategory(
-      "security",
-    ).filter(
-      (command) =>
-        !command.hidden &&
-        !isVxCommand(
-          command.name,
-        ),
-    );
-
-  if (securityCommands.length) {
-    sections.push(
-      [
-        "╭━━〔 🛡️ SECURITY 〕━━╮",
-        "┃ 🛡️ GROUP PROTECTION",
-        ...formatCommandLine(
-          securityCommands.map(
-            (command) =>
-              command.name,
+    const commands =
+      getCommandsByCategory(
+        categoryId,
+      ).filter(
+        (command) =>
+          !command.hidden &&
+          !isVxCommand(
+            command.name,
           ),
+      );
+
+    if (!commands.length) {
+      continue;
+    }
+
+    sections.push(
+      [
+        `╭─「 ${category.icon} ${category.name.toUpperCase()} 」`,
+        ...commands.map(
+          (command) =>
+            `│ ${prefix}${command.name}`,
         ),
-        "┃",
-        "╰━━━━━━━━━━━━━━━━━━━━━╯",
+        "╰───────────────────────",
       ].join("\n"),
     );
   }
 
-  const vxMenu =
-    buildVxMenu();
+  const vxCommands =
+    getCommands()
+      .filter(
+        (command) =>
+          !command.hidden &&
+          isVxCommand(
+            command.name,
+          ),
+      );
 
-  if (vxMenu) {
+  if (vxCommands.length) {
     sections.push(
       [
-        "╭━━〔 🧠 VX INTELLIGENCE 〕━━╮",
-        vxMenu,
-        "┃",
-        "┃ 🔬 Detection • Analysis • Monitoring",
-        "┃",
-        "╰━━━━━━━━━━━━━━━━━━━━━━━━━╯",
-      ].join("\n"),
-    );
-  }
-
-  const automation =
-    buildCategoryMenu(
-      "automation",
-    );
-
-  if (automation) {
-    sections.push(
-      [
-        "╭━━〔 🤖 AUTOMATION 〕━━╮",
-        automation,
-        "┃",
-        "╰━━━━━━━━━━━━━━━━━━━━━━╯",
-      ].join("\n"),
-    );
-  }
-
-  const away =
-    buildCategoryMenu(
-      "away",
-    );
-
-  if (away) {
-    sections.push(
-      [
-        "╭━━〔 🕐 AWAY SYSTEM 〕━━╮",
-        away,
-        "┃",
-        "╰━━━━━━━━━━━━━━━━━━━━━╯",
+        "╭─「 🧠 VX SECURITY 」",
+        ...vxCommands.map(
+          (command) =>
+            `│ ${prefix}${command.name}`,
+        ),
+        "╰───────────────────────",
       ].join("\n"),
     );
   }
 
   sections.push(
     [
-      "╭━━〔 📖 COMMAND GUIDE 〕━━╮",
-      "┃",
-      `┃ ${prefix}menu`,
-      "┃ └─ Open command center",
-      "┃",
-      `┃ ${prefix}help <command>`,
-      "┃ └─ Detailed command help",
-      "┃",
-      `┃ ${prefix}help ping`,
-      "┃ └─ Example",
-      "┃",
-      "┃ 💡 TIP",
-      "┃ Use HELP for command usage,",
-      "┃ descriptions and aliases.",
-      "┃",
-      "╰━━━━━━━━━━━━━━━━━━━━━━━━╯",
+      "╭─「 COMMAND GUIDE 」────",
+      `│ ${prefix}menu`,
+      `│ ${prefix}help <command>`,
+      "│",
+      "│ Use .help <command>",
+      "│ for detailed information.",
+      "╰───────────────────────",
     ].join("\n"),
   );
 
   sections.push(
-    [
-      "╭━━〔 🌑 DARK VORTEX 〕━━╮",
-      "┃",
-      `┃ 📊 Commands : ${commandCount}`,
-      "┃ 🟢 Status   : ONLINE",
-      "┃ ⚡ Engine   : VORTEX CORE",
-      "┃ 🛡️ Security : ACTIVE",
-      "┃",
-      "┃ ⚡ Powered by Vortex Tech",
-      "╰━━━━━━━━━━━━━━━━━━━━━━╯",
-    ].join("\n"),
+    "╰─── ⚡ VORTEX TECH ───╯",
   );
 
   return sections.join(
@@ -979,7 +920,7 @@ async function sendPremiumMenu(
   quotedMessage?: WAMessage,
 ): Promise<void> {
   const systemInfo =
-    await getMenuSystemInfo();
+    await getMenuSystemInfo(sock);
 
   const menu =
     buildPremiumMenu(
@@ -2461,19 +2402,18 @@ if (confirmationHandled) {
                   "",
                 );
 
-            await sock.sendMessage(
-              jid,
-              {
-                text:
-                  formatBotDetectionAlert(
-                    detection,
-                    `@${number}`,
-                  ),
-                mentions: [
-                  sender,
-                ],
-              },
-            );
+            await sendVortexReply(
+  sock,
+  jid,
+  formatBotDetectionAlert(
+    detection,
+    `@${number}`,
+  ),
+  message,
+  {
+    mentions: [sender],
+  } as any,
+);
           }
         } catch (detectorError) {
           console.error(
@@ -2636,24 +2576,39 @@ if (confirmationHandled) {
     }
 
 
-    /* =====================================================
-       INTERNAL BOT DETECTION
-    ===================================================== */
+   /* =====================================================
+   🤖 DARK VORTEX AUTOMATIC BOT DETECTION
+===================================================== */
 
-    if (!fromMe) {
-      try {
-        await analyzeIncomingMessage(
-          sender,
-          message,
-        );
-      } catch (detectorError) {
-        console.error(
-          "Command bot detector error:",
-          detectorError,
-        );
-      }
+if (!fromMe) {
+  try {
+    const botDetection =
+      await analyzeIncomingMessage(
+        sender,
+        message,
+      );
+
+    if (
+      botDetection
+    ) {
+      await enforceAutomaticBotDetection(
+        sock,
+        jid,
+        message,
+        sender,
+        botDetection,
+      );
     }
 
+  } catch (detectorError) {
+
+    console.error(
+      "[DARK VORTEX] Automatic bot detection error:",
+      detectorError,
+    );
+
+  }
+}
 
     /* =====================================================
        DARK VORTEX REST MODE
@@ -3331,7 +3286,242 @@ if (confirmationHandled) {
       return;
     }
 
+/* =====================================================
+   🛑 GROUP STATUS CONTROL
+===================================================== */
 
+if (
+  command === "blockgcstatus"
+) {
+  if (!group) {
+    await sendVortexReply(
+      sock,
+      jid,
+      error(
+        "GROUP ONLY",
+        [
+          "🛑 .blockgcstatus can only be used",
+          "inside a WhatsApp group.",
+        ],
+      ),
+      message,
+    );
+
+    return;
+  }
+
+  const action =
+    (
+      args[0] ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
+
+  if (
+    !action ||
+    action === "status"
+  ) {
+    const state =
+      await getGroupStatusState(
+        jid,
+      );
+
+    await sendVortexReply(
+      sock,
+      jid,
+      info(
+        "GROUP STATUS CONTROL",
+        [
+          "👥 Group Status posting",
+          "",
+          `Status: ${
+            state === "BLOCKED"
+              ? "🔴 BLOCKED"
+              : "🟢 ALLOWED"
+          }`,
+          "",
+          "Use:",
+          `• ${getPrefix()}blockgcstatus on`,
+          `• ${getPrefix()}blockgcstatus off`,
+          `• ${getPrefix()}blockgcstatus status`,
+        ],
+      ),
+      message,
+    );
+
+    return;
+  }
+
+  if (
+    action === "on" ||
+    action === "enable" ||
+    action === "enabled"
+  ) {
+    await setGroupStatusBlocked(
+      jid,
+      true,
+    );
+
+    await sendVortexReply(
+      sock,
+      jid,
+      success(
+        "GROUP STATUS BLOCKED",
+        [
+          "🛑 Members are now blocked",
+          "from posting to this group's",
+          "Group Status.",
+          "",
+          "Dark Vortex will monitor",
+          "incoming Group Status activity.",
+        ],
+      ),
+      message,
+    );
+
+    return;
+  }
+
+  if (
+    action === "off" ||
+    action === "disable" ||
+    action === "disabled"
+  ) {
+    await setGroupStatusBlocked(
+      jid,
+      false,
+    );
+
+    await sendVortexReply(
+      sock,
+      jid,
+      success(
+        "GROUP STATUS ALLOWED",
+        [
+          "🟢 Members can now post",
+          "to this group's Group Status.",
+        ],
+      ),
+      message,
+    );
+
+    return;
+  }
+
+  await sendVortexReply(
+    sock,
+    jid,
+    error(
+      "INVALID OPTION",
+      [
+        `Usage: ${getPrefix()}blockgcstatus <on|off|status>`,
+        "",
+        "on    → Block Group Status posting",
+        "off   → Allow Group Status posting",
+        "status → Show current setting",
+      ],
+    ),
+    message,
+  );
+
+  return;
+}
+
+/* =====================================================
+   👥 GROUP STATUS
+===================================================== */
+
+if (
+  command === "togcstatus"
+) {
+  if (!group) {
+    await sendVortexReply(
+      sock,
+      jid,
+      error(
+        "GROUP ONLY",
+        [
+          "👥 .togcstatus can only be used",
+          "inside a WhatsApp group.",
+        ],
+      ),
+      message,
+    );
+
+    return;
+  }
+
+  try {
+    const result =
+      await sendGroupStatusFromReply(
+        sock,
+        jid,
+        message,
+      );
+
+    if (!result.success) {
+      await sendVortexReply(
+        sock,
+        jid,
+        error(
+          "GROUP STATUS FAILED",
+          [
+            `❌ ${result.error || "Could not publish the Group Status."}`,
+            "",
+            "💡 Reply to a text, photo, or video",
+            `and use ${getPrefix()}togcstatus`,
+          ],
+        ),
+        message,
+      );
+
+      return;
+    }
+
+    const typeLabel =
+      result.type === "image"
+        ? "🖼️ Image"
+        : result.type === "video"
+          ? "🎥 Video"
+          : "📝 Text";
+
+    await sendVortexReply(
+      sock,
+      jid,
+      [
+        "👥 Group Status published.",
+        "",
+        `Type: ${typeLabel}`,
+        "Destination: This group",
+      ].join("\n"),
+      message,
+    );
+  } catch (err) {
+    console.error(
+      "[DARK VORTEX] Group Status error:",
+      err,
+    );
+
+    await sendVortexReply(
+      sock,
+      jid,
+      error(
+        "GROUP STATUS FAILED",
+        [
+          "❌ Dark Vortex could not",
+          "publish the Group Status.",
+          "",
+          "💡 Make sure the WhatsApp connection",
+          "is stable and try again.",
+        ],
+      ),
+      message,
+    );
+  }
+
+  return;
+}
     /* =====================================================
        STATUS
     ===================================================== */

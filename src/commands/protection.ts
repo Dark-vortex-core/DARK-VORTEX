@@ -18,6 +18,10 @@ import {
   protectionStatus,
 } from "../utils/message.js";
 
+import type {
+  BotDetectionResult,
+} from "../services/bot-detector.js";
+
 import {
   detectNsfw,
 } from "../services/nsfw.js";
@@ -261,6 +265,25 @@ const floodTracker =
     string,
     Map<string, number[]>
   >();
+
+  // ============================================================
+// 🤖 AUTOMATIC BOT ENFORCEMENT TRACKER
+// ============================================================
+
+interface AutomaticBotEnforcementEntry {
+  timestamp: number;
+  confidence: number;
+  action: ProtectionAction;
+}
+
+const automaticBotEnforcementTracker =
+  new Map<
+    string,
+    AutomaticBotEnforcementEntry
+  >();
+
+const AUTOMATIC_BOT_ENFORCEMENT_COOLDOWN =
+  10 * 60 * 1000;
 
 // ============================================================
 // FILE STORAGE
@@ -1551,8 +1574,11 @@ async function sendProtectionResponse(
   reason: string,
   warningCount = 0,
   warnLimit = 3,
+  quotedMessage?: WAMessage,
 ): Promise<void> {
+
   try {
+
     await sock.sendMessage(
       jid,
       {
@@ -1565,18 +1591,86 @@ async function sendProtectionResponse(
             warningCount,
             warnLimit,
           ),
-
         mentions: [
           sender,
         ],
       },
+      quotedMessage
+        ? {
+            quoted: quotedMessage,
+          }
+        : undefined,
     );
+
   } catch (err) {
+
     console.error(
       "[DARK VORTEX] Protection response error:",
       err,
     );
   }
+}
+
+// ============================================================
+// 🤖 AUTOMATIC BOT ACTION POLICY
+// ============================================================
+//
+// The AI/detector supplies confidence.
+// The protection configuration decides what Dark Vortex
+// is actually allowed to do.
+//
+// Confidence levels:
+//
+// 0–49   → monitor only
+// 50–74  → monitor only
+// 75–89  → enforcement eligible
+// 90–94  → high-confidence enforcement
+// 95–100 → critical-confidence enforcement
+//
+// The configured antibot action remains authoritative.
+//
+// ============================================================
+
+function getAutomaticBotAction(
+  confidence: number,
+  configuredAction: ProtectionAction,
+): ProtectionAction | null {
+
+  if (
+    !Number.isFinite(confidence) ||
+    confidence < 75
+  ) {
+    return null;
+  }
+
+  // The configured group action determines
+  // the maximum enforcement Dark Vortex may use.
+
+  if (
+    configuredAction === "delete"
+  ) {
+    return "delete";
+  }
+
+  if (
+    configuredAction === "warn"
+  ) {
+    return "warn";
+  }
+
+  if (
+    configuredAction === "kick"
+  ) {
+    return "kick";
+  }
+
+  if (
+    configuredAction === "ban"
+  ) {
+    return "ban";
+  }
+
+  return null;
 }
 
 // ============================================================
@@ -1682,13 +1776,16 @@ async function executeAction(
     action === "delete"
   ) {
     await sendProtectionResponse(
-      sock,
-      jid,
-      normalizedSender,
-      protection,
-      action,
-      reason,
-    );
+  sock,
+  jid,
+  normalizedSender,
+  protection,
+  action,
+  reason,
+  0,
+  warnLimit,
+  message,
+);
 
     recordProtectionAction(
       jid,
@@ -1719,15 +1816,16 @@ async function executeAction(
       );
 
     await sendProtectionResponse(
-      sock,
-      jid,
-      normalizedSender,
-      protection,
-      "warn",
-      reason,
-      warningCount,
-      warnLimit,
-    );
+  sock,
+  jid,
+  normalizedSender,
+  protection,
+  "warn",
+  reason,
+  warningCount,
+  warnLimit,
+  message,
+);
 
     recordProtectionAction(
       jid,
@@ -1825,13 +1923,16 @@ async function executeAction(
     action === "kick"
   ) {
     await sendProtectionResponse(
-      sock,
-      jid,
-      normalizedSender,
-      protection,
-      "kick",
-      reason,
-    );
+  sock,
+  jid,
+  normalizedSender,
+  protection,
+  "kick",
+  reason,
+  0,
+  warnLimit,
+  message,
+);
 
     try {
       await sock.groupParticipantsUpdate(
@@ -1871,13 +1972,16 @@ async function executeAction(
     action === "ban"
   ) {
     await sendProtectionResponse(
-      sock,
-      jid,
-      normalizedSender,
-      protection,
-      "ban",
-      reason,
-    );
+  sock,
+  jid,
+  normalizedSender,
+  protection,
+  "ban",
+  reason,
+  0,
+  warnLimit,
+  message,
+);
 
     try {
       await sock.groupParticipantsUpdate(
@@ -1935,7 +2039,277 @@ async function executeAction(
     }
   }
 }
+// ============================================================
+// 🤖 AUTOMATIC AI + BEHAVIORAL BOT ENFORCEMENT
+// ============================================================
+//
+// This is the bridge between:
+//
+// bot-detector.ts
+//       ↓
+// Dark Vortex AI
+//       ↓
+// protection.ts
+//
+// IMPORTANT:
+// AI never directly performs moderation.
+//
+// AI provides evidence.
+// This function applies the existing protection policy.
+// ============================================================
 
+export async function enforceAutomaticBotDetection(
+  sock: WASocket,
+  jid: string,
+  message: WAMessage,
+  sender: string,
+  detection: BotDetectionResult,
+): Promise<boolean> {
+
+  // ----------------------------------------------------------
+  // GROUP ONLY
+  // ----------------------------------------------------------
+
+  if (
+    !jid.endsWith("@g.us")
+  ) {
+    return false;
+  }
+
+  // ----------------------------------------------------------
+  // NEVER ENFORCE AGAINST DARK VORTEX ITSELF
+  // ----------------------------------------------------------
+
+  if (
+    message.key.fromMe
+  ) {
+    return false;
+  }
+
+  const normalizedSender =
+    normalizeJid(sender);
+
+  if (!normalizedSender) {
+    return false;
+  }
+
+  // ----------------------------------------------------------
+  // VALID DETECTION REQUIRED
+  // ----------------------------------------------------------
+
+  if (
+    !detection ||
+    !detection.suspicious
+  ) {
+    return false;
+  }
+
+  const confidence =
+    Number(detection.confidence);
+
+  if (
+    !Number.isFinite(confidence) ||
+    confidence < 75
+  ) {
+    return false;
+  }
+
+  // ----------------------------------------------------------
+  // LOAD GROUP SETTINGS
+  // ----------------------------------------------------------
+
+  const settings =
+    getSettings(jid);
+
+  // ----------------------------------------------------------
+  // ANTIBOT MUST BE ENABLED
+  // ----------------------------------------------------------
+
+  if (
+    !settings.antibot.enabled
+  ) {
+    return false;
+  }
+
+  // ----------------------------------------------------------
+  // GROUP METADATA
+  // ----------------------------------------------------------
+
+  let metadata: any;
+
+  try {
+    metadata =
+      await sock.groupMetadata(
+        jid,
+      );
+  } catch (err) {
+    console.error(
+      "[DARK VORTEX] Automatic bot enforcement metadata error:",
+      err,
+    );
+
+    return false;
+  }
+
+  // ----------------------------------------------------------
+  // PROTECT ADMINS
+  // ----------------------------------------------------------
+
+  if (
+    isAdmin(
+      metadata,
+      normalizedSender,
+    ) &&
+    !settings.protectAdmins
+  ) {
+    return false;
+  }
+
+  // ----------------------------------------------------------
+  // BOT MUST BE ADMIN
+  // ----------------------------------------------------------
+
+  if (
+    !isBotAdmin(
+      sock,
+      metadata,
+    )
+  ) {
+    console.error(
+      "[DARK VORTEX] Automatic bot enforcement skipped: bot is not a group administrator.",
+    );
+
+    return false;
+  }
+
+  // ----------------------------------------------------------
+  // DETERMINE ACTION
+  // ----------------------------------------------------------
+
+  const action =
+    getAutomaticBotAction(
+      confidence,
+      settings.antibot.action,
+    );
+
+  if (!action) {
+    return false;
+  }
+
+  // ----------------------------------------------------------
+  // DUPLICATE ENFORCEMENT PROTECTION
+  // ----------------------------------------------------------
+
+  const trackerKey =
+    `${jid}:${normalizedSender}`;
+
+  const previous =
+    automaticBotEnforcementTracker.get(
+      trackerKey,
+    );
+
+  const now =
+    Date.now();
+
+  if (
+    previous &&
+    now -
+      previous.timestamp <
+        AUTOMATIC_BOT_ENFORCEMENT_COOLDOWN
+  ) {
+    return false;
+  }
+
+  automaticBotEnforcementTracker.set(
+    trackerKey,
+    {
+      timestamp: now,
+      confidence,
+      action,
+    },
+  );
+
+  // ----------------------------------------------------------
+  // BUILD REASON
+  // ----------------------------------------------------------
+
+  const aiProbability =
+    detection.ai?.botProbability;
+
+  const aiConfidence =
+    detection.ai?.confidence;
+
+  const aiReason =
+    detection.ai?.reason;
+
+  const reasonParts: string[] = [
+    `Automated bot behavior detected with ${confidence.toFixed(1)}% combined confidence.`,
+  ];
+
+  if (
+    typeof aiProbability === "number"
+  ) {
+    reasonParts.push(
+      `AI probability: ${aiProbability.toFixed(1)}%.`,
+    );
+  }
+
+  if (
+    typeof aiConfidence === "number"
+  ) {
+    reasonParts.push(
+      `AI confidence: ${aiConfidence.toFixed(1)}%.`,
+    );
+  }
+
+  if (
+    detection.ai?.risk
+  ) {
+    reasonParts.push(
+      `Risk level: ${detection.ai.risk}.`,
+    );
+  }
+
+  if (
+    aiReason
+  ) {
+    reasonParts.push(
+      `Assessment: ${aiReason}`,
+    );
+  }
+
+  const reason =
+    reasonParts.join(" ");
+
+  // ----------------------------------------------------------
+  // ENFORCE THROUGH CENTRAL PROTECTION ENGINE
+  // ----------------------------------------------------------
+
+  try {
+
+    await executeAction(
+      sock,
+      jid,
+      message,
+      normalizedSender,
+      "antibot",
+      action,
+      reason,
+      settings.warnLimit,
+    );
+
+    return true;
+
+  } catch (err) {
+
+    console.error(
+      "[DARK VORTEX] Automatic bot enforcement failed:",
+      err,
+    );
+
+    return false;
+  }
+}
 // ============================================================
 // COMMAND CONFIGURATION
 // ============================================================
@@ -2087,6 +2461,9 @@ export async function handleProtectionCommand(
       ? "antistatus"
       : command;
 
+  const protection =
+    protectionCommand as ProtectionName;
+
   // ==========================================================
   // SHOW STATUS
   // ==========================================================
@@ -2162,97 +2539,146 @@ export async function handleProtectionCommand(
   // CONFIGURE PROTECTION
   // ==========================================================
 
-  const protection =
-    protectionCommand as ProtectionName;
+  const actionValues: ProtectionAction[] = [
+  "delete",
+  "warn",
+  "kick",
+  "ban",
+];
 
-  const value =
-    args[0]?.toLowerCase();
+const mode =
+  args[0]?.trim().toLowerCase();
 
-  if (
-    !value ||
-    ![
-      "on",
-      "off",
-      "delete",
-      "warn",
-      "kick",
-      "ban",
-    ].includes(value)
-  ) {
+const requestedAction =
+  args[1]?.trim().toLowerCase();
+
+const current =
+  getSettings(jid)[protection];
+
+let updated: ProtectionSettings;
+
+/*
+ * .antilink off
+ */
+if (mode === "off") {
+  if (args.length > 1) {
     await sock.sendMessage(
       jid,
       {
-        text:
-          commandUsage(
-            command,
-            `/${command} on`,
-            [
-              `/${command} off`,
-              `/${command} delete`,
-              `/${command} warn`,
-              `/${command} kick`,
-              `/${command} ban`,
-            ].join("\n"),
-          ),
+        text: commandUsage(
+          protection,
+          `/${protection} off`,
+        ),
       },
     );
 
     return true;
   }
 
-  const current =
-    getSettings(jid)[
-      protection
-    ];
+  updated = {
+    ...current,
+    enabled: false,
+  };
+}
 
-  let updated:
-    ProtectionSettings;
-
-  // ----------------------------------------------------------
-  // ON
-  // ----------------------------------------------------------
-
+/*
+ * .antilink on
+ * .antilink on warn
+ * .antilink on kick
+ * .antilink on ban
+ * .antilink on delete
+ */
+else if (mode === "on") {
   if (
-    value === "on"
+    args.length > 2 ||
+    (
+      requestedAction &&
+      !actionValues.includes(
+        requestedAction as ProtectionAction,
+      )
+    )
   ) {
-    updated = {
-      ...current,
-      enabled: true,
-    };
+    await sock.sendMessage(
+      jid,
+      {
+        text: commandUsage(
+          protection,
+          `/${protection} on [delete|warn|kick|ban]`,
+        ),
+      },
+    );
+
+    return true;
   }
 
-  // ----------------------------------------------------------
-  // OFF
-  // ----------------------------------------------------------
+  updated = {
+    ...current,
+    enabled: true,
+    action:
+      requestedAction
+        ? requestedAction as ProtectionAction
+        : current.action,
+  };
+}
 
-  else if (
-    value === "off"
-  ) {
-    updated = {
-      ...current,
-      enabled: false,
-    };
+/*
+ * .antilink delete
+ * .antilink warn
+ * .antilink kick
+ * .antilink ban
+ *
+ * Backward-compatible shorthand.
+ */
+else if (
+  actionValues.includes(
+    mode as ProtectionAction,
+  )
+) {
+  if (args.length > 1) {
+    await sock.sendMessage(
+      jid,
+      {
+        text: commandUsage(
+          protection,
+          `/${protection} [on|off|delete|warn|kick|ban]`,
+        ),
+      },
+    );
+
+    return true;
   }
 
-  // ----------------------------------------------------------
-  // ACTION
-  // ----------------------------------------------------------
+  updated = {
+    ...current,
+    enabled: true,
+    action:
+      mode as ProtectionAction,
+  };
+}
 
-  else {
-    updated = {
-      enabled: true,
-      action:
-        value as ProtectionAction,
-    };
-  }
-
-  updateSettings(
+/*
+ * Invalid mode.
+ */
+else {
+  await sock.sendMessage(
     jid,
     {
-      [protection]:
-        updated,
+      text: commandUsage(
+        protection,
+        `/${protection} on [delete|warn|kick|ban]`,
+      ),
     },
   );
+
+  return true;
+}
+
+updateSettings(
+  jid,
+  {
+    [protection]: updated,
+  },
+);
 
   const status =
     updated.enabled

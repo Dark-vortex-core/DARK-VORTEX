@@ -256,14 +256,15 @@ export async function handleDeleteAllFromCommand(
   command: string,
   args: string[],
 ): Promise<boolean> {
-  if (
-    command
-      .trim()
-      .toLowerCase() !==
-    "deleteallfrom"
-  ) {
-    return false;
-  }
+  const normalizedCommand =
+  command.trim().toLowerCase();
+
+if (
+  normalizedCommand !== "deleteallfrom" &&
+  normalizedCommand !== "deleteallfromuser"
+) {
+  return false;
+}
 
   if (
     !jid.endsWith("@g.us")

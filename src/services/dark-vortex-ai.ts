@@ -8,7 +8,29 @@ import {
   getEnabledCommands,
 } from "../commands/registry.js";
 
-import { sendVortexReply } from "../utils/vortex-reply.js";
+import {
+  sendVortexReply,
+} from "../utils/vortex-reply.js";
+
+/* =========================================================
+   🌑 DARK VORTEX AI
+   ⚡ Powered by Vortex Tech
+
+   Responsibilities:
+   • Dark Vortex informational AI
+   • Dark Vortex knowledge / identity
+   • Founder / project history knowledge
+   • Gemini → Groq → OpenRouter fallback
+   • AI-assisted behavioral bot analysis
+   • Safe structured AI responses
+   • No command execution
+   • No secret exposure
+========================================================= */
+
+
+/* =========================================================
+   AI CONFIGURATION
+========================================================= */
 
 function getAIConfig() {
   return {
@@ -17,42 +39,145 @@ function getAIConfig() {
         .trim()
         .toLowerCase() === "true",
 
-    // PRIMARY
-    geminiKey:
+    geminiApiKey:
       process.env.DARK_VORTEX_AI_GEMINI_API_KEY?.trim() || "",
 
     geminiModel:
       process.env.DARK_VORTEX_AI_GEMINI_MODEL?.trim() ||
       "gemini-2.5-flash",
 
-    // FALLBACK 1
-    groqKey:
+    groqApiKey:
       process.env.DARK_VORTEX_AI_GROQ_API_KEY?.trim() || "",
 
     groqModel:
-  process.env.DARK_VORTEX_AI_GROQ_MODEL?.trim() ||
-  "openai/gpt-oss-120b",
+      process.env.DARK_VORTEX_AI_GROQ_MODEL?.trim() ||
+      "openai/gpt-oss-120b",
 
-    // FALLBACK 2
-    openRouterKey:
+    openRouterApiKey:
       process.env.DARK_VORTEX_AI_API_KEY?.trim() || "",
 
     openRouterModel:
       process.env.DARK_VORTEX_AI_MODEL?.trim() ||
       "qwen/qwen3-30b-a3b:free",
 
-    openRouterUrl:
+    openRouterApiUrl:
       process.env.DARK_VORTEX_AI_API_URL?.trim() ||
       "https://openrouter.ai/api/v1/chat/completions",
   };
 }
+
+
+/* =========================================================
+   LIMITS
+========================================================= */
+
 const MAX_INPUT_LENGTH = 4000;
 const MAX_OUTPUT_TOKENS = 700;
 
 const CHAT_COOLDOWN_MS = 4000;
 
+const BOT_AI_COOLDOWN_MS = 60_000;
+
 const chatCooldowns =
   new Map<string, number>();
+
+const botAICooldowns =
+  new Map<string, number>();
+
+
+/* =========================================================
+   🌑 DARK VORTEX PROJECT IDENTITY
+========================================================= */
+
+const DARK_VORTEX_PROJECT_HISTORY = `
+PROJECT IDENTITY
+----------------
+Name:
+🌑 DARK VORTEX
+
+Brand:
+Vortex Tech
+
+Powered by:
+⚡ VORTEX TECH
+
+Creator:
+Brian
+
+Founder:
+Brian is the founder of Vortex Tech and the creator/founder
+of the Dark Vortex project.
+
+Development:
+Dark Vortex was developed during September 2026 as a Vortex Tech
+WhatsApp bot project.
+
+Development status:
+Dark Vortex is an actively developed project. Its systems,
+features, commands, security layers, automation, moderation,
+group-management tools, AI intelligence, and VX security systems
+have been developed and expanded over time.
+
+IMPORTANT HISTORY RULE:
+The AI may state that Brian is the founder of Vortex Tech and
+the creator/founder of Dark Vortex.
+
+The AI must NOT invent:
+• An exact launch date that has not been provided
+• Additional founders
+• Employees or developers who have not been confirmed
+• Investors
+• Companies or partnerships that have not been confirmed
+• Fake development milestones
+• Fake version history
+• Fake awards
+• Fake user statistics
+
+If asked for an exact historical date that is not known,
+say that the project was developed during September 2026 but
+that an exact date is not currently confirmed.
+
+PROJECT PURPOSE
+---------------
+Dark Vortex is a WhatsApp owner-control and security bot
+developed under Vortex Tech.
+
+Its architecture includes:
+
+• Owner control
+• Group management
+• Moderation
+• Protection systems
+• Automation
+• Triggers
+• Announcements
+• Away mode
+• Rest mode
+• Maintenance controls
+• System diagnostics
+• VX security intelligence
+• Behavioral bot detection
+• AI-assisted analysis
+• Security monitoring
+• Security incidents
+• Security reports
+• Audit systems
+• QR connection
+• Pairing-code connection
+• Command registry
+• Lifecycle management
+
+Dark Vortex is designed to provide centralized control,
+security, automation, moderation, and intelligence for
+WhatsApp environments.
+
+The project is owned and controlled through the bot's
+configured owner system.
+
+The command registry is the authoritative source for
+actual commands and their current metadata.
+`;
+
 
 /* =========================================================
    🌑 DARK VORTEX KNOWLEDGE ENGINE
@@ -130,21 +255,14 @@ export function buildDarkVortexKnowledge(): string {
       .join("\n");
 
   return `
-IDENTITY
---------
-Name: 🌑 DARK VORTEX
-Powered by: ⚡ VORTEX TECH
+${DARK_VORTEX_PROJECT_HISTORY}
 
-Dark Vortex is a WhatsApp owner-control, group-management,
-automation, moderation, protection, and security-intelligence
-bot.
+==================================================
+REGISTERED COMMAND KNOWLEDGE
+==================================================
 
-The bot operates through WhatsApp and uses a centralized
-command registry, command handlers, security systems,
-automation services, lifecycle controls, and VX intelligence.
-
-The built-in AI is an informational intelligence layer.
-It does NOT automatically execute commands.
+The following information is generated directly from the
+actual Dark Vortex command registry.
 
 CATEGORIES
 ----------
@@ -154,15 +272,19 @@ REGISTERED COMMANDS
 -------------------
 ${commandKnowledge}
 
+==================================================
 SECURITY CAPABILITIES
----------------------
-Dark Vortex contains configurable protection systems including:
+==================================================
+
+Dark Vortex contains configurable protection systems
+including:
 
 • Anti-link protection
 • Anti-group-link protection
 • Anti-status protection
 • Anti-spam protection
 • Automatic bot detection
+• AI-assisted bot behavior analysis
 • Anti-mention protection
 • Flood protection
 • Suspicious-account protection
@@ -174,15 +296,18 @@ Dark Vortex contains configurable protection systems including:
 • Ban systems
 • Group administration
 
+==================================================
 VX INTELLIGENCE
----------------
+==================================================
+
 VX is Dark Vortex's security-intelligence layer.
 
-Its registered capabilities include:
+Registered VX capabilities include:
 
 • VX security scans
 • VX group monitoring
 • Suspicious bot analysis
+• AI-assisted behavioral analysis
 • Security incidents
 • Incident history
 • VX operation abort/resume
@@ -209,10 +334,12 @@ Its registered capabilities include:
 • Security recovery
 • Security testing
 
+==================================================
 GROUP MANAGEMENT
------------------
-Dark Vortex supports registered group-management capabilities
-such as:
+==================================================
+
+Dark Vortex supports registered group-management
+capabilities such as:
 
 • Group enable/disable
 • Member removal
@@ -237,8 +364,10 @@ such as:
 • Rejecting requests
 • VCF contact export
 
+==================================================
 AUTOMATION
-----------
+==================================================
+
 Dark Vortex supports:
 
 • Welcome automation
@@ -252,8 +381,10 @@ Dark Vortex supports:
 • Slow mode
 • Management reports
 
+==================================================
 OWNER AND SYSTEM CONTROL
-------------------------
+==================================================
+
 Dark Vortex contains owner/system capabilities including:
 
 • Bot status
@@ -273,54 +404,95 @@ Dark Vortex contains owner/system capabilities including:
 • Owner information
 • Away mode
 
-PAIRING AND CONNECTION
-----------------------
-Dark Vortex supports WhatsApp connection through its existing
-QR and pairing-code infrastructure.
+==================================================
+CONNECTION
+==================================================
 
-The AI must never expose authentication credentials,
-session information, pairing secrets, API keys, or private
-configuration values.
+Dark Vortex supports its existing WhatsApp connection
+infrastructure through:
 
+• QR connection
+• Pairing-code connection
+
+Authentication credentials, session information,
+pairing secrets and private configuration must never
+be exposed through the AI.
+
+==================================================
+AI INTELLIGENCE
+==================================================
+
+Dark Vortex contains an AI intelligence layer.
+
+The AI has two major informational roles:
+
+1. Dark Vortex knowledge assistant
+2. AI-assisted behavioral bot analysis
+
+The informational assistant explains the actual Dark Vortex
+system and its registered capabilities.
+
+The behavioral AI analyzes observable message patterns
+when enough evidence exists.
+
+The AI does NOT independently kick, ban, delete, warn,
+mute, or otherwise enforce protection.
+
+Actual enforcement remains under the existing Dark Vortex
+security and protection systems.
+
+==================================================
+AUTHORITY
+==================================================
+
+The command registry is authoritative for:
+
+• Command existence
+• Command names
+• Aliases
+• Access levels
+• Scope
+• Confirmation requirements
+• Dangerous-operation metadata
+• Categories
+
+The AI must never invent a command or claim an unregistered
+feature exists.
+
+==================================================
 BEHAVIOR RULES
---------------
+==================================================
+
 The AI must:
 
-1. Use the registered command information above as the
-   authoritative command list.
-
-2. Never invent commands.
-
-3. Never claim an unregistered feature is implemented.
-
+1. Never invent commands.
+2. Never invent features.
+3. Never claim an action was executed.
 4. Never execute commands.
-
-5. Explain commands when users ask how to perform an action.
-
-6. Respect command permissions and scopes.
-
-7. Explain that owner/VX/admin restrictions still apply.
-
-8. Never reveal secrets or private configuration.
-
-9. Never pretend to have access to live logs or system state
-   unless that information is explicitly supplied.
-
-10. Keep WhatsApp responses concise but useful.
-
-11. Use the Dark Vortex identity naturally.
-
-12. If asked about an unavailable or unknown capability,
-    clearly say that it is not currently confirmed.
-
-13. If asked something unrelated to Dark Vortex, the AI should
-    not attempt to answer it.
-
-IMPORTANT:
-The command registry above is generated from the actual
-Dark Vortex command registry at runtime.
+5. Respect command permissions.
+6. Respect command scope.
+7. Never reveal secrets.
+8. Never reveal API keys.
+9. Never reveal session data.
+10. Never reveal pairing secrets.
+11. Never reveal private owner configuration.
+12. Never fabricate live system information.
+13. Never fabricate logs.
+14. Never fabricate incidents.
+15. Never fabricate security statistics.
+16. Never fabricate group state.
+17. Never fabricate connection state.
+18. Explain commands rather than executing them.
+19. Use the command registry as the source of truth.
+20. Keep responses concise unless detail is requested.
+21. Use the Dark Vortex identity naturally.
+22. Use emojis sparingly.
+23. Remain technically accurate.
+24. If historical information is unknown, say so clearly.
+25. Never invent additional information about Brian or Vortex Tech.
 `;
 }
+
 
 /* =========================================================
    🌑 DARK VORTEX INTENT DETECTION
@@ -335,6 +507,7 @@ function normalizeText(
     .trim();
 }
 
+
 export function isDarkVortexRelated(
   text: string,
 ): boolean {
@@ -345,7 +518,7 @@ export function isDarkVortexRelated(
     return false;
   }
 
-    const directTerms = [
+  const directTerms = [
     "dark vortex",
     "darkvortex",
     "vortex",
@@ -358,17 +531,16 @@ export function isDarkVortexRelated(
     "vx report",
   ];
 
-    const hasVxReference =
-    /\bvx\b/i.test(normalized);
-
-    if (
-    directTerms.some(term =>
-      normalized.includes(term),
+  if (
+    directTerms.some(
+      term =>
+        normalized.includes(term),
     ) ||
-    hasVxReference
+    /\bvx\b/i.test(normalized)
   ) {
     return true;
   }
+
   const featureTerms = [
     "anti edit",
     "antiedit",
@@ -388,6 +560,8 @@ export function isDarkVortexRelated(
     "security system",
     "protection system",
     "bot detection",
+    "ai bot detection",
+    "ai bot detector",
     "group management",
     "rest mode",
     "pairing code",
@@ -400,17 +574,27 @@ export function isDarkVortexRelated(
     "your commands",
     "your features",
     "your capabilities",
+    "founder",
+    "creator",
+    "who created you",
+    "who made you",
+    "who built you",
+    "who developed you",
+    "when were you developed",
+    "when was dark vortex created",
+    "when was dark vortex developed",
+    "who is brian",
+    "brian",
   ];
 
   if (
-    featureTerms.some(term =>
-      normalized.includes(term),
+    featureTerms.some(
+      term =>
+        normalized.includes(term),
     )
   ) {
     return true;
   }
-
-
 
   const identityQuestions = [
     "who are you",
@@ -431,6 +615,7 @@ export function isDarkVortexRelated(
   );
 }
 
+
 /* =========================================================
    COOLDOWN
 ========================================================= */
@@ -450,6 +635,7 @@ function isOnCooldown(
     CHAT_COOLDOWN_MS
   );
 }
+
 
 function markCooldown(
   jid: string,
@@ -474,10 +660,51 @@ function markCooldown(
   }
 }
 
-/* =========================================================
-   AI SYSTEM PROMPT
-========================================================= */
 
+function isBotAICooldown(
+  jid: string,
+): boolean {
+  const last =
+    botAICooldowns.get(jid);
+
+  if (!last) {
+    return false;
+  }
+
+  return (
+    Date.now() - last <
+    BOT_AI_COOLDOWN_MS
+  );
+}
+
+
+function markBotAICooldown(
+  jid: string,
+): void {
+  botAICooldowns.set(
+    jid,
+    Date.now(),
+  );
+
+  if (
+    botAICooldowns.size > 1000
+  ) {
+    const oldest =
+      botAICooldowns.keys()
+        .next().value;
+
+    if (oldest) {
+      botAICooldowns.delete(
+        oldest,
+      );
+    }
+  }
+}
+
+
+/* =========================================================
+   🌑 NORMAL DARK VORTEX AI PROMPT
+========================================================= */
 
 function buildSystemPrompt(): string {
   return `
@@ -485,11 +712,10 @@ You are the built-in AI intelligence of 🌑 DARK VORTEX.
 
 You are not a generic chatbot.
 
-Your primary purpose is to understand, explain, and provide useful information about Dark Vortex and its actual systems.
+Your purpose is to understand, explain, and provide useful
+information about Dark Vortex and its actual systems.
 
-Dark Vortex is a WhatsApp owner-control, security, moderation, automation, group-management, and VX security-intelligence bot powered by Vortex Tech.
-
-Your authoritative knowledge is generated directly from Dark Vortex's command registry.
+${DARK_VORTEX_PROJECT_HISTORY}
 
 ==================================================
 CORE RULES
@@ -500,98 +726,54 @@ CORE RULES
 • Never claim an action was executed.
 • Never expose secrets.
 • Never expose API keys.
-• Never expose authentication or session information.
+• Never expose authentication information.
+• Never expose session information.
+• Never expose pairing secrets.
 • Never reveal private owner configuration.
-• Never bypass command permissions.
-• Never tell a user they can use a command when their access level does not permit it.
-• Never execute commands from an AI conversation.
+• Never bypass permissions.
+• Never execute commands through conversation.
 • Explain commands instead of executing them.
-• If something is not confirmed by the knowledge below, say that it is not currently confirmed.
-• Never pretend to see live system information.
-• Never fabricate logs, incidents, scans, statistics, group state, or connection state.
-• Keep responses useful and suitable for WhatsApp.
-• Be concise unless the user asks for more detail.
-• Maintain a premium, futuristic Dark Vortex personality.
-• Use emojis sparingly and intentionally.
-• Do not answer unrelated questions as if they were Dark Vortex questions.
+• Never fabricate live system information.
+• Never fabricate logs or statistics.
+• Never fabricate group state.
+• Never fabricate connection state.
+• Never fabricate project history.
+• Do not invent additional information about Brian.
+• Do not invent additional information about Vortex Tech.
+• Use the actual command registry as authoritative.
 
 ==================================================
-WHATSAPP RESPONSE FORMAT
+WHATSAPP RESPONSE STYLE
 ==================================================
 
-Dark Vortex responses must look clean and native to WhatsApp.
+Keep responses clean and native to WhatsApp.
 
-DO NOT use Markdown formatting.
+Do not use:
 
-NEVER use:
-• **bold text**
-• __underline__
-• ## Markdown headings
 • Markdown tables
-• Markdown bullet syntax using *
-• Excessive asterisks
 • Markdown code fences
-• Long blocks of decorative symbols
+• Excessive decoration
+• Excessive emojis
+• Long decorative borders
 
-Do not surround normal words with asterisks.
+Single backticks may be used for command names when useful.
 
-For commands, use single backticks only when useful:
+Normal commands should be explained naturally.
 
-\`.vxscan\`
-
-Use the following Dark Vortex visual style for structured responses:
+Structured information may use:
 
 ╭─「 TITLE 」
 │ Information
 │ Information
 ╰──────────────
 
-For lists, use:
-
-╭─「 FEATURES 」
-│ • Feature one
-│ • Feature two
-│ • Feature three
-╰──────────────
-
-For command explanations:
-
-╭─「 COMMAND 」
-│ .vxscan
-│
-│ Purpose: Scan the current group
-│ Access: VX
-╰──────────────
-
-For important notices:
-
-⚠️ NOTICE
-Keep the explanation short and clear.
-
-For successful informational responses:
-
-╭─「 DARK VORTEX 」
-│ Response content here.
-╰──────────────
-
-Use these boxes only when they improve readability. Do not put every sentence inside a box.
-
-Keep responses visually balanced.
-
-Do not overuse:
-╭
-╰
-│
-─
-emojis
-
-The response should feel premium, clean, futuristic, and readable rather than overloaded with decoration.
+Do not put every response inside a box.
 
 ==================================================
 IDENTITY
 ==================================================
 
-When appropriate, identify yourself naturally as:
+When appropriate identify yourself as:
 
 🌑 DARK VORTEX
 
@@ -599,497 +781,72 @@ Powered by:
 
 ⚡ VORTEX TECH
 
-Do not repeat the branding unnecessarily in every response.
+If asked who created you:
+
+Brian is the founder of Vortex Tech and the creator/founder
+of the Dark Vortex project.
+
+If asked when Dark Vortex was developed:
+
+Dark Vortex was developed during September 2026.
+
+Do not invent an exact date unless one is explicitly known.
 
 ==================================================
-COMMAND EXPLANATIONS
+PROJECT KNOWLEDGE
 ==================================================
-
-When explaining a command:
-
-1. Give the command name.
-2. Explain what it does.
-3. Give the syntax when useful.
-4. Mention important access restrictions when relevant.
-5. Mention group/private scope when relevant.
-6. Mention confirmation requirements when relevant.
-
-Example style:
-
-╭─「 VX SCAN 」
-│ Command: \`.vxscan\`
-│
-│ Scans the current group for suspicious
-│ activity and security threats.
-│
-│ Access: VX
-│ Scope: Group
-╰──────────────
-
-Never claim that a command exists unless it appears in the registered command knowledge.
-
-==================================================
-ACCESS LEVELS
-==================================================
-
-public = generally available
-user = normal user access
-owner = bot owner only
-vx = VX-authorized security access
-admin = administrative access
-group = group-related access
-groupAdmin = group administrator access
-ownerGroup = owner in a group context
-ownerGroupAdmin = owner plus group-admin context
-
-The command's actual registry metadata is authoritative.
-
-==================================================
-CONVERSATION STYLE
-==================================================
-
-Dark Vortex should sound:
-
-• Intelligent
-• Confident
-• Technical when necessary
-• Calm
-• Professional
-• Futuristic
-• Helpful
-• Concise
-
-Avoid robotic phrases such as:
-
-"Sure! I'd be happy to help!"
-"Of course!"
-"Absolutely!"
-"As an AI language model..."
-
-Respond naturally.
-
-If the user asks a simple question, give a simple answer.
-
-If the user asks for detailed information, provide a structured explanation.
-
-If the user asks "what can you do?", summarize the actual capabilities instead of dumping the entire registry.
-
-==================================================
-SECURITY
-==================================================
-
-Never reveal:
-
-• API keys
-• Authentication credentials
-• Session data
-• Pairing secrets
-• Owner private configuration
-• Environment variables containing secrets
-• Internal authentication data
-
-If asked for secrets, refuse briefly and explain that protected configuration cannot be exposed.
-
-==================================================
-COMMAND EXECUTION
-==================================================
-
-The AI is informational only.
-
-Never execute a command because a user asks for it through the AI conversation.
-
-If a user says:
-
-"Turn on antilink"
-
-do not execute it.
-
-Instead explain the appropriate registered command and its requirements.
-
-Example:
-
-╭─「 ANTILINK 」
-│ Use the registered antilink command
-│ to configure link protection.
-│
-│ Access and group requirements apply.
-╰──────────────
-
-==================================================
-LIVE SYSTEM INFORMATION
-==================================================
-
-Do not pretend to know:
-
-• Current uptime
-• Current group members
-• Current incidents
-• Current scans
-• Current monitoring status
-• Current connection status
-• Current logs
-• Current security statistics
-
-unless that information is explicitly supplied to you.
-
-==================================================
-DARK VORTEX KNOWLEDGE
-==================================================
-
-The following knowledge is generated directly from the actual Dark Vortex command registry.
 
 ${buildDarkVortexKnowledge()}
 
 ==================================================
-FINAL RESPONSE RULE
+FINAL RULE
 ==================================================
 
-Always prioritize accuracy over pretending to know something.
+Accuracy is more important than pretending to know something.
 
-If information is unavailable or not confirmed:
+If information is unavailable or not confirmed, say so clearly.
 
-Say so clearly.
-
-Never hallucinate.
-
-Use the actual Dark Vortex command registry as the source of truth.
-
-Remember:
-
-You are 🌑 DARK VORTEX's intelligence layer.
+You are Dark Vortex's intelligence layer.
 
 You explain the system.
-You do not secretly control the system.
-You do not invent the system.
-You do not expose protected information.
 
-Keep every response clean, premium, readable, and WhatsApp-friendly.
+You do not secretly control the system.
+
+You do not invent the system.
+
+You do not expose protected information.
 `;
 }
 
 
-// =========================================================
-// 🌑 DARK VORTEX AI — MULTI-PROVIDER FALLBACK
-// =========================================================
+/* =========================================================
+   GENERIC OPENAI-COMPATIBLE REQUEST
+========================================================= */
 
-async function requestAI(
-  userText: string,
-): Promise<string | null> {
-  const config = getAIConfig();
-
-  if (!config.enabled) {
-    return null;
-  }
-
-  const prompt =
-    userText.slice(
-      0,
-      MAX_INPUT_LENGTH,
-    );
-
-  // =======================================================
-  // 1️⃣ GEMINI — PRIMARY
-  // =======================================================
-
-  if (config.geminiKey) {
-    const answer =
-      await requestGemini(
-        config.geminiKey,
-        config.geminiModel,
-        prompt,
-      );
-
-    if (answer) {
-      console.log(
-        "[DARK VORTEX AI] Provider: Gemini",
-      );
-
-      return answer;
-    }
-
-    console.warn(
-      "[DARK VORTEX AI] Gemini unavailable. Trying Groq.",
-    );
-  }
-
-  // =======================================================
-  // 2️⃣ GROQ — FALLBACK
-  // =======================================================
-
-  if (config.groqKey) {
-    const answer =
-      await requestGroq(
-        config.groqKey,
-        config.groqModel,
-        prompt,
-      );
-
-    if (answer) {
-      console.log(
-        "[DARK VORTEX AI] Provider: Groq",
-      );
-
-      return answer;
-    }
-
-    console.warn(
-      "[DARK VORTEX AI] Groq unavailable. Trying Qwen.",
-    );
-  }
-
-  // =======================================================
-  // 3️⃣ QWEN / OPENROUTER — FINAL FALLBACK
-  // =======================================================
-
-  if (config.openRouterKey) {
-    const answer =
-      await requestOpenRouter(
-        config.openRouterKey,
-        config.openRouterModel,
-        config.openRouterUrl,
-        prompt,
-      );
-
-    if (answer) {
-      console.log(
-        "[DARK VORTEX AI] Provider: Qwen/OpenRouter",
-      );
-
-      return answer;
-    }
-  }
-
-  console.error(
-    "[DARK VORTEX AI] All AI providers failed.",
-  );
-
-  return null;
-}
-
-
-// =========================================================
-// GEMINI
-// =========================================================
-
-async function requestGemini(
-  apiKey: string,
-  model: string,
-  userText: string,
-): Promise<string | null> {
-  const controller =
-    new AbortController();
-
-  const timeout =
-    setTimeout(
-      () => controller.abort(),
-      30000,
-    );
-
-  try {
-    const response =
-      await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-          model,
-        )}:generateContent?key=${encodeURIComponent(
-          apiKey,
-        )}`,
-        {
-          method: "POST",
-
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-
-          body: JSON.stringify({
-            systemInstruction: {
-              parts: [
-                {
-                  text:
-                    buildSystemPrompt(),
-                },
-              ],
-            },
-
-            contents: [
-              {
-                role: "user",
-
-                parts: [
-                  {
-                    text: userText,
-                  },
-                ],
-              },
-            ],
-
-            generationConfig: {
-              maxOutputTokens:
-                MAX_OUTPUT_TOKENS,
-
-              temperature:
-                0.35,
-            },
-          }),
-
-          signal:
-            controller.signal,
-        },
-      );
-
-    if (!response.ok) {
-      console.error(
-        `[DARK VORTEX AI] Gemini HTTP ${response.status}`,
-      );
-
-      return null;
-    }
-
-    const data =
-      (await response.json()) as any;
-
-    const answer =
-      data?.candidates?.[0]
-        ?.content?.parts
-        ?.map(
-          (part: any) =>
-            part?.text || "",
-        )
-        .join("")
-        .trim();
-
-    if (!answer) {
-      return null;
-    }
-
-    return answer;
-  } catch (error) {
-    console.error(
-      "[DARK VORTEX AI] Gemini request failed:",
-      error,
-    );
-
-    return null;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-
-// =========================================================
-// GROQ
-// =========================================================
-
-async function requestGroq(
-  apiKey: string,
-  model: string,
-  userText: string,
-): Promise<string | null> {
-  const controller =
-    new AbortController();
-
-  const timeout =
-    setTimeout(
-      () => controller.abort(),
-      30000,
-    );
-
-  try {
-    const response =
-      await fetch(
-        "https://api.groq.com/openai/v1/chat/completions",
-        {
-          method: "POST",
-
-          headers: {
-            "Content-Type":
-              "application/json",
-
-            Authorization:
-              `Bearer ${apiKey}`,
-          },
-
-          body: JSON.stringify({
-            model,
-
-            messages: [
-              {
-                role: "system",
-
-                content:
-                  buildSystemPrompt(),
-              },
-
-              {
-                role: "user",
-
-                content:
-                  userText,
-              },
-            ],
-
-            max_completion_tokens:
-              MAX_OUTPUT_TOKENS,
-
-            temperature:
-              0.35,
-          }),
-
-          signal:
-            controller.signal,
-        },
-      );
-
-    if (!response.ok) {
-      console.error(
-        `[DARK VORTEX AI] Groq HTTP ${response.status}`,
-      );
-
-      return null;
-    }
-
-    const data =
-      (await response.json()) as any;
-
-    const answer =
-      data?.choices?.[0]
-        ?.message?.content
-        ?.trim();
-
-    if (!answer) {
-      return null;
-    }
-
-    return answer;
-  } catch (error) {
-    console.error(
-      "[DARK VORTEX AI] Groq request failed:",
-      error,
-    );
-
-    return null;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-
-// =========================================================
-// OPENROUTER / QWEN
-// =========================================================
-
-async function requestOpenRouter(
-  apiKey: string,
-  model: string,
+async function requestOpenAICompatible(
   apiUrl: string,
+  apiKey: string,
+  model: string,
+  systemPrompt: string,
   userText: string,
+  maxTokens: number,
+  temperature: number,
 ): Promise<string | null> {
+  if (
+    !apiKey ||
+    !apiUrl ||
+    !model
+  ) {
+    return null;
+  }
+
   const controller =
     new AbortController();
 
   const timeout =
     setTimeout(
-      () => controller.abort(),
+      () =>
+        controller.abort(),
       30000,
     );
 
@@ -1114,31 +871,32 @@ async function requestOpenRouter(
               "Dark Vortex",
           },
 
-          body: JSON.stringify({
-            model,
+          body:
+            JSON.stringify({
+              model,
 
-            messages: [
-              {
-                role: "system",
+              messages: [
+                {
+                  role: "system",
+                  content:
+                    systemPrompt,
+                },
 
-                content:
-                  buildSystemPrompt(),
-              },
+                {
+                  role: "user",
+                  content:
+                    userText.slice(
+                      0,
+                      MAX_INPUT_LENGTH,
+                    ),
+                },
+              ],
 
-              {
-                role: "user",
+              max_tokens:
+                maxTokens,
 
-                content:
-                  userText,
-              },
-            ],
-
-            max_tokens:
-              MAX_OUTPUT_TOKENS,
-
-            temperature:
-              0.35,
-          }),
+              temperature,
+            }),
 
           signal:
             controller.signal,
@@ -1146,40 +904,782 @@ async function requestOpenRouter(
       );
 
     if (!response.ok) {
-      console.error(
-        `[DARK VORTEX AI] OpenRouter HTTP ${response.status}`,
-      );
-
       return null;
     }
 
     const data =
-      (await response.json()) as any;
+      await response.json() as any;
 
     const answer =
       data?.choices?.[0]
-        ?.message?.content
-        ?.trim();
+        ?.message?.content;
+
+    if (
+      typeof answer !==
+        "string" ||
+      !answer.trim()
+    ) {
+      return null;
+    }
+
+    return answer.trim();
+
+  } catch (error) {
+    console.error(
+      "[DARK VORTEX AI] Provider request failed:",
+      error,
+    );
+
+    return null;
+
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+
+/* =========================================================
+   GEMINI REQUEST
+========================================================= */
+
+async function requestGemini(
+  systemPrompt: string,
+  userText: string,
+  maxTokens: number,
+  temperature: number,
+): Promise<string | null> {
+  const config =
+    getAIConfig();
+
+  if (
+    !config.enabled ||
+    !config.geminiApiKey
+  ) {
+    return null;
+  }
+
+  const url =
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+      config.geminiModel,
+    )}:generateContent?key=${encodeURIComponent(
+      config.geminiApiKey,
+    )}`;
+
+  const controller =
+    new AbortController();
+
+  const timeout =
+    setTimeout(
+      () =>
+        controller.abort(),
+      30000,
+    );
+
+  try {
+    const response =
+      await fetch(
+        url,
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+
+          body:
+            JSON.stringify({
+              systemInstruction: {
+                parts: [
+                  {
+                    text:
+                      systemPrompt,
+                  },
+                ],
+              },
+
+              contents: [
+                {
+                  role: "user",
+                  parts: [
+                    {
+                      text:
+                        userText.slice(
+                          0,
+                          MAX_INPUT_LENGTH,
+                        ),
+                    },
+                  ],
+                },
+              ],
+
+              generationConfig: {
+                maxOutputTokens:
+                  maxTokens,
+
+                temperature,
+              },
+            }),
+
+          signal:
+            controller.signal,
+        },
+      );
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data =
+      await response.json() as any;
+
+    const answer =
+      data?.candidates?.[0]
+        ?.content?.parts
+        ?.map(
+          (part: any) =>
+            part?.text || "",
+        )
+        .join("")
+        .trim();
 
     if (!answer) {
       return null;
     }
 
     return answer;
+
   } catch (error) {
     console.error(
-      "[DARK VORTEX AI] OpenRouter request failed:",
+      "[DARK VORTEX AI] Gemini request failed:",
       error,
     );
 
     return null;
+
   } finally {
     clearTimeout(timeout);
   }
 }
 
+
 /* =========================================================
-   MAIN AI PROCESSOR
+   GROQ REQUEST
+========================================================= */
+
+async function requestGroq(
+  systemPrompt: string,
+  userText: string,
+  maxTokens: number,
+  temperature: number,
+): Promise<string | null> {
+  const config =
+    getAIConfig();
+
+  return requestOpenAICompatible(
+    "https://api.groq.com/openai/v1/chat/completions",
+    config.groqApiKey,
+    config.groqModel,
+    systemPrompt,
+    userText,
+    maxTokens,
+    temperature,
+  );
+}
+
+
+/* =========================================================
+   OPENROUTER REQUEST
+========================================================= */
+
+async function requestOpenRouter(
+  systemPrompt: string,
+  userText: string,
+  maxTokens: number,
+  temperature: number,
+): Promise<string | null> {
+  const config =
+    getAIConfig();
+
+  return requestOpenAICompatible(
+    config.openRouterApiUrl,
+    config.openRouterApiKey,
+    config.openRouterModel,
+    systemPrompt,
+    userText,
+    maxTokens,
+    temperature,
+  );
+}
+
+
+/* =========================================================
+   NORMAL AI PROVIDER FALLBACK
+========================================================= */
+
+async function requestAI(
+  userText: string,
+): Promise<string | null> {
+  const config =
+    getAIConfig();
+
+  if (!config.enabled) {
+    return null;
+  }
+
+  const systemPrompt =
+    buildSystemPrompt();
+
+  /*
+   * Provider priority:
+   *
+   * 1. Gemini
+   * 2. Groq
+   * 3. OpenRouter
+   */
+
+  if (config.geminiApiKey) {
+    const result =
+      await requestGemini(
+        systemPrompt,
+        userText,
+        MAX_OUTPUT_TOKENS,
+        0.35,
+      );
+
+    if (result) {
+      return result;
+    }
+  }
+
+  if (config.groqApiKey) {
+    const result =
+      await requestGroq(
+        systemPrompt,
+        userText,
+        MAX_OUTPUT_TOKENS,
+        0.35,
+      );
+
+    if (result) {
+      return result;
+    }
+  }
+
+  if (config.openRouterApiKey) {
+    const result =
+      await requestOpenRouter(
+        systemPrompt,
+        userText,
+        MAX_OUTPUT_TOKENS,
+        0.35,
+      );
+
+    if (result) {
+      return result;
+    }
+  }
+
+  return null;
+}
+
+
+/* =========================================================
+   🤖 AI BOT-BEHAVIOR TYPES
+========================================================= */
+
+export interface BotBehaviorAIInput {
+  totalMessages: number;
+
+  repeatedMessages: number;
+
+  burstEvents: number;
+
+  automationSignals: number;
+
+  commandLikeMessages: number;
+
+  interactiveMessages: number;
+
+  averageIntervalMs: number;
+
+  behavioralConfidence: number;
+
+  behavioralRisk:
+    | "LOW"
+    | "MEDIUM"
+    | "HIGH";
+
+  recentMessages: string[];
+
+  recentIntervals: number[];
+}
+
+
+export interface BotBehaviorAIResult {
+  botProbability: number;
+
+  confidence: number;
+
+  risk:
+    | "LOW"
+    | "MEDIUM"
+    | "HIGH";
+
+  automated: boolean;
+
+  reason: string;
+
+  signals: string[];
+}
+
+
+/* =========================================================
+   🤖 BOT ANALYSIS PROMPT
+========================================================= */
+
+function buildBotAnalysisPrompt(
+  input: BotBehaviorAIInput,
+): string {
+  const messages =
+    input.recentMessages
+      .slice(-12)
+      .map(
+        (message, index) =>
+          `${index + 1}. ${message.slice(0, 300)}`,
+      )
+      .join("\n");
+
+  const intervals =
+    input.recentIntervals
+      .slice(-12)
+      .map(
+        value =>
+          `${Math.round(value)}ms`,
+      )
+      .join(", ");
+
+  return `
+You are the behavioral bot-analysis engine inside
+🌑 DARK VORTEX.
+
+Your job is to assess whether an account's observable
+messaging behavior appears automated or bot-like.
+
+You are NOT identifying a person's identity.
+
+You are NOT judging language, nationality, personality,
+writing quality, intelligence, or opinions.
+
+You must only evaluate observable automation patterns.
+
+Consider:
+
+• Repeated messages
+• Rapid bursts
+• Highly regular timing
+• Sustained rapid activity
+• Interactive-message activity
+• Automation signals
+• Repeated content
+• Unusually machine-like behavior
+• Consistency across multiple observations
+
+Do NOT treat these alone as proof of automation:
+
+• Using commands
+• Sending links
+• Being active
+• Writing short messages
+• Writing formally
+• Writing quickly once
+• Using emojis
+• Using unusual words
+• Speaking in a particular language
+
+Existing behavioral detection data:
+
+Total messages:
+${input.totalMessages}
+
+Repeated messages:
+${input.repeatedMessages}
+
+Burst events:
+${input.burstEvents}
+
+Automation signals:
+${input.automationSignals}
+
+Command-like messages:
+${input.commandLikeMessages}
+
+Interactive messages:
+${input.interactiveMessages}
+
+Average interval:
+${Math.round(input.averageIntervalMs)}ms
+
+Existing behavioral confidence:
+${input.behavioralConfidence}
+
+Existing behavioral risk:
+${input.behavioralRisk}
+
+Recent intervals:
+${intervals || "None"}
+
+Recent message samples:
+${messages || "None"}
+
+Return ONLY valid JSON.
+
+Required format:
+
+{
+  "botProbability": 0,
+  "confidence": 0,
+  "risk": "LOW",
+  "automated": false,
+  "reason": "short explanation",
+  "signals": [
+    "observable signal"
+  ]
+}
+
+Rules:
+
+botProbability must be 0-100.
+
+confidence must be 0-100.
+
+risk must be exactly LOW, MEDIUM, or HIGH.
+
+automated must be true only when the evidence supports
+likely automation.
+
+Use conservative judgment.
+
+Do not claim certainty from insufficient evidence.
+
+The AI result is advisory intelligence only.
+Dark Vortex's existing protection system remains the
+enforcement authority.
+`;
+}
+
+
+/* =========================================================
+   🤖 SAFE JSON PARSER
+========================================================= */
+
+function parseBotAnalysis(
+  raw: string,
+): BotBehaviorAIResult | null {
+  try {
+    let cleaned =
+      raw.trim();
+
+    if (
+      cleaned.startsWith("```")
+    ) {
+      cleaned =
+        cleaned
+          .replace(
+            /^```(?:json)?/i,
+            "",
+          )
+          .replace(
+            /```$/i,
+            "",
+          )
+          .trim();
+    }
+
+    const firstBrace =
+      cleaned.indexOf("{");
+
+    const lastBrace =
+      cleaned.lastIndexOf("}");
+
+    if (
+      firstBrace < 0 ||
+      lastBrace <= firstBrace
+    ) {
+      return null;
+    }
+
+    cleaned =
+      cleaned.slice(
+        firstBrace,
+        lastBrace + 1,
+      );
+
+    const parsed =
+      JSON.parse(cleaned);
+
+    const probability =
+      Number(
+        parsed?.botProbability,
+      );
+
+    const confidence =
+      Number(
+        parsed?.confidence,
+      );
+
+    const risk =
+      String(
+        parsed?.risk || "LOW",
+      ).toUpperCase();
+
+    const automated =
+      parsed?.automated === true;
+
+    const reason =
+      typeof parsed?.reason ===
+      "string"
+        ? parsed.reason
+            .trim()
+            .slice(0, 500)
+        : "";
+
+    const signals =
+      Array.isArray(
+        parsed?.signals,
+      )
+        ? parsed.signals
+            .filter(
+              (signal: unknown) =>
+                typeof signal ===
+                "string",
+            )
+            .map(
+              (signal: string) =>
+                signal
+                  .trim()
+                  .slice(0, 160),
+            )
+            .filter(Boolean)
+            .slice(0, 6)
+        : [];
+
+    if (
+      !Number.isFinite(
+        probability,
+      ) ||
+      !Number.isFinite(
+        confidence,
+      ) ||
+      !reason
+    ) {
+      return null;
+    }
+
+    const safeProbability =
+      Math.max(
+        0,
+        Math.min(
+          100,
+          Math.round(
+            probability,
+          ),
+        ),
+      );
+
+    const safeConfidence =
+      Math.max(
+        0,
+        Math.min(
+          100,
+          Math.round(
+            confidence,
+          ),
+        ),
+      );
+
+    const safeRisk =
+      risk === "HIGH" ||
+      risk === "MEDIUM"
+        ? risk
+        : "LOW";
+
+    return {
+      botProbability:
+        safeProbability,
+
+      confidence:
+        safeConfidence,
+
+      risk:
+        safeRisk,
+
+      automated,
+
+      reason,
+
+      signals,
+    };
+
+  } catch (error) {
+    console.error(
+      "[DARK VORTEX AI] Invalid bot-analysis response:",
+      error,
+    );
+
+    return null;
+  }
+}
+
+
+/* =========================================================
+   🤖 AI BOT-BEHAVIOR ANALYSIS
+========================================================= */
+
+export async function analyzeBotBehaviorWithAI(
+  input: BotBehaviorAIInput,
+  jid?: string,
+): Promise<BotBehaviorAIResult | null> {
+  const config =
+    getAIConfig();
+
+  if (!config.enabled) {
+    return null;
+  }
+
+  /*
+   * Prevent excessive AI requests for the same participant.
+   */
+
+  if (
+    jid &&
+    isBotAICooldown(jid)
+  ) {
+    return null;
+  }
+
+  /*
+   * AI should only be used after enough local evidence
+   * exists. This keeps API usage low and reduces false
+   * positives.
+   */
+
+  if (
+    input.totalMessages < 8
+  ) {
+    return null;
+  }
+
+  const enoughEvidence =
+    input.behavioralConfidence >= 30 ||
+    (
+      input.repeatedMessages >= 2 &&
+      input.burstEvents >= 2
+    ) ||
+    input.automationSignals >= 3;
+
+  if (!enoughEvidence) {
+    return null;
+  }
+
+  if (jid) {
+    markBotAICooldown(jid);
+  }
+
+  const systemPrompt = `
+You are the AI security-analysis component of
+🌑 DARK VORTEX, a WhatsApp security and moderation bot
+created by Brian under Vortex Tech.
+
+You are an advisory behavioral-analysis engine.
+
+You do not execute commands.
+
+You do not kick users.
+
+You do not ban users.
+
+You do not delete messages.
+
+You do not make enforcement decisions.
+
+You only analyze observable messaging behavior supplied
+by the existing Dark Vortex behavioral detector.
+
+Never identify or infer sensitive personal attributes.
+
+Never judge a person based on language, writing style,
+nationality, personality, opinions, or identity.
+
+Use observable automation evidence only.
+
+Return valid JSON matching the requested schema.
+
+Be conservative.
+`;
+
+  const prompt =
+    buildBotAnalysisPrompt(
+      input,
+    );
+
+  let raw:
+    string | null = null;
+
+  /*
+   * Use the same Dark Vortex provider stack.
+   *
+   * Gemini → Groq → OpenRouter
+   */
+
+  if (config.geminiApiKey) {
+    raw =
+      await requestGemini(
+        systemPrompt,
+        prompt,
+        450,
+        0.1,
+      );
+  }
+
+  if (
+    !raw &&
+    config.groqApiKey
+  ) {
+    raw =
+      await requestGroq(
+        systemPrompt,
+        prompt,
+        450,
+        0.1,
+      );
+  }
+
+  if (
+    !raw &&
+    config.openRouterApiKey
+  ) {
+    raw =
+      await requestOpenRouter(
+        systemPrompt,
+        prompt,
+        450,
+        0.1,
+      );
+  }
+
+  if (!raw) {
+    return null;
+  }
+
+  return parseBotAnalysis(
+    raw,
+  );
+}
+
+
+/* =========================================================
+   MAIN DARK VORTEX AI PROCESSOR
 ========================================================= */
 
 export async function processDarkVortexAI(
@@ -1188,21 +1688,23 @@ export async function processDarkVortexAI(
   message: WAMessage,
   text: string,
 ): Promise<boolean> {
-  const config = getAIConfig();
+  const config =
+    getAIConfig();
 
-  if (!config.enabled) {
+  if (
+    !config.enabled
+  ) {
     return false;
   }
 
-if (
-  !config.geminiKey &&
-  !config.groqKey &&
-  !config.openRouterKey
-) {
-  return false;
-}
+  /*
+   * Never allow the bot to analyze/respond to its own
+   * outgoing AI messages.
+   */
 
-  if (message.key.fromMe) {
+  if (
+    message.key.fromMe
+  ) {
     return false;
   }
 
@@ -1214,14 +1716,12 @@ if (
   }
 
   if (
-  !isDarkVortexRelated(
-    normalized,
-  )
-) {
-
-  return false;
-}
-
+    !isDarkVortexRelated(
+      normalized,
+    )
+  ) {
+    return false;
+  }
 
   if (
     isOnCooldown(jid)
@@ -1241,16 +1741,20 @@ if (
   }
 
   try {
-    const sent =
-      await sendVortexReply(
-        sock,
-        jid,
-        answer,
-        message,
-      );
+    await sendVortexReply(
+      sock,
+      jid,
+      answer,
+      message,
+    );
 
     return true;
+
   } catch (error) {
+    console.error(
+      "[DARK VORTEX AI] Reply failed:",
+      error,
+    );
 
     return false;
   }

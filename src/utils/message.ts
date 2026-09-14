@@ -1,18 +1,16 @@
 /* =========================================================
-   🌑 DARK VORTEX — PREMIUM WHATSAPP MESSAGE ENGINE
+   🌑 DARK VORTEX — MESSAGE ENGINE
    ⚡ Powered by Vortex Tech
 
-   RESPONSIBILITY:
-   • Presentation / formatting only
-   • Mobile-friendly WhatsApp UI
-   • Safe dynamic text handling
-   • Progress / operation presentation
-   • Audit presentation helpers
-   • Existing exports preserved
+   Presentation and formatting only.
 
-   IMPORTANT:
-   This file does NOT own command execution, permissions,
-   operation state, persistence, or security decisions.
+   STYLE:
+   • Menu/help: structured and detailed
+   • Normal commands: modern and concise
+   • Protection: direct and contextual
+   • Vortex/VX: technical and operational
+   • Progress operations: visible progress bars
+   • Errors: clear reason + next step
 ========================================================= */
 
 import {
@@ -29,32 +27,24 @@ import {
 ========================================================= */
 
 export const BRAND =
-  "🌑 DARK VORTEX BOT";
+  "🌑 DARK VORTEX";
 
 export const POWERED_BY =
-  "⚡ Powered by Vortex Tech";
+  "╰─── ⚡ VORTEX TECH ───╯";
 
 
 /* =========================================================
-   UI CONSTANTS
+   CONSTANTS
 ========================================================= */
 
 const BOX_WIDTH = 30;
-
-/*
- * WhatsApp messages can become extremely large when dynamic
- * logs/findings are inserted. Keep formatting bounded.
- *
- * This is intentionally conservative and does not attempt to
- * enforce an undocumented WhatsApp hard limit.
- */
 const MAX_LINE_LENGTH = 180;
 const MAX_BOX_LINES = 80;
 const MAX_LIST_ITEMS = 60;
 
 
 /* =========================================================
-   SECRET / SENSITIVE DATA PROTECTION
+   SECRET PROTECTION
 ========================================================= */
 
 const SECRET_PATTERNS: RegExp[] = [
@@ -75,33 +65,26 @@ const SECRET_PATTERNS: RegExp[] = [
   /cookie/gi,
 ];
 
-/*
- * Redact obvious key=value / token=value style secrets.
- * This is presentation-layer protection only.
- * Actual secret protection must also exist at the storage,
- * logging, configuration, and command layers.
- */
 function redactSecrets(
-  value: string
+  value: string,
 ): string {
-
   let result = String(value);
 
   for (const pattern of SECRET_PATTERNS) {
     result = result.replace(
       pattern,
-      "[REDACTED]"
+      "[REDACTED]",
     );
   }
 
   result = result.replace(
     /([A-Za-z0-9_-]{12,})\s*[:=]\s*([^\s,;]+)/g,
-    "$1=[REDACTED]"
+    "$1=[REDACTED]",
   );
 
   result = result.replace(
     /\bBearer\s+[A-Za-z0-9._~+/=-]+\b/gi,
-    "Bearer [REDACTED]"
+    "Bearer [REDACTED]",
   );
 
   return result;
@@ -109,13 +92,12 @@ function redactSecrets(
 
 
 /* =========================================================
-   SAFE TEXT HELPERS
+   TEXT HELPERS
 ========================================================= */
 
 function cleanLine(
-  line: unknown
+  line: unknown,
 ): string {
-
   if (
     line === undefined ||
     line === null
@@ -127,154 +109,90 @@ function cleanLine(
     String(line)
       .replace(/\r/g, "")
       .replace(/\n/g, " ")
-      .trim()
+      .trim(),
   );
 }
 
-
 function visibleLength(
-  text: string
+  text: string,
 ): number {
-
   return [
-    ...String(text)
+    ...String(text),
   ].length;
 }
 
-
 function truncateText(
   text: string,
-  maxLength = MAX_LINE_LENGTH
+  maxLength = MAX_LINE_LENGTH,
 ): string {
-
-  const clean =
-    cleanLine(text);
+  const clean = cleanLine(text);
 
   if (
-    visibleLength(clean) <=
-    maxLength
+    visibleLength(clean) <= maxLength
   ) {
     return clean;
   }
 
   if (maxLength <= 1) {
-    return clean.slice(
-      0,
-      Math.max(0, maxLength)
-    );
+    return [
+      ...clean,
+    ]
+      .slice(0, Math.max(0, maxLength))
+      .join("");
   }
 
-  return (
-    [...clean]
-      .slice(0, maxLength - 1)
-      .join("") +
-    "…"
-  );
+  return [
+    ...clean,
+  ]
+    .slice(0, maxLength - 1)
+    .join("") + "…";
 }
 
-
 function normalizeLines(
-  lines: unknown[] = []
+  lines: unknown[] = [],
 ): string[] {
-
   return lines
     .filter(
       (line) =>
         line !== undefined &&
-        line !== null
+        line !== null,
     )
     .map(cleanLine)
-    .map(
-      (line) =>
-        truncateText(line)
-    )
-    .filter(
-      (line) =>
-        line.length > 0
-    )
-    .slice(
-      0,
-      MAX_BOX_LINES
-    );
+    .map((line) => truncateText(line))
+    .filter((line) => line.length > 0)
+    .slice(0, MAX_BOX_LINES);
 }
-
 
 function createBorder(
-  length = BOX_WIDTH
+  length = BOX_WIDTH,
 ): string {
-
   return "━".repeat(
-    Math.max(
-      1,
-      length
-    )
+    Math.max(1, length),
   );
 }
-
-
-function fitLine(
-  text: unknown,
-  width = BOX_WIDTH
-): string {
-
-  const clean =
-    truncateText(
-      String(text),
-      width
-    );
-
-  const length =
-    visibleLength(clean);
-
-  if (length >= width) {
-    return [
-      ...clean
-    ]
-      .slice(0, width)
-      .join("");
-  }
-
-  return (
-    clean +
-    " ".repeat(
-      width - length
-    )
-  );
-}
-
 
 function centeredLine(
   text: unknown,
-  width = BOX_WIDTH
+  width = BOX_WIDTH,
 ): string {
+  const clean = truncateText(
+    String(text),
+    width,
+  );
 
-  const clean =
-    truncateText(
-      String(text),
-      width
-    );
-
-  const length =
-    visibleLength(clean);
+  const length = visibleLength(clean);
 
   if (length >= width) {
     return [
-      ...clean
+      ...clean,
     ]
       .slice(0, width)
       .join("");
   }
 
-  const total =
-    width - length;
-
-  const left =
-    Math.floor(
-      total / 2
-    );
-
-  const right =
-    total - left;
+  const total = width - length;
+  const left = Math.floor(total / 2);
+  const right = total - left;
 
   return (
     " ".repeat(left) +
@@ -285,22 +203,19 @@ function centeredLine(
 
 
 /* =========================================================
-   VORTEX BOX ENGINE
+   MENU / HELP BOXES
 ========================================================= */
 
 export function vortexBox(
   title: string,
-  lines: string[] = []
+  lines: string[] = [],
 ): string {
+  const cleanTitle = truncateText(
+    title,
+    BOX_WIDTH - 8,
+  );
 
-  const cleanTitle =
-    truncateText(
-      title,
-      BOX_WIDTH - 8
-    );
-
-  const safeLines =
-    normalizeLines(lines);
+  const safeLines = normalizeLines(lines);
 
   const titleText =
     `〔 ${cleanTitle} 〕`;
@@ -308,43 +223,33 @@ export function vortexBox(
   const titleLength =
     visibleLength(titleText);
 
-  const remaining =
-    Math.max(
-      2,
-      BOX_WIDTH - titleLength
-    );
+  const remaining = Math.max(
+    2,
+    BOX_WIDTH - titleLength,
+  );
 
   const top =
     `╭━━${titleText}${"━".repeat(
-      remaining
+      remaining,
     )}╮`;
 
-  const body =
-    safeLines.map(
-      (line) =>
-        `┃ ◈ ${line}`
-    );
+  const body = safeLines.map(
+    (line) => `┃ ◈ ${line}`,
+  );
 
   return [
     top,
     "┃",
     ...body,
     "┃",
-    `┃ ${POWERED_BY}`,
     `╰${createBorder()}╯`,
   ].join("\n");
 }
 
-
-/* =========================================================
-   VORTEX HEADER
-========================================================= */
-
 export function vortexHeader(
   title: string,
-  subtitle?: string
+  subtitle?: string,
 ): string {
-
   const sub =
     subtitle ||
     "⚡ VORTEX CORE";
@@ -352,88 +257,62 @@ export function vortexHeader(
   return [
     `╭${createBorder()}╮`,
     `┃${centeredLine(
-      "🌑 DARK VORTEX"
+      BRAND,
     )}┃`,
     `┃${centeredLine(
-      sub
+      sub,
     )}┃`,
     `╰${createBorder()}╯`,
     "",
     `╭━━〔 ${cleanLine(
-      title
+      title,
     )} 〕━━╮`,
   ].join("\n");
 }
 
-
-/* =========================================================
-   VORTEX SECTION
-========================================================= */
-
 export function vortexSection(
   title: string,
-  lines: string[] = []
+  lines: string[] = [],
 ): string {
-
-  const safeLines =
-    normalizeLines(lines);
+  const safeLines = normalizeLines(lines);
 
   return [
     `╭━━〔 ${truncateText(
       title,
-      BOX_WIDTH - 8
+      BOX_WIDTH - 8,
     )} 〕━━╮`,
     "┃",
     ...safeLines.map(
-      (line) =>
-        `┃ ${line}`
+      (line) => `┃ ${line}`,
     ),
     "┃",
     `╰${createBorder()}╯`,
   ].join("\n");
 }
 
-
-/* =========================================================
-   VORTEX LIST
-========================================================= */
-
 export function vortexList(
-  items: string[]
+  items: string[],
 ): string {
-
   return items
     .filter(
       (item) =>
         item !== undefined &&
         item !== null &&
-        String(item).trim()
+        String(item).trim(),
     )
-    .slice(
-      0,
-      MAX_LIST_ITEMS
-    )
+    .slice(0, MAX_LIST_ITEMS)
     .map(
       (item) =>
-        `┃ ◈ ${truncateText(
-          String(item)
-        )}`
+        `┃ ◈ ${truncateText(String(item))}`,
     )
     .join("\n");
 }
 
-
-/* =========================================================
-   VORTEX COMMAND
-========================================================= */
-
 export function vortexCommand(
   name: string,
-  description?: string
+  description?: string,
 ): string {
-
-  const prefix =
-    getPrefix();
+  const prefix = getPrefix();
 
   const commandLine =
     `◈ ${prefix}${cleanLine(name)}`;
@@ -444,156 +323,137 @@ export function vortexCommand(
 
   return [
     commandLine,
-    `  └─ ${cleanLine(
-      description
-    )}`,
+    `  └─ ${cleanLine(description)}`,
   ].join("\n");
 }
 
-
-/* =========================================================
-   VORTEX STATUS
-========================================================= */
-
 export function vortexStatus(
   label: string,
-  enabled: boolean
+  enabled: boolean,
 ): string {
-
   return (
-    `┃ ◈ ${cleanLine(
-      label
-    )} : ${
-      enabled
-        ? "🟢 ON"
-        : "🔴 OFF"
+    `${cleanLine(label)}: ${
+      enabled ? "ON" : "OFF"
     }`
   );
 }
 
 
 /* =========================================================
-   STANDARD RESPONSE BUILDERS
+   NORMAL RESPONSE BUILDERS
 ========================================================= */
+
+function simpleResponse(
+  heading: string,
+  lines: string[] = [],
+): string {
+  const safeLines = normalizeLines(lines);
+
+  if (safeLines.length === 0) {
+    return cleanLine(heading);
+  }
+
+  return [
+    cleanLine(heading),
+    "",
+    ...safeLines,
+  ].join("\n");
+}
+
+
+/*
+ * Normal responses intentionally stay lightweight.
+ *
+ * Do NOT turn these into dashboard-style boxes.
+ */
 
 export function success(
   title: string,
-  lines: string[] = []
+  lines: string[] = [],
 ): string {
-
-  return vortexBox(
-    `✅ ${title}`,
-    lines
+  return simpleResponse(
+    `✓ ${cleanLine(title)}`,
+    lines,
   );
 }
-
 
 export function error(
   title: string,
-  lines: string[] = []
+  lines: string[] = [],
 ): string {
-
-  return vortexBox(
-    `❌ ${title}`,
-    lines
+  return simpleResponse(
+    `✕ ${cleanLine(title)}`,
+    lines,
   );
 }
-
 
 export function warning(
   title: string,
-  lines: string[] = []
+  lines: string[] = [],
 ): string {
-
-  return vortexBox(
-    `⚠️ ${title}`,
-    lines
+  return simpleResponse(
+    `⚠️ ${cleanLine(title)}`,
+    lines,
   );
 }
-
 
 export function info(
   title: string,
-  lines: string[] = []
+  lines: string[] = [],
 ): string {
-
-  return vortexBox(
-    `ℹ️ ${title}`,
-    lines
+  return simpleResponse(
+    `ℹ️ ${cleanLine(title)}`,
+    lines,
   );
 }
-
 
 export function security(
   title: string,
-  lines: string[] = []
+  lines: string[] = [],
 ): string {
-
-  return vortexBox(
-    `🛡️ ${title}`,
-    lines
+  return simpleResponse(
+    `🛡️ ${cleanLine(title)}`,
+    lines,
   );
 }
-
 
 export function system(
   title: string,
-  lines: string[] = []
+  lines: string[] = [],
 ): string {
-
-  return vortexBox(
-    `⚙️ ${title}`,
-    lines
+  return simpleResponse(
+    `⚙️ ${cleanLine(title)}`,
+    lines,
   );
 }
-
 
 export function command(
   title: string,
-  lines: string[] = []
+  lines: string[] = [],
 ): string {
-
-  return vortexBox(
-    `⚡ ${title}`,
-    lines
+  return simpleResponse(
+    `⚡ ${cleanLine(title)}`,
+    lines,
   );
 }
 
 
 /* =========================================================
-   LEGACY SECTION / ROW HELPERS
+   LEGACY HELPERS
 ========================================================= */
 
 export function section(
-  title: string
+  title: string,
 ): string {
-
-  return (
-    `┣━━〔 ${cleanLine(
-      title
-    )} 〕━━┫`
-  );
+  return `┣━━〔 ${cleanLine(title)} 〕━━┫`;
 }
-
 
 export function row(
   label: string,
-  value: string
+  value: string,
 ): string {
-
-  return (
-    `◈ ${cleanLine(
-      label
-    )} : ${cleanLine(
-      value
-    )}`
-  );
+  return `◈ ${cleanLine(label)}: ${cleanLine(value)}`;
 }
-
-
-/* =========================================================
-   FOOTER
-========================================================= */
 
 export function footer(): string {
   return POWERED_BY;
@@ -605,41 +465,25 @@ export function footer(): string {
 ========================================================= */
 
 export function cleanUserNumber(
-  jid: string
+  jid: string,
 ): string {
-
   return String(jid || "")
     .split(":")[0]
-    .replace(
-      "@s.whatsapp.net",
-      ""
-    )
-    .replace(
-      "@lid",
-      ""
-    )
-    .replace(
-      /[^\d+]/g,
-      ""
-    );
+    .replace("@s.whatsapp.net", "")
+    .replace("@lid", "")
+    .replace(/[^\d+]/g, "");
 }
 
-
 export function userMention(
-  jid: string
+  jid: string,
 ): string {
-
   return `@${cleanUserNumber(jid)}`;
 }
 
-
 export function targetLine(
-  jid: string
+  jid: string,
 ): string {
-
-  return (
-    `👤 Target: ${userMention(jid)}`
-  );
+  return `Target: ${userMention(jid)}`;
 }
 
 
@@ -648,71 +492,52 @@ export function targetLine(
 ========================================================= */
 
 export function formatUptime(
-  seconds: number
+  seconds: number,
 ): string {
+  let remaining = Number.isFinite(seconds)
+    ? Math.max(0, Math.floor(seconds))
+    : 0;
 
-  let remaining =
-    Number.isFinite(seconds)
-      ? Math.max(
-          0,
-          Math.floor(seconds)
-        )
-      : 0;
-
-  const days =
-    Math.floor(
-      remaining / 86400
-    );
+  const days = Math.floor(
+    remaining / 86400,
+  );
 
   remaining %= 86400;
 
-  const hours =
-    Math.floor(
-      remaining / 3600
-    );
+  const hours = Math.floor(
+    remaining / 3600,
+  );
 
   remaining %= 3600;
 
-  const minutes =
-    Math.floor(
-      remaining / 60
-    );
+  const minutes = Math.floor(
+    remaining / 60,
+  );
 
-  const secs =
-    remaining % 60;
+  const secs = remaining % 60;
 
   const parts: string[] = [];
 
   if (days > 0) {
-    parts.push(
-      `${days}d`
-    );
+    parts.push(`${days}d`);
   }
 
   if (hours > 0) {
-    parts.push(
-      `${hours}h`
-    );
+    parts.push(`${hours}h`);
   }
 
   if (minutes > 0) {
-    parts.push(
-      `${minutes}m`
-    );
+    parts.push(`${minutes}m`);
   }
 
-  parts.push(
-    `${secs}s`
-  );
+  parts.push(`${secs}s`);
 
   return parts.join(" ");
 }
 
-
 export function formatBytes(
-  bytes: number
+  bytes: number,
 ): string {
-
   if (
     !Number.isFinite(bytes) ||
     bytes < 0
@@ -720,167 +545,127 @@ export function formatBytes(
     return "0 MB";
   }
 
-  const mb =
-    bytes /
-    1024 /
-    1024;
+  const mb = bytes / 1024 / 1024;
 
   if (mb < 1024) {
     return `${mb.toFixed(1)} MB`;
   }
 
-  return `${(
-    mb / 1024
-  ).toFixed(2)} GB`;
+  return `${(mb / 1024).toFixed(2)} GB`;
 }
 
 
 /* =========================================================
-   PROGRESS HELPERS
+   PROGRESS
 ========================================================= */
 
 export function progressBar(
   progress: number,
-  width = 18
+  width = 18,
 ): string {
+  const safeProgress = Number.isFinite(progress)
+    ? Math.max(
+        0,
+        Math.min(100, Math.round(progress)),
+      )
+    : 0;
 
-  const safeProgress =
-    Number.isFinite(progress)
-      ? Math.max(
-          0,
-          Math.min(
-            100,
-            Math.round(progress)
-          )
-        )
-      : 0;
+  const safeWidth = Math.max(
+    4,
+    Math.floor(width),
+  );
 
-  const safeWidth =
-    Math.max(
-      4,
-      Math.floor(width)
-    );
+  const filled = Math.round(
+    (safeProgress / 100) * safeWidth,
+  );
 
-  const filled =
-    Math.round(
-      (safeProgress / 100) *
-      safeWidth
-    );
-
-  const empty =
-    Math.max(
-      0,
-      safeWidth - filled
-    );
+  const empty = Math.max(
+    0,
+    safeWidth - filled,
+  );
 
   return (
-    `[${"█".repeat(
-      filled
-    )}${"░".repeat(
-      empty
+    `[${"█".repeat(filled)}${"░".repeat(
+      empty,
     )}] ${safeProgress}%`
   );
 }
-
 
 export function operationProgress(
   operationId: string,
   commandName: string,
   stage: string,
   progress: number,
-  detail?: string
+  detail?: string,
 ): string {
-
   const lines = [
-    `🆔 Operation : ${cleanLine(
-      operationId
-    )}`,
-    `⚡ Command : ${cleanLine(
-      commandName
-    )}`,
-    `◈ Stage : ${cleanLine(
-      stage
-    )}`,
-    `📊 Progress : ${progressBar(
-      progress
-    )}`,
+    `Operation: ${cleanLine(operationId)}`,
+    `Command: ${cleanLine(commandName)}`,
+    `Stage: ${cleanLine(stage)}`,
+    progressBar(progress),
   ];
 
   if (detail) {
     lines.push(
       "",
-      `◈ ${cleanLine(detail)}`
+      cleanLine(detail),
     );
   }
 
-  return system(
-    "OPERATION IN PROGRESS",
-    lines
+  return simpleResponse(
+    `${BRAND} • ${cleanLine(
+      commandName,
+    ).toUpperCase()}`,
+    lines,
   );
 }
-
 
 export function operationCompleted(
   operationId: string,
   commandName: string,
-  detail?: string
+  detail?: string,
 ): string {
-
   const lines = [
-    `🆔 Operation : ${cleanLine(
-      operationId
-    )}`,
-    `⚡ Command : ${cleanLine(
-      commandName
-    )}`,
-    "◈ Stage : COMPLETED",
-    `📊 Progress : ${progressBar(100)}`,
+    `Operation: ${cleanLine(operationId)}`,
+    `Command: ${cleanLine(commandName)}`,
+    "Stage: COMPLETED",
+    progressBar(100),
   ];
 
   if (detail) {
     lines.push(
       "",
-      `◈ ${cleanLine(detail)}`
+      cleanLine(detail),
     );
   }
 
-  return success(
-    "OPERATION COMPLETED",
-    lines
+  return simpleResponse(
+    `${BRAND} • OPERATION COMPLETE`,
+    lines,
   );
 }
-
 
 export function operationFailed(
   operationId: string,
   commandName: string,
   stage: string,
-  reason: string
+  reason: string,
 ): string {
-
-  return error(
-    "OPERATION FAILED",
+  return simpleResponse(
+    "⚠️ DARK VORTEX • OPERATION FAILED",
     [
-      `🆔 Operation : ${cleanLine(
-        operationId
-      )}`,
-      `⚡ Command : ${cleanLine(
-        commandName
-      )}`,
-      `◈ Stage : ${cleanLine(
-        stage
-      )}`,
+      `Operation: ${cleanLine(operationId)}`,
+      `Command: ${cleanLine(commandName)}`,
+      `Stage: ${cleanLine(stage)}`,
       "",
-      `🔴 Reason : ${cleanLine(
-        reason
-      )}`,
-    ]
+      `Reason: ${cleanLine(reason)}`,
+    ],
   );
 }
 
 
 /* =========================================================
-   AUDIT PRESENTATION
+   AUDIT
 ========================================================= */
 
 export function auditLine(
@@ -888,94 +673,69 @@ export function auditLine(
   commandName: string,
   stage: string,
   status: string,
-  progress?: number
+  progress?: number,
 ): string {
-
   const progressText =
     progress === undefined
       ? ""
       : ` • ${Math.max(
           0,
-          Math.min(
-            100,
-            Math.round(progress)
-          )
+          Math.min(100, Math.round(progress)),
         )}%`;
 
   return (
-    `◈ ${cleanLine(
-      commandName
-    )} • ${cleanLine(
-      stage
-    )} • ${cleanLine(
-      status
-    )}${progressText} • ID: ${cleanLine(
-      operationId
-    )}`
+    `${cleanLine(commandName)} • ${
+      cleanLine(stage)
+    } • ${cleanLine(status)}${progressText} • ID: ${
+      cleanLine(operationId)
+    }`
   );
 }
 
-
 export function auditResponse(
   title: string,
-  lines: string[] = []
+  lines: string[] = [],
 ): string {
-
-  return security(
-    title,
-    lines
+  return simpleResponse(
+    `🛡️ ${cleanLine(title)}`,
+    lines,
   );
 }
 
 
 /* =========================================================
-   COMMAND SUCCESS
+   COMMAND SUCCESS / FAILURE
 ========================================================= */
 
 export function commandSuccess(
   action: string,
-  details: string[] = []
+  details: string[] = [],
 ): string {
-
-  return success(
-    "ACTION COMPLETED",
-    [
-      `⚡ Action : ${cleanLine(action)}`,
-      "",
-      ...details,
-      "",
-      "🟢 Status : COMPLETED",
-    ]
+  return simpleResponse(
+    `✓ ${cleanLine(action)}`,
+    details,
   );
 }
-
-
-/* =========================================================
-   COMMAND FAILURE
-========================================================= */
 
 export function commandFailed(
   action: string,
   reason: string,
-  help?: string
+  help?: string,
 ): string {
-
   const lines = [
-    `⚡ Action : ${cleanLine(action)}`,
-    "",
-    `🔴 Reason : ${cleanLine(reason)}`,
+    cleanLine(reason),
   ];
 
   if (help) {
     lines.push(
       "",
-      `💡 ${cleanLine(help)}`
+      `Try: ${cleanLine(help)}`,
     );
   }
 
-  return error(
-    "ACTION FAILED",
-    lines
+  return simpleResponse(
+    `✕ ${cleanLine(action)}`,
+    lines,
   );
 }
 
@@ -987,11 +747,9 @@ export function commandFailed(
 export function commandUsage(
   commandName: string,
   usage: string,
-  description?: string
+  description?: string,
 ): string {
-
-  const prefix =
-    getPrefix();
+  const prefix = getPrefix();
 
   const normalizedUsage =
     usage.startsWith(prefix)
@@ -999,213 +757,145 @@ export function commandUsage(
       : `${prefix}${usage}`;
 
   const lines = [
-    `⚡ Command : ${cleanLine(
-      commandName
-    )}`,
-    "",
-    "📝 USAGE",
-    `◈ ${cleanLine(
-      normalizedUsage
-    )}`,
+    `Usage: ${cleanLine(normalizedUsage)}`,
   ];
 
   if (description) {
     lines.push(
       "",
-      "💡 DESCRIPTION",
-      `◈ ${cleanLine(
-        description
-      )}`
+      cleanLine(description),
     );
   }
 
-  return info(
-    "COMMAND GUIDE",
-    lines
+  /*
+   * Help is intentionally structured.
+   * Normal command responses are not.
+   */
+  return vortexBox(
+    `HELP: ${cleanLine(commandName)}`,
+    lines,
   );
 }
 
 
 /* =========================================================
-   GROUP REQUIRED
+   GROUP / PERMISSION RESPONSES
 ========================================================= */
 
 export function groupRequired(
-  commandName: string
+  commandName: string,
 ): string {
-
   return error(
-    "GROUP ONLY",
+    "Group only",
     [
-      `⚡ Command : ${cleanLine(
-        commandName
-      )}`,
-      "",
-      "👥 This command requires",
-      "a WhatsApp group.",
-      "",
-      "💡 Open a group and try again.",
-    ]
+      `Use ${getPrefix()}${cleanLine(
+        commandName,
+      )} inside a WhatsApp group.`,
+    ],
   );
 }
-
-
-/* =========================================================
-   BOT ADMIN REQUIRED
-========================================================= */
 
 export function botAdminRequired(): string {
-
   return error(
-    "ADMIN ACCESS REQUIRED",
+    "Admin access required",
     [
-      "🛡️ Dark Vortex must be",
-      "a group administrator.",
-      "",
-      "💡 Promote Dark Vortex to admin",
-      "and try again.",
-    ]
+      "Dark Vortex needs group-admin permission.",
+      "Promote the bot and try again.",
+    ],
   );
 }
-
-
-/* =========================================================
-   TARGET REQUIRED
-========================================================= */
 
 export function targetRequired(
-  commandName: string
+  commandName: string,
 ): string {
-
   return error(
-    "TARGET REQUIRED",
+    "Target required",
     [
-      `⚡ Command : ${cleanLine(
-        commandName
-      )}`,
+      "Reply to the member's message first.",
       "",
-      "👤 Reply to the target user's",
-      "message before using this command.",
-      "",
-      "📝 EXAMPLE",
-      `◈ ${getPrefix()}${cleanLine(
-        commandName
+      `Example: ${getPrefix()}${cleanLine(
+        commandName,
       )}`,
-    ]
+    ],
   );
 }
 
 
 /* =========================================================
-   WARNINGS
+   WARNING SYSTEM
 ========================================================= */
 
 export function warningIssued(
   user: string,
   count: number,
   limit: number,
-  reason: string
+  reason: string,
 ): string {
+  const safeCount = Number.isFinite(count)
+    ? Math.max(0, Math.floor(count))
+    : 0;
 
-  const safeCount =
-    Number.isFinite(count)
-      ? Math.max(
-          0,
-          Math.floor(count)
-        )
-      : 0;
-
-  const safeLimit =
-    Number.isFinite(limit)
-      ? Math.max(
-          0,
-          Math.floor(limit)
-        )
-      : 0;
+  const safeLimit = Number.isFinite(limit)
+    ? Math.max(0, Math.floor(limit))
+    : 0;
 
   return warning(
-    "WARNING ISSUED",
+    "Warning issued.",
     [
-      `👤 User : ${cleanLine(user)}`,
-      `⚠️ Warnings : ${safeCount}/${safeLimit}`,
+      `${cleanLine(user)}: warning ${safeCount}/${safeLimit}.`,
       "",
-      "📋 REASON",
-      `◈ ${cleanLine(reason)}`,
-      "",
+      `Reason: ${cleanLine(reason)}`,
       safeCount >= safeLimit
-        ? "🚨 Warning limit reached."
-        : `🟡 ${
-            Math.max(
-              0,
-              safeLimit - safeCount
-            )
-          } warning(s) remaining.`,
-    ]
+        ? "The warning limit has been reached."
+        : `${Math.max(
+            0,
+            safeLimit - safeCount,
+          )} warning(s) remaining.`,
+    ],
   );
 }
-
 
 export function warningLimitReached(
   user: string,
   limit: number,
-  reason: string
+  reason: string,
 ): string {
-
-  const safeLimit =
-    Number.isFinite(limit)
-      ? Math.max(
-          0,
-          Math.floor(limit)
-        )
-      : 0;
+  const safeLimit = Number.isFinite(limit)
+    ? Math.max(0, Math.floor(limit))
+    : 0;
 
   return warning(
-    "WARNING LIMIT REACHED",
+    "Warning limit reached.",
     [
-      `👤 User : ${cleanLine(user)}`,
-      `🚨 Limit : ${safeLimit}/${safeLimit}`,
+      `${cleanLine(user)}: ${safeLimit}/${safeLimit} warnings.`,
       "",
-      "📋 REASON",
-      `◈ ${cleanLine(reason)}`,
-      "",
-      "👢 Removing user from group...",
-    ]
+      `Reason: ${cleanLine(reason)}`,
+      "Removal from the group is being processed.",
+    ],
   );
 }
-
 
 export function warningStatus(
   user: string,
   count: number,
-  limit: number
+  limit: number,
 ): string {
+  const safeCount = Number.isFinite(count)
+    ? Math.max(0, Math.floor(count))
+    : 0;
 
-  const safeCount =
-    Number.isFinite(count)
-      ? Math.max(
-          0,
-          Math.floor(count)
-        )
-      : 0;
-
-  const safeLimit =
-    Number.isFinite(limit)
-      ? Math.max(
-          0,
-          Math.floor(limit)
-        )
-      : 0;
+  const safeLimit = Number.isFinite(limit)
+    ? Math.max(0, Math.floor(limit))
+    : 0;
 
   return info(
-    "WARNING STATUS",
+    "Warning status",
     [
-      `👤 User : ${cleanLine(user)}`,
-      `⚠️ Warnings : ${safeCount}/${safeLimit}`,
-      "",
+      `${cleanLine(user)}: ${safeCount}/${safeLimit}`,
       safeCount >= safeLimit
-        ? "🔴 Limit reached"
-        : "🟢 Within warning limit",
-    ]
+        ? "Warning limit reached."
+        : "Member is within the warning limit.",
+    ],
   );
 }
 
@@ -1217,30 +907,77 @@ export function warningStatus(
 export function protectionBlocked(
   type: string,
   action: string,
-  target?: string
+  target?: string,
 ): string {
+  const normalizedType =
+    cleanLine(type).toLowerCase();
 
-  const lines = [
-    `🛡️ Protection : ${cleanLine(
-      type
-    )}`,
-  ];
+  const normalizedAction =
+    cleanLine(action).toLowerCase();
 
-  if (target) {
-    lines.push(
-      `👤 User : ${cleanLine(target)}`
+  const name =
+    target && cleanLine(target)
+      ? cleanLine(target)
+      : "This member";
+
+  /*
+   * Protection responses are intentionally contextual.
+   * These should never become large system panels.
+   */
+
+  if (
+    normalizedType.includes("link") ||
+    normalizedAction.includes("link")
+  ) {
+    return simpleResponse(
+      "🔗 Link removed.",
+      [
+        `${name}, links aren't allowed in this group.`,
+      ],
     );
   }
 
-  lines.push(
-    "",
-    `⚡ Action : ${cleanLine(action)}`,
-    "🟢 Status : ENFORCED"
-  );
+  if (
+    normalizedType.includes("spam") ||
+    normalizedAction.includes("spam")
+  ) {
+    return simpleResponse(
+      "⚠️ Spam removed.",
+      [
+        `${name}, spam isn't allowed in this group.`,
+      ],
+    );
+  }
+
+  if (
+    normalizedType.includes("mention") ||
+    normalizedAction.includes("mention")
+  ) {
+    return simpleResponse(
+      "📣 Mention removed.",
+      [
+        `${name}, mass mentions aren't allowed here.`,
+      ],
+    );
+  }
+
+  if (
+    normalizedType.includes("bot") ||
+    normalizedAction.includes("bot")
+  ) {
+    return simpleResponse(
+      "🤖 Bot blocked.",
+      [
+        `${name}, automated accounts aren't allowed here.`,
+      ],
+    );
+  }
 
   return security(
-    "PROTECTION ENFORCED",
-    lines
+    "Protection enforced.",
+    [
+      `${name}: ${cleanLine(action)}.`,
+    ],
   );
 }
 
@@ -1250,12 +987,11 @@ export function protectionBlocked(
 ========================================================= */
 
 export function systemStatus(
-  lines: string[]
+  lines: string[],
 ): string {
-
-  return system(
-    "SYSTEM STATUS",
-    lines
+  return simpleResponse(
+    "⚙️ System Status",
+    lines,
   );
 }
 
@@ -1265,27 +1001,18 @@ export function systemStatus(
 ========================================================= */
 
 export function pingResponse(
-  responseMs: number
+  responseMs: number,
 ): string {
+  const safeMs = Number.isFinite(responseMs)
+    ? Math.max(0, Math.round(responseMs))
+    : 0;
 
-  const safeMs =
-    Number.isFinite(responseMs)
-      ? Math.max(
-          0,
-          Math.round(responseMs)
-        )
-      : 0;
-
-  return vortexBox(
-    "🏓 PONG",
+  return simpleResponse(
+    "🏓 Pong!",
     [
-      "🟢 Status : ONLINE",
-      `⚡ Response : ${safeMs}ms`,
-      "🤖 Engine : VORTEX CORE",
-      "🛡️ Security : ACTIVE",
-      "",
-      "⚡ Connection is healthy.",
-    ]
+      `Latency: ${safeMs}ms`,
+      "Status: Online",
+    ],
   );
 }
 
@@ -1295,22 +1022,16 @@ export function pingResponse(
 ========================================================= */
 
 export function maintenanceStatus(
-  enabled: boolean
+  enabled: boolean,
 ): string {
-
   return system(
-    "MAINTENANCE MODE",
+    "Maintenance mode",
     [
-      `⚙️ Status : ${
-        enabled
-          ? "🔴 ACTIVE"
-          : "🟢 INACTIVE"
-      }`,
-      "",
       enabled
-        ? "🚧 Command processing is restricted."
-        : "🚀 Dark Vortex is operating normally.",
-    ]
+        ? "Command processing is restricted."
+        : "Dark Vortex is operating normally.",
+      `Status: ${enabled ? "Active" : "Inactive"}`,
+    ],
   );
 }
 
@@ -1322,28 +1043,15 @@ export function maintenanceStatus(
 export function automationStatus(
   welcome: boolean,
   goodbye: boolean,
-  autoreply: boolean
+  autoreply: boolean,
 ): string {
-
   return system(
-    "AUTOMATION STATUS",
+    "Automation status",
     [
-      `👋 Welcome : ${
-        welcome
-          ? "🟢 ON"
-          : "🔴 OFF"
-      }`,
-      `👋 Goodbye : ${
-        goodbye
-          ? "🟢 ON"
-          : "🔴 OFF"
-      }`,
-      `🤖 Autoreply : ${
-        autoreply
-          ? "🟢 ON"
-          : "🔴 OFF"
-      }`,
-    ]
+      `Welcome: ${welcome ? "ON" : "OFF"}`,
+      `Goodbye: ${goodbye ? "ON" : "OFF"}`,
+      `Autoreply: ${autoreply ? "ON" : "OFF"}`,
+    ],
   );
 }
 
@@ -1353,31 +1061,27 @@ export function automationStatus(
 ========================================================= */
 
 export function protectionStatus(
-  settings: Record<string, boolean>
+  settings: Record<string, boolean>,
 ): string {
-
-  const enabled =
-    (value: boolean) =>
-      value
-        ? "🟢 ON"
-        : "🔴 OFF";
+  const enabled = (value: boolean) =>
+    value ? "ON" : "OFF";
 
   return security(
-    "PROTECTION STATUS",
+    "Protection status",
     [
-      `🔗 Anti-link : ${enabled(
-        Boolean(settings.antilink)
+      `Anti-link: ${enabled(
+        Boolean(settings.antilink),
       )}`,
-      `💬 Anti-spam : ${enabled(
-        Boolean(settings.antispam)
+      `Anti-spam: ${enabled(
+        Boolean(settings.antispam),
       )}`,
-      `🤖 Anti-bot : ${enabled(
-        Boolean(settings.antibot)
+      `Anti-bot: ${enabled(
+        Boolean(settings.antibot),
       )}`,
-      `📣 Anti-mention : ${enabled(
-        Boolean(settings.antimention)
+      `Anti-mention: ${enabled(
+        Boolean(settings.antimention),
       )}`,
-    ]
+    ],
   );
 }
 
@@ -1389,55 +1093,35 @@ export function protectionStatus(
 export function broadcastResult(
   sent: number,
   failed: number,
-  total: number
+  total: number,
 ): string {
+  const safeSent = Number.isFinite(sent)
+    ? Math.max(0, Math.floor(sent))
+    : 0;
 
-  const safeSent =
-    Number.isFinite(sent)
-      ? Math.max(
-          0,
-          Math.floor(sent)
-        )
-      : 0;
+  const safeFailed = Number.isFinite(failed)
+    ? Math.max(0, Math.floor(failed))
+    : 0;
 
-  const safeFailed =
-    Number.isFinite(failed)
-      ? Math.max(
-          0,
-          Math.floor(failed)
-        )
-      : 0;
+  const safeTotal = Number.isFinite(total)
+    ? Math.max(0, Math.floor(total))
+    : 0;
 
-  const safeTotal =
-    Number.isFinite(total)
-      ? Math.max(
-          0,
-          Math.floor(total)
-        )
-      : 0;
-
-  const deliveryRate =
-    safeTotal > 0
-      ? Math.round(
-          (safeSent / safeTotal) *
-          100
-        )
-      : 0;
+  const deliveryRate = safeTotal > 0
+    ? Math.round((safeSent / safeTotal) * 100)
+    : 0;
 
   return command(
-    "BROADCAST COMPLETE",
+    "Broadcast complete",
     [
-      `📢 Total : ${safeTotal}`,
-      `✅ Delivered : ${safeSent}`,
-      `❌ Failed : ${safeFailed}`,
-      `📊 Delivery : ${deliveryRate}%`,
+      `Delivered: ${safeSent}/${safeTotal}`,
+      `Failed: ${safeFailed}`,
+      `Delivery rate: ${deliveryRate}%`,
       "",
-      safeSent === safeTotal
-        ? "🟢 All messages delivered successfully."
-        : safeFailed === 0
-          ? "🟢 Broadcast completed successfully."
-          : "🟡 Broadcast completed with some failures.",
-    ]
+      safeFailed === 0
+        ? "All messages delivered."
+        : "Broadcast completed with some failures.",
+    ],
   );
 }
 
@@ -1447,124 +1131,78 @@ export function broadcastResult(
 ========================================================= */
 
 export function unknownCommand(
-  commandName: string
+  commandName: string,
 ): string {
-
-  const prefix =
-    getPrefix();
-
-  const allCommands =
-    getCommands();
+  const prefix = getPrefix();
+  const allCommands = getCommands();
 
   const normalizedCommand =
-    cleanLine(commandName)
-      .toLowerCase();
+    cleanLine(commandName).toLowerCase();
 
-  /* =======================================================
-     COMMAND EXISTS BUT IS UNAVAILABLE
-  ======================================================= */
-
-  const exactMatch =
-    allCommands.find(
-      (item) =>
-        item.name.toLowerCase() ===
-          normalizedCommand ||
-        item.aliases?.some(
-          (alias: string) =>
-            alias.toLowerCase() ===
-            normalizedCommand
-        )
-    );
+  const exactMatch = allCommands.find(
+    (item) =>
+      item.name.toLowerCase() === normalizedCommand ||
+      item.aliases?.some(
+        (alias: string) =>
+          alias.toLowerCase() === normalizedCommand,
+      ),
+  );
 
   if (exactMatch) {
     return error(
-      "COMMAND UNAVAILABLE",
+      "Command unavailable",
       [
-        `⚡ Command : ${prefix}${cleanLine(
-          commandName
-        )}`,
+        `${prefix}${cleanLine(commandName)} can't be used here.`,
         "",
-        "❌ This command cannot be used",
-        "in the current context.",
-        "",
-        "📝 USAGE",
-        `◈ ${
+        `Usage: ${
           exactMatch.usage ||
           `${prefix}${exactMatch.name}`
         }`,
-      ]
+      ],
     );
   }
 
-  /* =======================================================
-     SMART SUGGESTIONS
-  ======================================================= */
+  const suggestions = allCommands
+    .filter(
+      (item) =>
+        item.name
+          .toLowerCase()
+          .startsWith(normalizedCommand) ||
+        item.aliases?.some(
+          (alias: string) =>
+            alias
+              .toLowerCase()
+              .startsWith(normalizedCommand),
+        ),
+    )
+    .slice(0, 3);
 
-  const suggestions =
-    allCommands
-      .filter(
-        (item) =>
-          item.name
-            .toLowerCase()
-            .startsWith(
-              normalizedCommand
-            ) ||
-          item.aliases?.some(
-            (alias: string) =>
-              alias
-                .toLowerCase()
-                .startsWith(
-                  normalizedCommand
-                )
-          )
-      )
-      .slice(
-        0,
-        3
-      );
-
-  if (
-    suggestions.length
-  ) {
+  if (suggestions.length) {
     return error(
-      "UNKNOWN COMMAND",
+      "Unknown command",
       [
-        `❌ ${prefix}${cleanLine(
-          commandName
-        )} is not recognized.`,
+        `${prefix}${cleanLine(commandName)} isn't recognized.`,
         "",
-        "💡 DID YOU MEAN?",
+        "Did you mean:",
         ...suggestions.map(
           (item) =>
-            `◈ ${
-              item.usage ||
-              `${prefix}${item.name}`
-            }`
+            item.usage ||
+            `${prefix}${item.name}`,
         ),
         "",
-        `📖 ${prefix}menu`,
-        "Open the command center.",
-      ]
+        `Use ${prefix}menu to view commands.`,
+      ],
     );
   }
 
-  /* =======================================================
-     NO MATCH
-  ======================================================= */
-
   return error(
-    "UNKNOWN COMMAND",
+    "Unknown command",
     [
-      `❌ ${prefix}${cleanLine(
-        commandName
-      )} is not recognized.`,
+      `${prefix}${cleanLine(commandName)} isn't recognized.`,
       "",
-      `📖 ${prefix}menu`,
-      "Open the command center.",
-      "",
-      `💡 ${prefix}help <command>`,
-      "View detailed command information.",
-    ]
+      `Use ${prefix}menu to view commands.`,
+      `Use ${prefix}help <command> for command details.`,
+    ],
   );
 }
 
@@ -1574,60 +1212,42 @@ export function unknownCommand(
 ========================================================= */
 
 export function internalError(
-  context = "command"
+  context = "command",
 ): string {
-
   return error(
-    "INTERNAL ERROR",
+    "Something went wrong.",
     [
-      "❌ Dark Vortex encountered an unexpected",
-      `error while processing the ${cleanLine(
-        context
+      `Dark Vortex couldn't process the ${cleanLine(
+        context,
       )}.`,
+      "Try again shortly.",
       "",
-      "⚡ Please try again.",
-      "",
-      "🛡️ Existing configuration was",
-      "not intentionally changed.",
-    ]
+      "Existing configuration was not intentionally changed.",
+    ],
   );
 }
 
 
 /* =========================================================
-   TEXT EXPORT HELPER
+   SAFE TEXT EXPORTS
 ========================================================= */
 
-/*
- * Useful when another system needs a safe single-line value
- * for logs, audit presentation, command output, etc.
- */
 export function safeText(
   value: unknown,
-  maxLength = MAX_LINE_LENGTH
+  maxLength = MAX_LINE_LENGTH,
 ): string {
-
   return truncateText(
     String(value ?? ""),
-    Math.max(
-      1,
-      Math.floor(maxLength)
-    )
+    Math.max(1, Math.floor(maxLength)),
   );
 }
-
-
-/* =========================================================
-   ROW EXPORT HELPER
-========================================================= */
 
 export function safeRow(
   label: unknown,
-  value: unknown
+  value: unknown,
 ): string {
-
   return row(
     safeText(label),
-    safeText(value)
+    safeText(value),
   );
 }

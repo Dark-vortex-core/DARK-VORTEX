@@ -397,10 +397,6 @@ function normalizePercent(
    SINGLE MESSAGE ENGINE
 ========================================================= */
 
-/* =========================================================
-   SINGLE MESSAGE ENGINE
-========================================================= */
-
 /*
  * Every VX operation owns exactly ONE WhatsApp message.
  *
@@ -508,10 +504,6 @@ async function createOperationMessage(
     },
   );
 
-  /*
-   * If the operation already has a message,
-   * NEVER create another one.
-   */
   if (
     state.initialized &&
     state.key
@@ -521,12 +513,6 @@ async function createOperationMessage(
     };
   }
 
-  /*
-   * Serialize initialization as well.
-   *
-   * This protects against two callbacks attempting
-   * to initialize the operation simultaneously.
-   */
   let createdMessage:
     any;
 
@@ -574,10 +560,6 @@ async function createOperationMessage(
 
   await state.queue;
 
-  /*
-   * If WhatsApp failed to return a message key,
-   * we deliberately DO NOT send another message.
-   */
   if (
     !state.key
   ) {
@@ -628,11 +610,6 @@ async function editOperationMessage(
     },
   );
 
-  /*
-   * Always prefer the key stored by the operation.
-   *
-   * The local key parameter is only a fallback.
-   */
   const operationKey =
     state.key ||
     key;
@@ -647,19 +624,9 @@ async function editOperationMessage(
     return;
   }
 
-  /*
-   * IMPORTANT:
-   *
-   * Every edit is placed behind the previous edit.
-   * This prevents concurrent WhatsApp edit requests.
-   */
   state.queue =
     state.queue.then(
       async () => {
-        /*
-         * Do not allow an old/stale progress update
-         * to overwrite a newer one.
-         */
         if (
           safePercent <
           state.lastProgress
@@ -689,11 +656,6 @@ async function editOperationMessage(
         } catch (
           editError
         ) {
-          /*
-           * NEVER create a second message here.
-           *
-           * A failed edit is logged only.
-           */
           console.error(
             `[VX] Progress edit failed for ${operation.id}:`,
             editError,
@@ -752,19 +714,6 @@ async function finishOperationMessage(
     return;
   }
 
-  /*
-   * The final result is also queued.
-   *
-   * Therefore:
-   *
-   * 70%
-   * ↓
-   * 90%
-   * ↓
-   * 100% FINAL
-   *
-   * can never arrive out of order.
-   */
   state.queue =
     state.queue.then(
       async () => {
@@ -783,15 +732,6 @@ async function finishOperationMessage(
         } catch (
           editError
         ) {
-          /*
-           * Absolutely no fallback send.
-           *
-           * This is critical to preventing:
-           *
-           * progress message
-           * +
-           * second final message
-           */
           console.error(
             `[VX] Final response edit failed for ${title} (${operation.id}):`,
             editError,
@@ -802,10 +742,6 @@ async function finishOperationMessage(
 
   await state.queue;
 
-  /*
-   * Keep operation history but release the
-   * WhatsApp message controller.
-   */
   cleanupOperationMessageState(
     operation.id,
   );
@@ -867,7 +803,7 @@ async function commandScan(
         sock,
         jid,
         operation,
-        "🔎 VX SECURITY SCAN",
+        "VX SECURITY SCAN",
         5,
         "INITIALIZING",
         "Preparing VX intelligence engine...",
@@ -886,17 +822,17 @@ async function commandScan(
         jid,
         progressKey?.key,
         operation,
-        "🔎 VX SECURITY SCAN",
+        "VX SECURITY SCAN",
         "FAILED",
         vxError(
           "VX SCAN — GROUP REQUIRED",
           [
-            "🔎 This security scan requires",
+            "This security scan requires",
             "a WhatsApp group context.",
             "",
-            `🆔 Operation: ${operation.id}`,
+            `Operation: ${operation.id}`,
             "",
-            "💡 Run vxscan inside a group.",
+            "Run vxscan inside a group.",
           ],
         ),
       );
@@ -909,7 +845,7 @@ async function commandScan(
       jid,
       progressKey?.key,
       operation,
-      "🔎 VX SECURITY SCAN",
+      "VX SECURITY SCAN",
       10,
       "GROUP_ANALYSIS",
       "Reading group participants and security context...",
@@ -968,7 +904,7 @@ async function commandScan(
       jid,
       progressKey?.key,
       operation,
-      "🔎 VX SECURITY SCAN",
+      "VX SECURITY SCAN",
       20,
       "PARTICIPANTS_LOADED",
       `${scanParticipants.length} participant record(s) prepared.`,
@@ -1001,7 +937,7 @@ async function commandScan(
             jid,
             progressKey?.key,
             operation,
-            "🔎 VX SECURITY SCAN",
+            "VX SECURITY SCAN",
             progressState.progress,
             progressState.stage,
             progressState.message,
@@ -1022,19 +958,19 @@ async function commandScan(
         jid,
         progressKey?.key,
         operation,
-        "🔎 VX SECURITY SCAN",
+        "VX SECURITY SCAN",
         "ABORTED",
         vxWarning(
           "VX SCAN ABORTED",
           [
-            "🛑 Security scanning was stopped",
+            "Security scanning was stopped",
             "before completion.",
             "",
             ...summary,
             "",
-            `🆔 Operation: ${operation.id}`,
+            `Operation: ${operation.id}`,
             "",
-            "📜 Audit activity remains preserved.",
+            "Audit activity remains preserved.",
           ],
         ),
       );
@@ -1047,18 +983,18 @@ async function commandScan(
       jid,
       progressKey?.key,
       operation,
-      "🔎 VX SECURITY SCAN",
+      "VX SECURITY SCAN",
       "COMPLETED",
       vxSuccess(
-        "VX SCAN COMPLETED",
+        "VX SCAN COMPLETE",
         [
-          "🔎 Security analysis completed.",
+          "Security analysis completed.",
           "",
           ...summary,
           "",
-          `🆔 Operation: ${operation.id}`,
+          `Operation: ${operation.id}`,
           "",
-          "🛡️ VX intelligence remains active.",
+          "VX intelligence remains active.",
         ],
       ),
     );
@@ -1081,19 +1017,19 @@ async function commandScan(
       jid,
       progressKey?.key,
       operation,
-      "🔎 VX SECURITY SCAN",
+      "VX SECURITY SCAN",
       "FAILED",
       vxError(
         "VX SCAN FAILED",
         [
-          "🔎 The security scanner encountered",
+          "The security scanner encountered",
           "an unexpected processing error.",
           "",
-          `🆔 Operation: ${operation.id}`,
-          `❌ Error: ${reason}`,
+          `Operation: ${operation.id}`,
+          `Error: ${reason}`,
           "",
-          "📜 Failure recorded in the audit system.",
-          "🛡️ Existing security services remain active.",
+          "Failure recorded in the audit system.",
+          "Existing security services remain active.",
         ],
       ),
     );
@@ -1137,7 +1073,7 @@ async function commandMonitor(
           sock,
           jid,
           operation,
-          "👁️ VX MONITOR",
+          "VX MONITOR",
           10,
           "INITIALIZING",
           "Preparing monitoring shutdown...",
@@ -1154,15 +1090,15 @@ async function commandMonitor(
           jid,
           progressKey?.key,
           operation,
-          "👁️ VX MONITOR",
+          "VX MONITOR",
           "FAILED",
           vxError(
             "VX MONITOR — GROUP REQUIRED",
             [
-              "📡 A group monitoring session",
+              "A group monitoring session",
               "must be controlled from its group.",
               "",
-              `🆔 Operation: ${operation.id}`,
+              `Operation: ${operation.id}`,
             ],
           ),
         );
@@ -1175,7 +1111,7 @@ async function commandMonitor(
         jid,
         progressKey?.key,
         operation,
-        "👁️ VX MONITOR",
+        "VX MONITOR",
         40,
         "LOCATING_SESSION",
         "Checking active monitoring session...",
@@ -1192,17 +1128,17 @@ async function commandMonitor(
           jid,
           progressKey?.key,
           operation,
-          "👁️ VX MONITOR",
+          "VX MONITOR",
           "COMPLETED",
           vxInfo(
             "VX MONITOR",
             [
-              "🔴 Monitoring is currently offline.",
+              "Monitoring is currently offline.",
               "",
               "No active VX monitoring session",
               "was found for this group.",
               "",
-              `🆔 Operation: ${operation.id}`,
+              `Operation: ${operation.id}`,
             ],
           ),
         );
@@ -1215,7 +1151,7 @@ async function commandMonitor(
         jid,
         progressKey?.key,
         operation,
-        "👁️ VX MONITOR",
+        "VX MONITOR",
         80,
         "SHUTTING_DOWN",
         "Terminating live monitoring session...",
@@ -1226,22 +1162,22 @@ async function commandMonitor(
         jid,
         progressKey?.key,
         operation,
-        "👁️ VX MONITOR",
+        "VX MONITOR",
         "COMPLETED",
         vxSuccess(
           "VX MONITOR STOPPED",
           [
-            "🛑 LIVE MONITORING TERMINATED",
+            "LIVE MONITORING TERMINATED",
             "",
-            `📍 Group: ${
+            `Group: ${
               stopped.groupName ||
               "Unknown"
             }`,
-            `🆔 Session: ${stopped.id}`,
-            `🆔 Operation: ${operation.id}`,
+            `Session: ${stopped.id}`,
+            `Operation: ${operation.id}`,
             "",
-            "📜 Audit history preserved.",
-            "🛡️ Security records remain available.",
+            "Audit history preserved.",
+            "Security records remain available.",
           ],
         ),
       );
@@ -1259,16 +1195,16 @@ async function commandMonitor(
         jid,
         progressKey?.key,
         operation,
-        "👁️ VX MONITOR",
+        "VX MONITOR",
         "FAILED",
         vxError(
           "VX MONITOR STOP FAILED",
           [
-            "❌ The monitoring session could not",
+            "The monitoring session could not",
             "be stopped cleanly.",
             "",
-            `🆔 Operation: ${operation.id}`,
-            `❌ Error: ${reason}`,
+            `Operation: ${operation.id}`,
+            `Error: ${reason}`,
           ],
         ),
       );
@@ -1295,7 +1231,7 @@ async function commandMonitor(
           sock,
           jid,
           operation,
-          "👁️ VX MONITOR",
+          "VX MONITOR",
           10,
           "INITIALIZING",
           "Reading monitoring state...",
@@ -1312,7 +1248,7 @@ async function commandMonitor(
           jid,
           progressKey?.key,
           operation,
-          "👁️ VX MONITOR",
+          "VX MONITOR",
           45,
           "GROUP_STATUS_READ",
           "Checking this group's live monitor...",
@@ -1329,19 +1265,19 @@ async function commandMonitor(
             jid,
             progressKey?.key,
             operation,
-            "👁️ VX MONITOR",
+            "VX MONITOR",
             "COMPLETED",
             vxInfo(
               "VX MONITOR STATUS",
               [
-                "🔴 STATUS: OFFLINE",
+                "STATUS: OFFLINE",
                 "",
                 "No active monitor is running",
                 "for this group.",
                 "",
-                "💡 Use vxmonitor to start monitoring.",
+                "Use vxmonitor to start monitoring.",
                 "",
-                `🆔 Operation: ${operation.id}`,
+                `Operation: ${operation.id}`,
               ],
             ),
           );
@@ -1354,14 +1290,14 @@ async function commandMonitor(
           jid,
           progressKey?.key,
           operation,
-          "👁️ VX MONITOR",
+          "VX MONITOR",
           "COMPLETED",
           [
             formatVxMonitorReport(
               monitor,
             ),
             "",
-            `🆔 Operation: ${operation.id}`,
+            `Operation: ${operation.id}`,
           ].join(
             "\n",
           ),
@@ -1375,7 +1311,7 @@ async function commandMonitor(
         jid,
         progressKey?.key,
         operation,
-        "👁️ VX MONITOR",
+        "VX MONITOR",
         60,
         "NETWORK_STATUS_READ",
         "Reading all active monitoring sessions...",
@@ -1389,12 +1325,12 @@ async function commandMonitor(
         jid,
         progressKey?.key,
         operation,
-        "👁️ VX MONITOR",
+        "VX MONITOR",
         "COMPLETED",
         vxSecurity(
           "VX MONITOR NETWORK",
           [
-            `📡 Active sessions: ${monitors.length}`,
+            `Active sessions: ${monitors.length}`,
             "",
             ...(monitors.length
               ? monitors.map(
@@ -1405,12 +1341,12 @@ async function commandMonitor(
                     } — ${monitor.id}`,
                 )
               : [
-                  "🟢 No active monitoring sessions.",
+                  "No active monitoring sessions.",
                 ]),
             "",
-            `🆔 Operation: ${operation.id}`,
+            `Operation: ${operation.id}`,
             "",
-            "🛡️ VX monitoring infrastructure ready.",
+            "VX monitoring infrastructure ready.",
           ],
         ),
       );
@@ -1428,16 +1364,16 @@ async function commandMonitor(
         jid,
         progressKey?.key,
         operation,
-        "👁️ VX MONITOR",
+        "VX MONITOR",
         "FAILED",
         vxError(
           "VX MONITOR STATUS FAILED",
           [
-            "❌ Monitoring status could not",
+            "Monitoring status could not",
             "be read.",
             "",
-            `🆔 Operation: ${operation.id}`,
-            `❌ Error: ${reason}`,
+            `Operation: ${operation.id}`,
+            `Error: ${reason}`,
           ],
         ),
       );
@@ -1461,7 +1397,7 @@ async function commandMonitor(
         sock,
         jid,
         operation,
-        "👁️ VX MONITOR",
+        "VX MONITOR",
         5,
         "INITIALIZING",
         "Preparing live security monitoring...",
@@ -1480,15 +1416,15 @@ async function commandMonitor(
         jid,
         progressKey?.key,
         operation,
-        "👁️ VX MONITOR",
+        "VX MONITOR",
         "FAILED",
         vxError(
           "VX MONITOR — GROUP REQUIRED",
           [
-            "👁️ Live monitoring requires",
+            "Live monitoring requires",
             "a WhatsApp group context.",
             "",
-            `🆔 Operation: ${operation.id}`,
+            `Operation: ${operation.id}`,
           ],
         ),
       );
@@ -1501,7 +1437,7 @@ async function commandMonitor(
       jid,
       progressKey?.key,
       operation,
-      "👁️ VX MONITOR",
+      "VX MONITOR",
       20,
       "GROUP_ANALYSIS",
       "Reading group security context...",
@@ -1517,23 +1453,23 @@ async function commandMonitor(
         jid,
         progressKey?.key,
         operation,
-        "👁️ VX MONITOR",
+        "VX MONITOR",
         "COMPLETED",
         vxWarning(
           "VX MONITOR ALREADY ACTIVE",
           [
-            "📡 A live monitoring session",
+            "A live monitoring session",
             "is already running here.",
             "",
-            `📍 Group: ${
+            `Group: ${
               metadata.subject ||
               "Unknown Group"
             }`,
             "",
-            "💡 Use vxmonitor status to",
+            "Use vxmonitor status to",
             "inspect the active session.",
             "",
-            `🆔 Operation: ${operation.id}`,
+            `Operation: ${operation.id}`,
           ],
         ),
       );
@@ -1546,7 +1482,7 @@ async function commandMonitor(
       jid,
       progressKey?.key,
       operation,
-      "👁️ VX MONITOR",
+      "VX MONITOR",
       35,
       "STARTING_ENGINE",
       "Initializing live security sensors...",
@@ -1578,7 +1514,7 @@ async function commandMonitor(
             jid,
             progressKey?.key,
             operation,
-            "👁️ VX MONITOR",
+            "VX MONITOR",
             progressState.progress,
             progressState.stage,
             progressState.message,
@@ -1591,29 +1527,29 @@ async function commandMonitor(
       jid,
       progressKey?.key,
       operation,
-      "👁️ VX MONITOR",
+      "VX MONITOR",
       "COMPLETED",
       vxSecurity(
         "VX MONITOR ONLINE",
         [
-          "🟢 LIVE MONITORING INITIALIZED",
+          "LIVE MONITORING INITIALIZED",
           "",
-          `📍 Group: ${
+          `Group: ${
             monitor.groupName ||
             "Unknown"
           }`,
-          `🆔 Session: ${monitor.id}`,
-          `🆔 Operation: ${operation.id}`,
+          `Session: ${monitor.id}`,
+          `Operation: ${operation.id}`,
           "",
-          "🤖 Bot Detection     • ONLINE",
-          "📨 Anti-Spam         • ONLINE",
-          "🔗 Link Detection    • ONLINE",
-          "👥 Raid Detection    • ONLINE",
-          "🧠 Behavior Engine   • ONLINE",
-          "📜 Audit Logging     • ONLINE",
-          "📡 DM Alerts         • ONLINE",
+          "Bot Detection     • ONLINE",
+          "Anti-Spam         • ONLINE",
+          "Link Detection    • ONLINE",
+          "Raid Detection    • ONLINE",
+          "Behavior Engine   • ONLINE",
+          "Audit Logging     • ONLINE",
+          "DM Alerts         • ONLINE",
           "",
-          "👁️ VX IS NOW MONITORING LIVE ACTIVITY.",
+          "VX IS NOW MONITORING LIVE ACTIVITY.",
         ],
       ),
     );
@@ -1636,18 +1572,18 @@ async function commandMonitor(
       jid,
       progressKey?.key,
       operation,
-      "👁️ VX MONITOR",
+      "VX MONITOR",
       "FAILED",
       vxError(
         "VX MONITOR FAILED",
         [
-          "❌ Live monitoring could not be initialized.",
+          "Live monitoring could not be initialized.",
           "",
-          `🆔 Operation: ${operation.id}`,
-          `❌ Error: ${reason}`,
+          `Operation: ${operation.id}`,
+          `Error: ${reason}`,
           "",
-          "📜 The failure has been logged.",
-          "🛡️ Existing security services remain protected.",
+          "The failure has been logged.",
+          "Existing security services remain protected.",
         ],
       ),
     );
@@ -1679,7 +1615,7 @@ async function commandBot(
         sock,
         jid,
         operation,
-        "🤖 VX BOT INTELLIGENCE",
+        "VX BOT INTELLIGENCE",
         10,
         "INITIALIZING",
         "Loading bot intelligence service...",
@@ -1707,15 +1643,15 @@ async function commandBot(
           jid,
           progressKey?.key,
           operation,
-          "🤖 VX BOT INTELLIGENCE",
+          "VX BOT INTELLIGENCE",
           "FAILED",
           vxError(
             "VX BOT SCAN — GROUP REQUIRED",
             [
-              "🤖 Bot scanning requires",
+              "Bot scanning requires",
               "a WhatsApp group context.",
               "",
-              `🆔 Operation: ${operation.id}`,
+              `Operation: ${operation.id}`,
             ],
           ),
         );
@@ -1728,7 +1664,7 @@ async function commandBot(
         jid,
         progressKey?.key,
         operation,
-        "🤖 VX BOT INTELLIGENCE",
+        "VX BOT INTELLIGENCE",
         40,
         "PROFILE_ANALYSIS",
         "Searching high-confidence bot profiles...",
@@ -1760,19 +1696,19 @@ async function commandBot(
           jid,
           progressKey?.key,
           operation,
-          "🤖 VX BOT INTELLIGENCE",
+          "VX BOT INTELLIGENCE",
           "COMPLETED",
           vxSuccess(
             "VX BOT SCAN CLEAR",
             [
-              "🤖 NO SUSPECTED BOTS FOUND",
+              "NO SUSPECTED BOTS FOUND",
               "",
               "No high-confidence suspected bot",
               "profile was found for this group.",
               "",
-              "🟢 Group intelligence status: CLEAR",
+              "Group intelligence status: CLEAR",
               "",
-              `🆔 Operation: ${operation.id}`,
+              `Operation: ${operation.id}`,
             ],
           ),
         );
@@ -1787,18 +1723,10 @@ async function commandBot(
             10,
           )
           .map(
-            (
-              bot,
-              index,
-            ) =>
-              [
-                `━━ BOT ${index + 1} ━━`,
-                formatVxBotReport(
-                  bot,
-                  undefined,
-                ),
-              ].join(
-                "\n",
+            bot =>
+              formatVxBotReport(
+                bot,
+                undefined,
               ),
           );
 
@@ -1807,18 +1735,18 @@ async function commandBot(
         jid,
         progressKey?.key,
         operation,
-        "🤖 VX BOT INTELLIGENCE",
+        "VX BOT INTELLIGENCE",
         "COMPLETED",
         vxWarning(
           "VX BOT THREATS DETECTED",
           [
-            `🤖 Suspected profiles: ${groupBots.length}`,
+            `Suspected profiles: ${groupBots.length}`,
             "",
             ...reports,
             "",
-            `🆔 Operation: ${operation.id}`,
+            `Operation: ${operation.id}`,
             "",
-            "📜 Intelligence history preserved.",
+            "Intelligence history preserved.",
           ],
         ),
       );
@@ -1838,7 +1766,7 @@ async function commandBot(
           jid,
           progressKey?.key,
           operation,
-          "🤖 VX BOT INTELLIGENCE",
+          "VX BOT INTELLIGENCE",
           "COMPLETED",
           vxInfo(
             "VX BOT USAGE",
@@ -1848,7 +1776,7 @@ async function commandBot(
               "",
               "Inspect a VX bot intelligence profile.",
               "",
-              `🆔 Operation: ${operation.id}`,
+              `Operation: ${operation.id}`,
             ],
           ),
         );
@@ -1861,7 +1789,7 @@ async function commandBot(
         jid,
         progressKey?.key,
         operation,
-        "🤖 VX BOT INTELLIGENCE",
+        "VX BOT INTELLIGENCE",
         45,
         "PROFILE_LOOKUP",
         `Inspecting profile for ${identifier}...`,
@@ -1878,19 +1806,19 @@ async function commandBot(
           jid,
           progressKey?.key,
           operation,
-          "🤖 VX BOT INTELLIGENCE",
+          "VX BOT INTELLIGENCE",
           "COMPLETED",
           vxInfo(
             "VX BOT PROFILE",
             [
-              "❌ No VX bot profile was found.",
+              "No VX bot profile was found.",
               "",
-              `📱 Number: ${identifier}`,
+              `Number: ${identifier}`,
               "",
-              "💡 The account may not have",
+              "The account may not have",
               "enough intelligence history yet.",
               "",
-              `🆔 Operation: ${operation.id}`,
+              `Operation: ${operation.id}`,
             ],
           ),
         );
@@ -1903,7 +1831,7 @@ async function commandBot(
         jid,
         progressKey?.key,
         operation,
-        "🤖 VX BOT INTELLIGENCE",
+        "VX BOT INTELLIGENCE",
         "COMPLETED",
         vxSecurity(
           "VX BOT PROFILE",
@@ -1912,7 +1840,7 @@ async function commandBot(
               profile,
             ),
             "",
-            `🆔 Operation: ${operation.id}`,
+            `Operation: ${operation.id}`,
           ],
         ),
       );
@@ -1928,7 +1856,7 @@ async function commandBot(
         jid,
         progressKey?.key,
         operation,
-        "🤖 VX BOT INTELLIGENCE",
+        "VX BOT INTELLIGENCE",
         45,
         "PROFILE_LOGS_READ",
         "Reading bot intelligence profiles...",
@@ -1945,17 +1873,17 @@ async function commandBot(
           jid,
           progressKey?.key,
           operation,
-          "🤖 VX BOT INTELLIGENCE",
+          "VX BOT INTELLIGENCE",
           "COMPLETED",
           vxInfo(
             "VX BOT LOGS",
             [
-              "📜 No bot intelligence profiles",
+              "No bot intelligence profiles",
               "have been recorded yet.",
               "",
-              "🟢 Intelligence database is empty.",
+              "Intelligence database is empty.",
               "",
-              `🆔 Operation: ${operation.id}`,
+              `Operation: ${operation.id}`,
             ],
           ),
         );
@@ -1987,18 +1915,18 @@ async function commandBot(
         jid,
         progressKey?.key,
         operation,
-        "🤖 VX BOT INTELLIGENCE",
+        "VX BOT INTELLIGENCE",
         "COMPLETED",
         vxSecurity(
           "VX BOT INTELLIGENCE LOGS",
           [
-            `📊 Profiles tracked: ${profiles.length}`,
+            `Profiles tracked: ${profiles.length}`,
             "",
             ...lines,
             "",
-            `🆔 Operation: ${operation.id}`,
+            `Operation: ${operation.id}`,
             "",
-            "📜 Intelligence history preserved.",
+            "Intelligence history preserved.",
           ],
         ),
       );
@@ -2014,7 +1942,7 @@ async function commandBot(
         jid,
         progressKey?.key,
         operation,
-        "🤖 VX BOT INTELLIGENCE",
+        "VX BOT INTELLIGENCE",
         45,
         "REPORT_BUILDING",
         "Building suspected bot intelligence report...",
@@ -2031,17 +1959,17 @@ async function commandBot(
           jid,
           progressKey?.key,
           operation,
-          "🤖 VX BOT INTELLIGENCE",
+          "VX BOT INTELLIGENCE",
           "COMPLETED",
           vxSuccess(
             "VX BOT REPORT",
             [
-              "🤖 NO HIGH-CONFIDENCE THREATS",
+              "NO HIGH-CONFIDENCE THREATS",
               "",
               "The VX intelligence database currently",
               "contains no high-confidence suspected bots.",
               "",
-              `🆔 Operation: ${operation.id}`,
+              `Operation: ${operation.id}`,
             ],
           ),
         );
@@ -2056,17 +1984,9 @@ async function commandBot(
             10,
           )
           .map(
-            (
-              bot,
-              index,
-            ) =>
-              [
-                `━━ PROFILE ${index + 1} ━━`,
-                formatVxBotReport(
-                  bot,
-                ),
-              ].join(
-                "\n",
+            bot =>
+              formatVxBotReport(
+                bot,
               ),
           );
 
@@ -2075,18 +1995,18 @@ async function commandBot(
         jid,
         progressKey?.key,
         operation,
-        "🤖 VX BOT INTELLIGENCE",
+        "VX BOT INTELLIGENCE",
         "COMPLETED",
         vxWarning(
           "VX BOT REPORT",
           [
-            `🤖 Suspected profiles: ${bots.length}`,
+            `Suspected profiles: ${bots.length}`,
             "",
             ...reports,
             "",
-            `🆔 Operation: ${operation.id}`,
+            `Operation: ${operation.id}`,
             "",
-            "📜 Intelligence history preserved.",
+            "Intelligence history preserved.",
           ],
         ),
       );
@@ -2104,7 +2024,7 @@ async function commandBot(
       jid,
       progressKey?.key,
       operation,
-      "🤖 VX BOT INTELLIGENCE",
+      "VX BOT INTELLIGENCE",
       "COMPLETED",
       vxInfo(
         "VX BOT COMMAND CENTER",
@@ -2115,8 +2035,8 @@ async function commandBot(
           "• vxbot logs",
           "• vxbot report",
           "",
-          `📊 ${profiles.length} tracked profile(s).`,
-          `🆔 Operation: ${operation.id}`,
+          `${profiles.length} tracked profile(s).`,
+          `Operation: ${operation.id}`,
         ],
       ),
     );
@@ -2134,17 +2054,17 @@ async function commandBot(
       jid,
       progressKey?.key,
       operation,
-      "🤖 VX BOT INTELLIGENCE",
+      "VX BOT INTELLIGENCE",
       "FAILED",
       vxError(
         "VX BOT INTELLIGENCE FAILED",
         [
-          "❌ The VX bot intelligence operation failed.",
+          "The VX bot intelligence operation failed.",
           "",
-          `🆔 Operation: ${operation.id}`,
-          `❌ Error: ${reason}`,
+          `Operation: ${operation.id}`,
+          `Error: ${reason}`,
           "",
-          "📜 Failure recorded.",
+          "Failure recorded.",
         ],
       ),
     );
@@ -2176,7 +2096,7 @@ async function commandIncident(
         sock,
         jid,
         operation,
-        "🚨 VX INCIDENT CENTER",
+        "VX INCIDENT CENTER",
         10,
         "INITIALIZING",
         "Loading incident intelligence...",
@@ -2192,7 +2112,7 @@ async function commandIncident(
         jid,
         progressKey?.key,
         operation,
-        "🚨 VX INCIDENT CENTER",
+        "VX INCIDENT CENTER",
         45,
         "INCIDENT_LIST_READ",
         "Reading recent security incidents...",
@@ -2209,16 +2129,16 @@ async function commandIncident(
           jid,
           progressKey?.key,
           operation,
-          "🚨 VX INCIDENT CENTER",
+          "VX INCIDENT CENTER",
           "COMPLETED",
           vxInfo(
             "VX INCIDENT CENTER",
             [
-              "🚨 No security incidents recorded.",
+              "No security incidents recorded.",
               "",
-              "🟢 Incident queue is clear.",
+              "Incident queue is clear.",
               "",
-              `🆔 Operation: ${operation.id}`,
+              `Operation: ${operation.id}`,
             ],
           ),
         );
@@ -2237,18 +2157,18 @@ async function commandIncident(
         jid,
         progressKey?.key,
         operation,
-        "🚨 VX INCIDENT CENTER",
+        "VX INCIDENT CENTER",
         "COMPLETED",
         vxSecurity(
           "VX INCIDENT CENTER",
           [
-            `🚨 Incidents: ${incidents.length}`,
+            `Incidents: ${incidents.length}`,
             "",
             ...lines,
             "",
-            "💡 Use vxincident <id> for full details.",
+            "Use vxincident <id> for full details.",
             "",
-            `🆔 Operation: ${operation.id}`,
+            `Operation: ${operation.id}`,
           ],
         ),
       );
@@ -2261,7 +2181,7 @@ async function commandIncident(
       jid,
       progressKey?.key,
       operation,
-      "🚨 VX INCIDENT CENTER",
+      "VX INCIDENT CENTER",
       55,
       "INCIDENT_READ",
       `Loading incident ${id}...`,
@@ -2278,18 +2198,18 @@ async function commandIncident(
         jid,
         progressKey?.key,
         operation,
-        "🚨 VX INCIDENT CENTER",
+        "VX INCIDENT CENTER",
         "FAILED",
         vxError(
           "VX INCIDENT NOT FOUND",
           [
-            `🆔 Incident: ${id}`,
+            `Incident: ${id}`,
             "",
-            "❌ No matching security incident exists.",
+            "No matching security incident exists.",
             "",
-            "💡 Use vxincident to list recent incidents.",
+            "Use vxincident to list recent incidents.",
             "",
-            `🆔 Operation: ${operation.id}`,
+            `Operation: ${operation.id}`,
           ],
         ),
       );
@@ -2302,7 +2222,7 @@ async function commandIncident(
       jid,
       progressKey?.key,
       operation,
-      "🚨 VX INCIDENT CENTER",
+      "VX INCIDENT CENTER",
       "COMPLETED",
       vxSecurity(
         "VX INCIDENT REPORT",
@@ -2311,7 +2231,7 @@ async function commandIncident(
             incident,
           ),
           "",
-          `🆔 Operation: ${operation.id}`,
+          `Operation: ${operation.id}`,
         ],
       ),
     );
@@ -2329,15 +2249,15 @@ async function commandIncident(
       jid,
       progressKey?.key,
       operation,
-      "🚨 VX INCIDENT CENTER",
+      "VX INCIDENT CENTER",
       "FAILED",
       vxError(
         "VX INCIDENT OPERATION FAILED",
         [
-          "❌ Incident processing failed.",
+          "Incident processing failed.",
           "",
-          `🆔 Operation: ${operation.id}`,
-          `❌ Error: ${reason}`,
+          `Operation: ${operation.id}`,
+          `Error: ${reason}`,
         ],
       ),
     );
@@ -2369,7 +2289,7 @@ async function commandAbort(
         sock,
         jid,
         operation,
-        "🛑 VX EMERGENCY ABORT",
+        "VX EMERGENCY ABORT",
         10,
         "INITIALIZING",
         "Preparing emergency security control...",
@@ -2385,7 +2305,7 @@ async function commandAbort(
         jid,
         progressKey?.key,
         operation,
-        "🛑 VX EMERGENCY ABORT",
+        "VX EMERGENCY ABORT",
         "COMPLETED",
         vxInfo(
           "VX ABORT USAGE",
@@ -2395,7 +2315,7 @@ async function commandAbort(
             "",
             "Emergency stop for active VX incidents.",
             "",
-            `🆔 Operation: ${operation.id}`,
+            `Operation: ${operation.id}`,
           ],
         ),
       );
@@ -2408,7 +2328,7 @@ async function commandAbort(
       jid,
       progressKey?.key,
       operation,
-      "🛑 VX EMERGENCY ABORT",
+      "VX EMERGENCY ABORT",
       35,
       "INCIDENT_LOOKUP",
       "Locating active security incidents...",
@@ -2440,16 +2360,16 @@ async function commandAbort(
           jid,
           progressKey?.key,
           operation,
-          "🛑 VX EMERGENCY ABORT",
+          "VX EMERGENCY ABORT",
           "COMPLETED",
           vxInfo(
             "VX EMERGENCY ABORT",
             [
-              "🟢 No active security operations found.",
+              "No active security operations found.",
               "",
               "The incident queue is currently clear.",
               "",
-              `🆔 Operation: ${operation.id}`,
+              `Operation: ${operation.id}`,
             ],
           ),
         );
@@ -2493,7 +2413,7 @@ async function commandAbort(
             jid,
             progressKey?.key,
             operation,
-            "🛑 VX EMERGENCY ABORT",
+            "VX EMERGENCY ABORT",
             progress,
             "ABORTING_INCIDENTS",
             `Aborted ${aborted}/${active.length} active incident(s)...`,
@@ -2513,19 +2433,19 @@ async function commandAbort(
         jid,
         progressKey?.key,
         operation,
-        "🛑 VX EMERGENCY ABORT",
+        "VX EMERGENCY ABORT",
         "COMPLETED",
         vxSuccess(
           "VX EMERGENCY ABORT COMPLETE",
           [
-            "🛑 ACTIVE OPERATIONS STOPPED",
+            "ACTIVE OPERATIONS STOPPED",
             "",
-            `✅ Aborted: ${aborted}`,
-            `📊 Found: ${active.length}`,
-            `🆔 Operation: ${operation.id}`,
+            `Aborted: ${aborted}`,
+            `Found: ${active.length}`,
+            `Operation: ${operation.id}`,
             "",
-            "📜 Audit history preserved.",
-            "🛡️ Incident records remain intact.",
+            "Audit history preserved.",
+            "Incident records remain intact.",
           ],
         ),
       );
@@ -2544,16 +2464,16 @@ async function commandAbort(
         jid,
         progressKey?.key,
         operation,
-        "🛑 VX EMERGENCY ABORT",
+        "VX EMERGENCY ABORT",
         "FAILED",
         vxError(
           "VX ABORT FAILED",
           [
-            `🆔 Incident: ${id}`,
+            `Incident: ${id}`,
             "",
-            "❌ Incident not found.",
+            "Incident not found.",
             "",
-            `🆔 Operation: ${operation.id}`,
+            `Operation: ${operation.id}`,
           ],
         ),
       );
@@ -2570,16 +2490,16 @@ async function commandAbort(
         jid,
         progressKey?.key,
         operation,
-        "🛑 VX EMERGENCY ABORT",
+        "VX EMERGENCY ABORT",
         "COMPLETED",
         vxInfo(
           "VX ABORT",
           [
-            `🆔 Incident: ${id}`,
+            `Incident: ${id}`,
             "",
-            "ℹ️ This incident has already been aborted.",
+            "This incident has already been aborted.",
             "",
-            `🆔 Operation: ${operation.id}`,
+            `Operation: ${operation.id}`,
           ],
         ),
       );
@@ -2592,7 +2512,7 @@ async function commandAbort(
       jid,
       progressKey?.key,
       operation,
-      "🛑 VX EMERGENCY ABORT",
+      "VX EMERGENCY ABORT",
       70,
       "ABORTING_INCIDENT",
       `Stopping incident ${id}...`,
@@ -2608,19 +2528,19 @@ async function commandAbort(
       jid,
       progressKey?.key,
       operation,
-      "🛑 VX EMERGENCY ABORT",
+      "VX EMERGENCY ABORT",
       "COMPLETED",
       vxSuccess(
         "VX OPERATION ABORTED",
         [
-          "🛑 SECURITY OPERATION STOPPED",
+          "SECURITY OPERATION STOPPED",
           "",
-          `🆔 Incident: ${id}`,
+          `Incident: ${id}`,
           "",
-          "👑 Action: OWNER ABORT",
-          "🔴 Status: ABORTED",
-          `🆔 Operation: ${operation.id}`,
-          "📜 Audit history preserved.",
+          "Action: OWNER ABORT",
+          "Status: ABORTED",
+          `Operation: ${operation.id}`,
+          "Audit history preserved.",
         ],
       ),
     );
@@ -2638,17 +2558,17 @@ async function commandAbort(
       jid,
       progressKey?.key,
       operation,
-      "🛑 VX EMERGENCY ABORT",
+      "VX EMERGENCY ABORT",
       "FAILED",
       vxError(
         "VX ABORT FAILED",
         [
-          "❌ The security operation could not be aborted.",
+          "The security operation could not be aborted.",
           "",
-          `🆔 Operation: ${operation.id}`,
-          `❌ Error: ${reason}`,
+          `Operation: ${operation.id}`,
+          `Error: ${reason}`,
           "",
-          "📜 The failure has been logged.",
+          "The failure has been logged.",
         ],
       ),
     );
@@ -2680,7 +2600,7 @@ async function commandResume(
         sock,
         jid,
         operation,
-        "▶️ VX INCIDENT RESUME",
+        "VX INCIDENT RESUME",
         10,
         "INITIALIZING",
         "Preparing incident lifecycle restoration...",
@@ -2696,7 +2616,7 @@ async function commandResume(
         jid,
         progressKey?.key,
         operation,
-        "▶️ VX INCIDENT RESUME",
+        "VX INCIDENT RESUME",
         "COMPLETED",
         vxInfo(
           "VX RESUME USAGE",
@@ -2706,7 +2626,7 @@ async function commandResume(
             "",
             "Continue an aborted VX incident lifecycle.",
             "",
-            `🆔 Operation: ${operation.id}`,
+            `Operation: ${operation.id}`,
           ],
         ),
       );
@@ -2719,7 +2639,7 @@ async function commandResume(
       jid,
       progressKey?.key,
       operation,
-      "▶️ VX INCIDENT RESUME",
+      "VX INCIDENT RESUME",
       40,
       "INCIDENT_LOOKUP",
       `Loading incident ${id}...`,
@@ -2736,16 +2656,16 @@ async function commandResume(
         jid,
         progressKey?.key,
         operation,
-        "▶️ VX INCIDENT RESUME",
+        "VX INCIDENT RESUME",
         "FAILED",
         vxError(
           "VX RESUME FAILED",
           [
-            `🆔 Incident: ${id}`,
+            `Incident: ${id}`,
             "",
-            "❌ Incident not found.",
+            "Incident not found.",
             "",
-            `🆔 Operation: ${operation.id}`,
+            `Operation: ${operation.id}`,
           ],
         ),
       );
@@ -2762,18 +2682,18 @@ async function commandResume(
         jid,
         progressKey?.key,
         operation,
-        "▶️ VX INCIDENT RESUME",
+        "VX INCIDENT RESUME",
         "COMPLETED",
         vxInfo(
           "VX RESUME",
           [
-            `🆔 Incident: ${id}`,
+            `Incident: ${id}`,
             "",
-            `ℹ️ Current status: ${incident.status}`,
+            `Current status: ${incident.status}`,
             "",
             "This incident is not in an aborted state.",
             "",
-            `🆔 Operation: ${operation.id}`,
+            `Operation: ${operation.id}`,
           ],
         ),
       );
@@ -2786,7 +2706,7 @@ async function commandResume(
       jid,
       progressKey?.key,
       operation,
-      "▶️ VX INCIDENT RESUME",
+      "VX INCIDENT RESUME",
       75,
       "RESTORING_LIFECYCLE",
       "Restoring incident lifecycle state...",
@@ -2801,18 +2721,18 @@ async function commandResume(
       jid,
       progressKey?.key,
       operation,
-      "▶️ VX INCIDENT RESUME",
+      "VX INCIDENT RESUME",
       "COMPLETED",
       vxSuccess(
         "VX INCIDENT RESUMED",
         [
-          "▶️ INCIDENT LIFECYCLE RESTORED",
+          "INCIDENT LIFECYCLE RESTORED",
           "",
-          `🆔 Incident: ${id}`,
+          `Incident: ${id}`,
           "",
-          "🟢 Status: RETURNED TO VX LIFECYCLE",
-          `🆔 Operation: ${operation.id}`,
-          "📜 Audit history preserved.",
+          "Status: RETURNED TO VX LIFECYCLE",
+          `Operation: ${operation.id}`,
+          "Audit history preserved.",
         ],
       ),
     );
@@ -2830,17 +2750,17 @@ async function commandResume(
       jid,
       progressKey?.key,
       operation,
-      "▶️ VX INCIDENT RESUME",
+      "VX INCIDENT RESUME",
       "FAILED",
       vxError(
         "VX RESUME FAILED",
         [
-          "❌ The incident could not be resumed.",
+          "The incident could not be resumed.",
           "",
-          `🆔 Operation: ${operation.id}`,
-          `❌ Error: ${reason}`,
+          `Operation: ${operation.id}`,
+          `Error: ${reason}`,
           "",
-          "📜 The failure has been logged.",
+          "The failure has been logged.",
         ],
       ),
     );
@@ -2871,7 +2791,7 @@ async function commandStatus(
         sock,
         jid,
         operation,
-        "🛡️ VX SECURITY STATUS",
+        "VX SECURITY STATUS",
         10,
         "INITIALIZING",
         "Reading VX security state...",
@@ -2883,7 +2803,7 @@ async function commandStatus(
       jid,
       progressKey?.key,
       operation,
-      "🛡️ VX SECURITY STATUS",
+      "VX SECURITY STATUS",
       45,
       "SECURITY_STATS_READ",
       "Reading current VX security statistics...",
@@ -2899,41 +2819,41 @@ async function commandStatus(
         ? isVxMonitoring(
             jid,
           )
-          ? "🟢 LIVE MONITORING"
-          : "🔴 MONITOR OFFLINE"
-        : "🌐 GLOBAL";
+          ? "LIVE MONITORING"
+          : "MONITOR OFFLINE"
+        : "GLOBAL";
 
     await finishOperationMessage(
       sock,
       jid,
       progressKey?.key,
       operation,
-      "🛡️ VX SECURITY STATUS",
+      "VX SECURITY STATUS",
       "COMPLETED",
       vxSecurity(
         "VX SECURITY STATUS",
         [
-          "🟢 VX ENGINE: ONLINE",
-          `📡 Scope: ${groupStatus}`,
+          "VX ENGINE: ONLINE",
+          `Scope: ${groupStatus}`,
           "",
-          "🤖 Bot Intelligence  • READY",
-          "🧠 Behavior Engine   • READY",
-          "🔗 Threat Analysis   • READY",
-          "📨 Event Sensor      • READY",
-          "📜 Audit Logger      • READY",
-          "🚨 Incident Engine   • READY",
+          "Bot Intelligence  • READY",
+          "Behavior Engine   • READY",
+          "Threat Analysis   • READY",
+          "Event Sensor      • READY",
+          "Audit Logger      • READY",
+          "Incident Engine   • READY",
           "",
-          `📊 Events: ${stats.totalEvents}`,
-          `🚨 Incidents: ${stats.totalIncidents}`,
-          `🎯 Threats: ${stats.totalThreats}`,
-          `⚠️ High/Critical: ${
+          `Events: ${stats.totalEvents}`,
+          `Incidents: ${stats.totalIncidents}`,
+          `Threats: ${stats.totalThreats}`,
+          `High/Critical: ${
             stats.high +
             stats.critical
           }`,
           "",
-          `🆔 Operation: ${operation.id}`,
+          `Operation: ${operation.id}`,
           "",
-          "🛡️ VX SECURITY CORE OPERATIONAL",
+          "VX SECURITY CORE OPERATIONAL",
         ],
       ),
     );
@@ -2951,15 +2871,15 @@ async function commandStatus(
       jid,
       progressKey?.key,
       operation,
-      "🛡️ VX SECURITY STATUS",
+      "VX SECURITY STATUS",
       "FAILED",
       vxError(
         "VX STATUS FAILED",
         [
-          "❌ VX security status could not be read.",
+          "VX security status could not be read.",
           "",
-          `🆔 Operation: ${operation.id}`,
-          `❌ Error: ${reason}`,
+          `Operation: ${operation.id}`,
+          `Error: ${reason}`,
         ],
       ),
     );
@@ -2990,7 +2910,7 @@ async function commandHealth(
         sock,
         jid,
         operation,
-        "💚 VX SECURITY HEALTH",
+        "VX SECURITY HEALTH",
         10,
         "INITIALIZING",
         "Running security health checks...",
@@ -3002,7 +2922,7 @@ async function commandHealth(
       jid,
       progressKey?.key,
       operation,
-      "💚 VX SECURITY HEALTH",
+      "VX SECURITY HEALTH",
       45,
       "HEALTH_CHECK",
       "Reading security engine and storage health...",
@@ -3016,25 +2936,25 @@ async function commandHealth(
       jid,
       progressKey?.key,
       operation,
-      "💚 VX SECURITY HEALTH",
+      "VX SECURITY HEALTH",
       "COMPLETED",
       vxSuccess(
         "VX SECURITY HEALTH",
         [
-          "🟢 Security Engine    • HEALTHY",
-          "🟢 Event Logger       • HEALTHY",
-          "🟢 Incident Store     • HEALTHY",
-          "🟢 Bot Intelligence   • HEALTHY",
-          "🟢 Monitor Service    • HEALTHY",
-          "🟢 Scanner Service    • HEALTHY",
+          "Security Engine    • HEALTHY",
+          "Event Logger       • HEALTHY",
+          "Incident Store     • HEALTHY",
+          "Bot Intelligence   • HEALTHY",
+          "Monitor Service    • HEALTHY",
+          "Scanner Service    • HEALTHY",
           "",
-          `📜 Audit Events: ${stats.totalEvents}`,
-          `🚨 Incidents: ${stats.totalIncidents}`,
-          `🔴 Critical: ${stats.critical}`,
+          `Audit Events: ${stats.totalEvents}`,
+          `Incidents: ${stats.totalIncidents}`,
+          `Critical: ${stats.critical}`,
           "",
-          `🆔 Operation: ${operation.id}`,
+          `Operation: ${operation.id}`,
           "",
-          "⚡ All reported VX services are operational.",
+          "All reported VX services are operational.",
         ],
       ),
     );
@@ -3052,15 +2972,15 @@ async function commandHealth(
       jid,
       progressKey?.key,
       operation,
-      "💚 VX SECURITY HEALTH",
+      "VX SECURITY HEALTH",
       "FAILED",
       vxError(
         "VX HEALTH CHECK FAILED",
         [
-          "❌ Security health checks could not complete.",
+          "Security health checks could not complete.",
           "",
-          `🆔 Operation: ${operation.id}`,
-          `❌ Error: ${reason}`,
+          `Operation: ${operation.id}`,
+          `Error: ${reason}`,
         ],
       ),
     );
@@ -3092,7 +3012,7 @@ async function commandLogs(
         sock,
         jid,
         operation,
-        "📜 VX AUDIT LOGS",
+        "VX AUDIT LOGS",
         10,
         "INITIALIZING",
         "Opening VX event stream...",
@@ -3122,7 +3042,7 @@ async function commandLogs(
       jid,
       progressKey?.key,
       operation,
-      "📜 VX AUDIT LOGS",
+      "VX AUDIT LOGS",
       50,
       "LOGS_READ",
       `Reading up to ${limit} recent event(s)...`,
@@ -3139,16 +3059,16 @@ async function commandLogs(
         jid,
         progressKey?.key,
         operation,
-        "📜 VX AUDIT LOGS",
+        "VX AUDIT LOGS",
         "COMPLETED",
         vxInfo(
           "VX AUDIT LOGS",
           [
-            "📜 No security events have been recorded yet.",
+            "No security events have been recorded yet.",
             "",
-            "🟢 Audit stream is currently empty.",
+            "Audit stream is currently empty.",
             "",
-            `🆔 Operation: ${operation.id}`,
+            `Operation: ${operation.id}`,
           ],
         ),
       );
@@ -3188,18 +3108,18 @@ async function commandLogs(
       jid,
       progressKey?.key,
       operation,
-      "📜 VX AUDIT LOGS",
+      "VX AUDIT LOGS",
       "COMPLETED",
       vxSecurity(
         "VX AUDIT LOGS",
         [
-          `📜 Showing ${events.length} event(s)`,
+          `Showing ${events.length} event(s)`,
           "",
           ...lines,
           "",
-          `🆔 Operation: ${operation.id}`,
+          `Operation: ${operation.id}`,
           "",
-          "🛡️ Audit history preserved.",
+          "Audit history preserved.",
         ],
       ),
     );
@@ -3217,15 +3137,15 @@ async function commandLogs(
       jid,
       progressKey?.key,
       operation,
-      "📜 VX AUDIT LOGS",
+      "VX AUDIT LOGS",
       "FAILED",
       vxError(
         "VX LOG READ FAILED",
         [
-          "❌ VX audit logs could not be read.",
+          "VX audit logs could not be read.",
           "",
-          `🆔 Operation: ${operation.id}`,
-          `❌ Error: ${reason}`,
+          `Operation: ${operation.id}`,
+          `Error: ${reason}`,
         ],
       ),
     );
@@ -3256,7 +3176,7 @@ async function commandStats(
         sock,
         jid,
         operation,
-        "📊 VX SECURITY STATISTICS",
+        "VX SECURITY STATISTICS",
         10,
         "INITIALIZING",
         "Loading VX security metrics...",
@@ -3268,7 +3188,7 @@ async function commandStats(
       jid,
       progressKey?.key,
       operation,
-      "📊 VX SECURITY STATISTICS",
+      "VX SECURITY STATISTICS",
       55,
       "STATISTICS_READ",
       "Calculating current security metrics...",
@@ -3282,25 +3202,25 @@ async function commandStats(
       jid,
       progressKey?.key,
       operation,
-      "📊 VX SECURITY STATISTICS",
+      "VX SECURITY STATISTICS",
       "COMPLETED",
       vxSecurity(
         "VX SECURITY STATISTICS",
         [
-          `📜 Total events: ${stats.totalEvents}`,
-          `🚨 Total incidents: ${stats.totalIncidents}`,
-          `🎯 Total threats: ${stats.totalThreats}`,
+          `Total events: ${stats.totalEvents}`,
+          `Total incidents: ${stats.totalIncidents}`,
+          `Total threats: ${stats.totalThreats}`,
           "",
-          `🟢 Low: ${stats.low}`,
-          `🟡 Medium: ${stats.medium}`,
-          `🟠 High: ${stats.high}`,
-          `🔴 Critical: ${stats.critical}`,
+          `Low: ${stats.low}`,
+          `Medium: ${stats.medium}`,
+          `High: ${stats.high}`,
+          `Critical: ${stats.critical}`,
           "",
-          `👁️ Active monitors: ${stats.activeMonitors}`,
+          `Active monitors: ${stats.activeMonitors}`,
           "",
-          `🆔 Operation: ${operation.id}`,
+          `Operation: ${operation.id}`,
           "",
-          "📊 VX intelligence metrics updated.",
+          "VX intelligence metrics updated.",
         ],
       ),
     );
@@ -3318,15 +3238,15 @@ async function commandStats(
       jid,
       progressKey?.key,
       operation,
-      "📊 VX SECURITY STATISTICS",
+      "VX SECURITY STATISTICS",
       "FAILED",
       vxError(
         "VX STATISTICS FAILED",
         [
-          "❌ Security statistics could not be generated.",
+          "Security statistics could not be generated.",
           "",
-          `🆔 Operation: ${operation.id}`,
-          `❌ Error: ${reason}`,
+          `Operation: ${operation.id}`,
+          `Error: ${reason}`,
         ],
       ),
     );
@@ -3357,7 +3277,7 @@ async function commandReport(
         sock,
         jid,
         operation,
-        "📋 VX SECURITY REPORT",
+        "VX SECURITY REPORT",
         5,
         "INITIALIZING",
         "Preparing full VX intelligence report...",
@@ -3369,7 +3289,7 @@ async function commandReport(
       jid,
       progressKey?.key,
       operation,
-      "📋 VX SECURITY REPORT",
+      "VX SECURITY REPORT",
       20,
       "SECURITY_STATS_READ",
       "Reading security statistics...",
@@ -3383,7 +3303,7 @@ async function commandReport(
       jid,
       progressKey?.key,
       operation,
-      "📋 VX SECURITY REPORT",
+      "VX SECURITY REPORT",
       40,
       "BOT_INTELLIGENCE_READ",
       "Reading suspected bot intelligence...",
@@ -3399,7 +3319,7 @@ async function commandReport(
       jid,
       progressKey?.key,
       operation,
-      "📋 VX SECURITY REPORT",
+      "VX SECURITY REPORT",
       60,
       "INCIDENT_ANALYSIS",
       "Reading recent security incidents...",
@@ -3426,7 +3346,7 @@ async function commandReport(
       jid,
       progressKey?.key,
       operation,
-      "📋 VX SECURITY REPORT",
+      "VX SECURITY REPORT",
       75,
       "MONITOR_ANALYSIS",
       "Reading active monitoring sessions...",
@@ -3443,17 +3363,9 @@ async function commandReport(
               5,
             )
             .map(
-              (
-                bot,
-                index,
-              ) =>
-                [
-                  `━━ BOT ${index + 1} ━━`,
-                  formatVxBotReport(
-                    bot,
-                  ),
-                ].join(
-                  "\n",
+              bot =>
+                formatVxBotReport(
+                  bot,
                 ),
             )
         : [];
@@ -3463,31 +3375,31 @@ async function commandReport(
       jid,
       progressKey?.key,
       operation,
-      "📋 VX SECURITY REPORT",
+      "VX SECURITY REPORT",
       "COMPLETED",
       vxSecurity(
         "VX SECURITY REPORT",
         [
           `${VX_TITLE} SECURITY INTELLIGENCE`,
           "",
-          `📜 Events analyzed: ${stats.totalEvents}`,
-          `🎯 Threats detected: ${stats.totalThreats}`,
-          `🚨 Total incidents: ${stats.totalIncidents}`,
-          `⚠️ High-risk events: ${stats.high}`,
-          `🔴 Critical events: ${stats.critical}`,
+          `Events analyzed: ${stats.totalEvents}`,
+          `Threats detected: ${stats.totalThreats}`,
+          `Total incidents: ${stats.totalIncidents}`,
+          `High-risk events: ${stats.high}`,
+          `Critical events: ${stats.critical}`,
           "",
-          `🤖 Suspected bots: ${bots.length}`,
-          `🚨 Active incidents: ${activeIncidents.length}`,
-          `👁️ Active monitors: ${activeMonitors.length}`,
+          `Suspected bots: ${bots.length}`,
+          `Active incidents: ${activeIncidents.length}`,
+          `Active monitors: ${activeMonitors.length}`,
           "",
           ...botReports,
           ...(botReports.length
             ? [""]
             : []),
-          `🆔 Operation: ${operation.id}`,
+          `Operation: ${operation.id}`,
           "",
-          "📡 VX intelligence is active.",
-          "📜 Full audit history retained.",
+          "VX intelligence is active.",
+          "Full audit history retained.",
         ],
       ),
     );
@@ -3505,17 +3417,17 @@ async function commandReport(
       jid,
       progressKey?.key,
       operation,
-      "📋 VX SECURITY REPORT",
+      "VX SECURITY REPORT",
       "FAILED",
       vxError(
         "VX REPORT FAILED",
         [
-          "❌ The VX security report could not be generated.",
+          "The VX security report could not be generated.",
           "",
-          `🆔 Operation: ${operation.id}`,
-          `❌ Error: ${reason}`,
+          `Operation: ${operation.id}`,
+          `Error: ${reason}`,
           "",
-          "📜 Failure recorded in the audit system.",
+          "Failure recorded in the audit system.",
         ],
       ),
     );
@@ -3546,7 +3458,7 @@ async function commandHelp(
         sock,
         jid,
         operation,
-        "⚡ VX COMMAND CENTER",
+        "VX COMMAND CENTER",
         10,
         "INITIALIZING",
         "Loading VX command inventory...",
@@ -3558,7 +3470,7 @@ async function commandHelp(
       jid,
       progressKey?.key,
       operation,
-      "⚡ VX COMMAND CENTER",
+      "VX COMMAND CENTER",
       60,
       "COMMANDS_LOADED",
       "Preparing security command interface...",
@@ -3569,42 +3481,42 @@ async function commandHelp(
       jid,
       progressKey?.key,
       operation,
-      "⚡ VX COMMAND CENTER",
+      "VX COMMAND CENTER",
       "COMPLETED",
       vxSecurity(
         "VX SECURITY INTELLIGENCE",
         [
-          "🔎 SCANNING",
+          "SCANNING",
           "• vxscan",
           "",
-          "👁️ LIVE MONITORING",
+          "LIVE MONITORING",
           "• vxmonitor",
           "• vxmonitor status",
           "• vxmonitor off",
           "",
-          "🤖 BOT INTELLIGENCE",
+          "BOT INTELLIGENCE",
           "• vxbot scan",
           "• vxbot info <number>",
           "• vxbot logs",
           "• vxbot report",
           "",
-          "🚨 INCIDENT CENTER",
+          "INCIDENT CENTER",
           "• vxincident",
           "• vxincident <id>",
           "• vxabort <id>",
           "• vxabort all",
           "• vxresume <id>",
           "",
-          "🛡️ SYSTEM",
+          "SYSTEM",
           "• vxstatus",
           "• vxhealth",
           "• vxlogs [count]",
           "• vxstats",
           "• vxreport",
           "",
-          `🆔 Operation: ${operation.id}`,
+          `Operation: ${operation.id}`,
           "",
-          "⚡ VX = SECURITY INTELLIGENCE CORE",
+          "VX = SECURITY INTELLIGENCE CORE",
         ],
       ),
     );
@@ -3622,15 +3534,15 @@ async function commandHelp(
       jid,
       progressKey?.key,
       operation,
-      "⚡ VX COMMAND CENTER",
+      "VX COMMAND CENTER",
       "FAILED",
       vxError(
         "VX HELP FAILED",
         [
-          "❌ VX command inventory could not be loaded.",
+          "VX command inventory could not be loaded.",
           "",
-          `🆔 Operation: ${operation.id}`,
-          `❌ Error: ${reason}`,
+          `Operation: ${operation.id}`,
+          `Error: ${reason}`,
         ],
       ),
     );

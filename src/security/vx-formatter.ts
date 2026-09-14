@@ -10,14 +10,18 @@ import {
 /* =========================================================
    🌑 DARK VORTEX — CENTRAL VX FORMATTER
 
-   Single authority for:
+   Presentation authority for:
    • VX branding
    • Headers
-   • Footers
    • Status
    • Progress bars
    • Operation messages
    • Security responses
+
+   IMPORTANT:
+   This file controls presentation only.
+   VX detection, scanning, monitoring, incidents,
+   logging and operation logic remain unchanged.
 ========================================================= */
 
 export const VX_STYLE = {
@@ -86,23 +90,24 @@ export function formatVxMessage(
   const lines: string[] = [
     VX_STYLE.brand,
     "",
-    `◈ *${title}*`,
-    VX_STYLE.divider,
+    title,
+    "",
   ];
 
   if (options?.status) {
     lines.push(
-      `⚡ *STATUS:* ${options.status}`,
+      `Status: ${options.status}`,
       "",
     );
   }
 
-  lines.push(body);
+  if (body.trim()) {
+    lines.push(body.trim());
+  }
 
   if (options?.footer !== false) {
     lines.push(
       "",
-      VX_STYLE.divider,
       VX_STYLE.footer,
     );
   }
@@ -169,44 +174,55 @@ export function formatVxProgress(
   const safePercent =
     normalizeVxPercent(percent);
 
-  const status =
-    safePercent >= 100
-      ? "✅ OPERATION COMPLETED"
-      : safePercent >= 90
-        ? "⚡ FINALIZING"
-        : "🟢 ENGINE ACTIVE";
+  let status =
+    VX_STATUS.PROCESSING;
 
-  const lines = [
-    `┃ ${status}`,
+  if (safePercent >= 100) {
+    status = VX_STATUS.COMPLETE;
+  } else if (safePercent >= 90) {
+    status = "FINALIZING";
+  } else if (safePercent >= 1) {
+    status = "ACTIVE";
+  }
+
+  const lines: string[] = [
+    VX_STYLE.brand,
     "",
-    `┃ ${vxProgressBar(
-      safePercent,
-    )} ${safePercent}%`,
-    `┃ ${VX_ICONS.progress} Stage: ${stage}`,
+    `⚡ ${title}`,
+    "",
+    `Status: ${status}`,
+    "",
+    `${vxProgressBar(safePercent)} ${safePercent}%`,
+    `Stage: ${stage}`,
   ];
+
+  if (safePercent >= 90 && safePercent < 100) {
+    lines.push(
+      "",
+      "Almost done.",
+    );
+  }
+
+  if (message?.trim()) {
+    lines.push(
+      "",
+      message.trim(),
+    );
+  }
 
   if (operationId) {
     lines.push(
-      `┃ 🆔 Operation: ${operationId}`,
+      "",
+      `Operation: ${operationId}`,
     );
   }
 
-  if (message) {
-    lines.push(
-      `┃ ${message}`,
-    );
-  }
-
-  return [
-    VX_STYLE.brand,
+  lines.push(
     "",
-    `╭━━〔 ${title} 〕━━╮`,
-    "┃",
-    ...lines,
-    "┃",
-    `┃ ${VX_STYLE.footer}`,
-    "╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯",
-  ].join("\n");
+    VX_STYLE.footer,
+  );
+
+  return lines.join("\n");
 }
 
 /* =========================================================
