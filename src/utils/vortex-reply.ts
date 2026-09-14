@@ -110,38 +110,3 @@ trackOutgoingMessage(
 
 return sentMessage;
 }
-
-/*
- * Send a reply with Read More explicitly enabled.
- */
-export async function sendVortexReadMoreReply(
-  sock: WASocket,
-  jid: string,
-  text: string,
-  quotedMessage?: WAMessage,
-  options?: MiscMessageGenerationOptions,
-): Promise<WAMessage | undefined> {
-  const sentMessage =
-  await sock.sendMessage(
-    jid,
-    {
-      text: addReadMore(
-        text,
-        0,
-      ),
-    },
-    {
-      ...options,
-      ...(quotedMessage
-        ? { quoted: quotedMessage }
-        : {}),
-    },
-  );
-
-trackOutgoingMessage(
-  sentMessage,
-);
-
-return sentMessage;
-}
-

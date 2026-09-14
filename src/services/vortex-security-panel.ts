@@ -7,13 +7,6 @@ import type {
 } from "@whiskeysockets/baileys";
 
 import {
-  vortexBox,
-  error,
-  success,
-  info,
-} from "../utils/message.js";
-
-import {
   sendVortexReply,
 } from "../utils/vortex-reply.js";
 
@@ -49,7 +42,7 @@ function formatUptime(
 }
 
 // =========================================================
-// PANEL
+// 🌑 SECURITY PANEL
 // =========================================================
 
 export async function handleSecurityPanelCommand(
@@ -59,6 +52,17 @@ export async function handleSecurityPanelCommand(
   args: string[],
   quotedMessage?: WAMessage,
 ): Promise<boolean> {
+
+  const reply = async (
+    text: string,
+  ): Promise<WAMessage | undefined> => {
+    return await sendVortexReply(
+      sock,
+      jid,
+      text,
+      quotedMessage,
+    );
+  };
 
   // ---------------------------------------------------------
   // PANEL
@@ -84,45 +88,36 @@ export async function handleSecurityPanelCommand(
         memory.heapUsed / 1024 / 1024,
       );
 
-    await sendVortexReply(
-      sock,
-      jid,
-      vortexBox(
-        "🛡️ VORTEX SECURITY PANEL",
-        [
-          "🟢 SYSTEM       ONLINE",
-          "🟢 WHATSAPP     CONNECTED",
-          "🟢 SECURITY     ACTIVE",
-          "",
-          "┌─ NETWORK ─────────────┐",
-          "│ 🌐 /ipinfo            │",
-          "│ 🖥️ /jhost             │",
-          "│ 🔎 /dns <domain>      │",
-          "└───────────────────────┘",
-          "",
-          "┌─ SYSTEM ──────────────┐",
-          "│ 💻 /sysdiag           │",
-          "│ ❤️ /health            │",
-          "│ ⏱️ /uptime            │",
-          "└───────────────────────┘",
-          "",
-          "┌─ SECURITY ────────────┐",
-          "│ 🔍 /scanbot           │",
-          "│ 📋 /audit             │",
-          "│ 📊 /timeline          │",
-          "│ 🧾 /evidence          │",
-          "│ 📸 /snapshot          │",
-          "└───────────────────────┘",
-          "",
-          `🤖 Bot: ${botUser}`,
-          `💾 RAM: ${rss} MB`,
-          `🧠 Heap: ${heap} MB`,
-          `⏱️ Uptime: ${formatUptime(process.uptime())}`,
-          "",
-          "╰─── ⚡ VORTEX TECH ───╯",
-        ],
-      ),
-      quotedMessage,
+    await reply(
+      [
+        "🛡️ Vortex Security",
+        "",
+        "Status: 🟢 ONLINE",
+        "WhatsApp: 🟢 CONNECTED",
+        "Security: 🟢 ACTIVE",
+        "",
+        "Network",
+        "• /ipinfo",
+        "• /jhost",
+        "• /dns <domain>",
+        "",
+        "System",
+        "• /sysdiag",
+        "• /health",
+        "• /uptime",
+        "",
+        "Security",
+        "• /scanbot",
+        "• /audit",
+        "• /timeline",
+        "• /evidence",
+        "• /snapshot",
+        "",
+        `Bot: ${botUser}`,
+        `RAM: ${rss} MB`,
+        `Heap: ${heap} MB`,
+        `Uptime: ${formatUptime(process.uptime())}`,
+      ].join("\n"),
     );
 
     return true;
@@ -133,19 +128,14 @@ export async function handleSecurityPanelCommand(
   // ---------------------------------------------------------
 
   if (command === "uptime") {
-    await sendVortexReply(
-      sock,
-      jid,
-      success(
-        "SYSTEM UPTIME",
-        [
-          `⏱️ Process: ${formatUptime(process.uptime())}`,
-          `🖥️ Host: ${formatUptime(os.uptime())}`,
-          "",
-          "🟢 Dark Vortex process is running.",
-        ],
-      ),
-      quotedMessage,
+    await reply(
+      [
+        "⏱️ System uptime",
+        "",
+        `Process: ${formatUptime(process.uptime())}`,
+        `Host: ${formatUptime(os.uptime())}`,
+        "Status: 🟢 RUNNING",
+      ].join("\n"),
     );
 
     return true;
@@ -164,20 +154,16 @@ export async function handleSecurityPanelCommand(
         memory.rss / 1024 / 1024,
       );
 
-    await sendVortexReply(
-      sock,
-      jid,
-      success(
-        "SYSTEM HEALTH",
-        [
-          "🟢 Bot Process: HEALTHY",
-          `🟢 WhatsApp: ${sock.user ? "CONNECTED" : "UNKNOWN"}`,
-          `🟢 Host: ${os.hostname()}`,
-          `💾 Memory: ${rss} MB`,
-          `⏱️ Uptime: ${formatUptime(process.uptime())}`,
-        ],
-      ),
-      quotedMessage,
+    await reply(
+      [
+        "❤️ System health",
+        "",
+        "Bot: 🟢 HEALTHY",
+        `WhatsApp: ${sock.user ? "🟢 CONNECTED" : "⚠️ UNKNOWN"}`,
+        `Host: ${os.hostname()}`,
+        `Memory: ${rss} MB`,
+        `Uptime: ${formatUptime(process.uptime())}`,
+      ].join("\n"),
     );
 
     return true;
@@ -219,24 +205,20 @@ export async function handleSecurityPanelCommand(
       }
     }
 
-    await sendVortexReply(
-      sock,
-      jid,
-      info(
-        "HOST DIAGNOSTICS",
-        [
-          `🖥️ Hostname: ${os.hostname()}`,
-          `💻 Platform: ${os.platform()}`,
-          `🏗️ Architecture: ${os.arch()}`,
-          `⚙️ CPUs: ${os.cpus().length}`,
-          "",
-          "📡 Network interfaces:",
-          ...(networks.length
-            ? networks
-            : ["No interfaces detected."]),
-        ],
-      ),
-      quotedMessage,
+    await reply(
+      [
+        "🖥️ Host diagnostics",
+        "",
+        `Hostname: ${os.hostname()}`,
+        `Platform: ${os.platform()}`,
+        `Architecture: ${os.arch()}`,
+        `CPUs: ${os.cpus().length}`,
+        "",
+        "Network interfaces:",
+        ...(networks.length
+          ? networks
+          : ["None detected."]),
+      ].join("\n"),
     );
 
     return true;
@@ -271,23 +253,16 @@ export async function handleSecurityPanelCommand(
       }
     }
 
-    await sendVortexReply(
-      sock,
-      jid,
-      info(
-        "NETWORK INFORMATION",
-        [
-          "🌐 Local network addresses:",
-          "",
-          ...(addresses.length
-            ? addresses
-            : ["None detected."]),
-          "",
-          "ℹ️ This reports the bot server's",
-          "local network information only.",
-        ],
-      ),
-      quotedMessage,
+    await reply(
+      [
+        "🌐 Network information",
+        "",
+        ...(addresses.length
+          ? addresses
+          : ["No local addresses detected."]),
+        "",
+        "Local server network information only.",
+      ].join("\n"),
     );
 
     return true;
@@ -302,17 +277,12 @@ export async function handleSecurityPanelCommand(
       args[0]?.trim();
 
     if (!hostname) {
-      await sendVortexReply(
-        sock,
-        jid,
-        error(
-          "DNS USAGE",
-          [
-            "Usage:",
-            "/dns example.com",
-          ],
-        ),
-        quotedMessage,
+      await reply(
+        [
+          "❌ DNS lookup failed.",
+          "",
+          "Usage: /dns example.com",
+        ].join("\n"),
       );
 
       return true;
@@ -327,21 +297,17 @@ export async function handleSecurityPanelCommand(
           },
         );
 
-      await sendVortexReply(
-        sock,
-        jid,
-        success(
-          "DNS LOOKUP",
-          [
-            `🌐 Host: ${hostname}`,
-            "",
-            ...records.map(
-              (record) =>
-                `📡 ${record.address} (${record.family})`,
-            ),
-          ],
-        ),
-        quotedMessage,
+      await reply(
+        [
+          "🌐 DNS lookup",
+          "",
+          `Host: ${hostname}`,
+          "",
+          ...records.map(
+            (record) =>
+              `• ${record.address} (IPv${record.family})`,
+          ),
+        ].join("\n"),
       );
     } catch (err) {
       console.error(
@@ -349,16 +315,12 @@ export async function handleSecurityPanelCommand(
         err,
       );
 
-      await sendVortexReply(
-        sock,
-        jid,
-        error(
-          "DNS FAILED",
-          [
-            `Unable to resolve ${hostname}.`,
-          ],
-        ),
-        quotedMessage,
+      await reply(
+        [
+          "❌ DNS lookup failed.",
+          "",
+          `Unable to resolve ${hostname}.`,
+        ].join("\n"),
       );
     }
 

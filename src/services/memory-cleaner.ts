@@ -2073,40 +2073,42 @@ export async function handleMemoryCleanupCommand(
       result.bytesFreed,
     );
 
-  const status =
-    result.success
-      ? "✅ CLEANUP COMPLETE"
-      : "⚠️ CLEANUP FINISHED WITH WARNINGS";
+  if (!result.success) {
+    return {
+      handled: true,
+      response: [
+        "⚠️ Cleanup finished with warnings.",
+        "",
+        `Memory: ${before.heapPercent}% → ${after.heapPercent}%`,
+        `Files removed: ${result.filesRemoved}`,
+        `Records removed: ${result.recordsRemoved}`,
+        `Logs rotated: ${result.logsRotated}`,
+        `Freed: ${freed}`,
+        result.error
+          ? `Reason: ${result.error}`
+          : "Some cleanup operations could not be completed.",
+      ].join("\n"),
+    };
+  }
 
   return {
     handled: true,
     response: [
-      "╭────────────────────────────╮",
-      "│   🌑 DARK VORTEX RESOURCE  │",
-      "│        MANAGER             │",
-      "├────────────────────────────┤",
-      `│ ${status}`,
-      "│",
-      `│ 🧠 Before: ${before.heapPercent}%`,
-      `│ 🧠 After:  ${after.heapPercent}%`,
-      `│ 🗃️ Records: ${result.recordsRemoved}`,
-      `│ 📁 Files: ${result.filesRemoved}`,
-      `│ 📜 Logs: ${result.logsRotated}`,
-      `│ 💾 Freed: ${freed}`,
-      `│ ♻️ GC: ${
-        result.gcExecuted
-          ? "EXECUTED"
-          : "UNAVAILABLE"
-      }`,
-      `│ ⏱️ Time: ${result.durationMs}ms`,
-      "│",
-      result.error
-        ? `│ ⚠️ ${result.error}`
-        : "│ 🛡️ Protected data untouched",
-      "│",
-      "╰────────────────────────────╯",
+      "🧹 Cleanup complete.",
       "",
-      "╰─── ⚡ VORTEX TECH ───╯",
+      `Memory: ${before.heapPercent}% → ${after.heapPercent}%`,
+      `Files removed: ${result.filesRemoved}`,
+      `Records removed: ${result.recordsRemoved}`,
+      `Logs rotated: ${result.logsRotated}`,
+      `Freed: ${freed}`,
+      `GC: ${
+        result.gcExecuted
+          ? "Executed"
+          : "Unavailable"
+      }`,
+      `Time: ${result.durationMs}ms`,
+      "",
+      "🛡️ Protected data untouched.",
     ].join("\n"),
   };
 }
@@ -2135,8 +2137,7 @@ export function formatCleanupProgress(
 
   const filled =
     Math.round(
-      (safePercent /
-        100) *
+      (safePercent / 100) *
         totalBlocks,
     );
 
@@ -2153,21 +2154,15 @@ export function formatCleanupProgress(
     getMemorySnapshot();
 
   return [
-    "╭────────────────────────────╮",
-    "│ 🌑 DARK VORTEX RESOURCE   │",
-    "│        MANAGER            │",
-    "├────────────────────────────┤",
-    `│ ${bar} ${safePercent}%`,
-    "│",
-    `│ ⚙️ ${stage}`,
-    "│",
-    `│ 🧠 Heap: ${memory.heapPercent}%`,
-    `│ 📡 RSS: ${memory.rssPercent}%`,
-    `│ 💻 System: ${memory.systemPercent}%`,
-    "│",
-    "╰────────────────────────────╯",
+    "🌑 DARK VORTEX • RESOURCE CLEANUP",
     "",
-    "╰─── ⚡ VORTEX TECH ───╯",
+    `${bar} ${safePercent}%`,
+    "",
+    `${stage}...`,
+    "",
+    `Heap: ${memory.heapPercent}%`,
+    `RSS: ${memory.rssPercent}%`,
+    `System: ${memory.systemPercent}%`,
   ].join("\n");
 }
 

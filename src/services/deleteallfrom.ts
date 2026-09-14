@@ -1,21 +1,3 @@
-
-/* =========================================================
-   🌑 DARK VORTEX — DELETE ALL FROM
-   ⚡ Powered by Vortex Tech
-
-   Group tool:
-     /deleteallfrom @user
-     /deleteallfrom off @user
-
-   Uses WhatsApp mention metadata to identify the target.
-
-   Storage:
-     src/data/deleteallfrom/rules.json
-
-   This service is independent from the existing
-   moderation/protection services.
-========================================================= */
-
 import type {
   WASocket,
   WAMessage,
@@ -30,8 +12,26 @@ import {
 
 import path from "node:path";
 
-const FOOTER =
-  "⚡ Powered by Vortex Tech";
+import {
+  sendVortexReply,
+} from "../utils/vortex-reply.js";
+
+// =========================================================
+// 🌑 DARK VORTEX — DELETE ALL FROM
+// ⚡ Powered by Vortex Tech
+//
+// Group tool:
+//   /deleteallfrom @user
+//   /deleteallfrom off @user
+//
+// Uses WhatsApp mention metadata to identify the target.
+//
+// Storage:
+//   src/data/deleteallfrom/rules.json
+//
+// This service is independent from the existing
+// moderation/protection services.
+// =========================================================
 
 const DATA_DIR =
   path.resolve(
@@ -60,6 +60,10 @@ interface DeleteAllFromRule {
 type DeleteAllFromRules =
   DeleteAllFromRule[];
 
+// =========================================================
+// STORAGE
+// =========================================================
+
 function normalizeJid(
   jid: string,
 ): string {
@@ -85,16 +89,21 @@ async function loadRules():
     }
 
     return parsed.filter(
-      (item): item is DeleteAllFromRule =>
+      (
+        item,
+      ): item is DeleteAllFromRule =>
         Boolean(
           item &&
           typeof item === "object" &&
-          typeof (item as DeleteAllFromRule)
-            .groupJid === "string" &&
-          typeof (item as DeleteAllFromRule)
-            .targetJid === "string" &&
-          typeof (item as DeleteAllFromRule)
-            .createdAt === "number",
+          typeof (
+            item as DeleteAllFromRule
+          ).groupJid === "string" &&
+          typeof (
+            item as DeleteAllFromRule
+          ).targetJid === "string" &&
+          typeof (
+            item as DeleteAllFromRule
+          ).createdAt === "number",
         ),
     );
   } catch {
@@ -128,11 +137,16 @@ async function saveRules(
   );
 }
 
+// =========================================================
+// MESSAGE HELPERS
+// =========================================================
+
 function getMentionedJid(
   message: WAMessage,
 ): string | undefined {
   const context =
-    message.message?.extendedTextMessage
+    message.message
+      ?.extendedTextMessage
       ?.contextInfo;
 
   const mentioned =
@@ -147,7 +161,9 @@ function getMentionedJid(
 
   const jid =
     mentioned.find(
-      value =>
+      (
+        value,
+      ) =>
         typeof value === "string" &&
         value.trim().length > 0,
     );
@@ -155,61 +171,6 @@ function getMentionedJid(
   return jid
     ? normalizeJid(jid)
     : undefined;
-}
-
-function getMessageText(
-  message: WAMessage,
-): string {
-  const content =
-    message.message;
-
-  if (!content) {
-    return "";
-  }
-
-  if (
-    content.conversation
-  ) {
-    return content.conversation;
-  }
-
-  if (
-    content.extendedTextMessage
-      ?.text
-  ) {
-    return (
-      content.extendedTextMessage.text
-    );
-  }
-
-  if (
-    content.imageMessage
-      ?.caption
-  ) {
-    return (
-      content.imageMessage.caption
-    );
-  }
-
-  if (
-    content.videoMessage
-      ?.caption
-  ) {
-    return (
-      content.videoMessage.caption
-    );
-  }
-
-  if (
-    content.documentMessage
-      ?.caption
-  ) {
-    return (
-      content.documentMessage.caption
-    );
-  }
-
-  return "";
 }
 
 function getMessageSender(
@@ -249,6 +210,10 @@ function getMessageSender(
   return undefined;
 }
 
+// =========================================================
+// COMMAND HANDLER
+// =========================================================
+
 export async function handleDeleteAllFromCommand(
   sock: WASocket,
   jid: string,
@@ -257,38 +222,68 @@ export async function handleDeleteAllFromCommand(
   args: string[],
 ): Promise<boolean> {
   const normalizedCommand =
-  command.trim().toLowerCase();
-
-if (
-  normalizedCommand !== "deleteallfrom" &&
-  normalizedCommand !== "deleteallfromuser"
-) {
-  return false;
-}
+    command
+      .trim()
+      .toLowerCase();
 
   if (
-    !jid.endsWith("@g.us")
+    normalizedCommand !== "deleteallfrom" &&
+    normalizedCommand !== "deleteallfromuser"
   ) {
-    await sock.sendMessage(
+    return false;
+  }
+
+  const reply = async (
+    text: string,
+    options?: {
+      mentions?: string[];
+    },
+  ): Promise<WAMessage | undefined> => {
+    const mentions =
+      options?.mentions ?? [];
+
+    if (
+      mentions.length > 0
+    ) {
+      return await sock.sendMessage(
+        jid,
+        {
+          text,
+          mentions,
+        },
+        {
+          quoted: message,
+        },
+      );
+    }
+
+    return await sendVortexReply(
+      sock,
       jid,
-      {
-        text: [
-          "╭━━━〔 🌑 DARK VORTEX 〕━━━╮",
-          "┃",
-          "┃ ⚠️ GROUP ONLY",
-          "┃",
-          "┃ This command can only be",
-          "┃ used inside a WhatsApp group.",
-          "┃",
-          "╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯",
-          "",
-          FOOTER,
-        ].join("\n"),
-      },
+      text,
+      message,
+    );
+  };
+
+  // ---------------------------------------------------------
+  // GROUP ONLY
+  // ---------------------------------------------------------
+
+  if (!jid.endsWith("@g.us")) {
+    await reply(
+      [
+        "⚠️ Group only.",
+        "",
+        "This command can only be used inside a group.",
+      ].join("\n"),
     );
 
     return true;
   }
+
+  // ---------------------------------------------------------
+  // TARGET
+  // ---------------------------------------------------------
 
   const targetJid =
     getMentionedJid(
@@ -296,26 +291,16 @@ if (
     );
 
   if (!targetJid) {
-    await sock.sendMessage(
-      jid,
-      {
-        text: [
-          "╭━━━〔 🌑 DARK VORTEX 〕━━━╮",
-          "┃",
-          "┃ ⚠️ USER NOT TAGGED",
-          "┃",
-          "┣━━━━━━━━━━━━━━━━━━━━━━━━━━",
-          "┃ Usage:",
-          "┃ /deleteallfrom @user",
-          "┃",
-          "┃ Disable:",
-          "┃ /deleteallfrom off @user",
-          "┃",
-          "╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯",
-          "",
-          FOOTER,
-        ].join("\n"),
-      },
+    await reply(
+      [
+        "⚠️ User not tagged.",
+        "",
+        "Usage:",
+        "/deleteallfrom @user",
+        "",
+        "Disable:",
+        "/deleteallfrom off @user",
+      ].join("\n"),
     );
 
     return true;
@@ -329,7 +314,7 @@ if (
 
   const existingIndex =
     rules.findIndex(
-      rule =>
+      (rule) =>
         normalizeJid(
           rule.groupJid,
         ) === groupJid &&
@@ -343,9 +328,10 @@ if (
       ?.trim()
       .toLowerCase();
 
-  /*
-   * Remove rule.
-   */
+  // ---------------------------------------------------------
+  // REMOVE RULE
+  // ---------------------------------------------------------
+
   if (
     mode === "off" ||
     mode === "remove" ||
@@ -354,22 +340,12 @@ if (
     if (
       existingIndex === -1
     ) {
-      await sock.sendMessage(
-        jid,
-        {
-          text: [
-            "╭━━━〔 🌑 DARK VORTEX 〕━━━╮",
-            "┃",
-            "┃ ⚠️ RULE NOT FOUND",
-            "┃",
-            "┃ No delete-all-from rule",
-            "┃ exists for this user.",
-            "┃",
-            "╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯",
-            "",
-            FOOTER,
-          ].join("\n"),
-        },
+      await reply(
+        [
+          "⚠️ Rule not found.",
+          "",
+          "No delete-all-from rule exists for this user.",
+        ].join("\n"),
       );
 
       return true;
@@ -384,25 +360,14 @@ if (
       rules,
     );
 
-    await sock.sendMessage(
-      jid,
+    await reply(
+      [
+        "🛑 Delete-all-from disabled.",
+        "",
+        `Target: @${targetJid.split("@")[0]}`,
+        "Status: INACTIVE",
+      ].join("\n"),
       {
-        text: [
-          "╭━━━〔 🌑 DARK VORTEX 〕━━━╮",
-          "┃",
-          "┃ 🛑 DELETE-ALL-FROM DISABLED",
-          "┃",
-          "┣━━━━━━━━━━━━━━━━━━━━━━━━━━",
-          `┃ 🎯 Target: @${targetJid.split("@")[0]}`,
-          "┃",
-          "┃ New messages from this",
-          "┃ participant will no longer",
-          "┃ be automatically deleted.",
-          "┃",
-          "╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯",
-          "",
-          FOOTER,
-        ].join("\n"),
         mentions: [
           targetJid,
         ],
@@ -412,30 +377,21 @@ if (
     return true;
   }
 
-  /*
-   * Prevent duplicate rule.
-   */
+  // ---------------------------------------------------------
+  // DUPLICATE RULE
+  // ---------------------------------------------------------
+
   if (
     existingIndex !== -1
   ) {
-    await sock.sendMessage(
-      jid,
+    await reply(
+      [
+        "⚠️ Rule already active.",
+        "",
+        `Target: @${targetJid.split("@")[0]}`,
+        "Messages from this user are already being deleted.",
+      ].join("\n"),
       {
-        text: [
-          "╭━━━〔 🌑 DARK VORTEX 〕━━━╮",
-          "┃",
-          "┃ ⚠️ RULE ALREADY ACTIVE",
-          "┃",
-          "┣━━━━━━━━━━━━━━━━━━━━━━━━━━",
-          `┃ 🎯 Target: @${targetJid.split("@")[0]}`,
-          "┃",
-          "┃ Messages from this user",
-          "┃ are already being deleted.",
-          "┃",
-          "╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯",
-          "",
-          FOOTER,
-        ].join("\n"),
         mentions: [
           targetJid,
         ],
@@ -445,9 +401,10 @@ if (
     return true;
   }
 
-  /*
-   * Create rule.
-   */
+  // ---------------------------------------------------------
+  // CREATE RULE
+  // ---------------------------------------------------------
+
   rules.push({
     groupJid,
     targetJid,
@@ -459,30 +416,19 @@ if (
     rules,
   );
 
-  await sock.sendMessage(
-    jid,
+  await reply(
+    [
+      "🛡️ Delete-all-from enabled.",
+      "",
+      `Target: @${targetJid.split("@")[0]}`,
+      "Status: ACTIVE",
+      "",
+      "New messages from this user will be automatically deleted.",
+      "",
+      "Disable:",
+      "/deleteallfrom off @user",
+    ].join("\n"),
     {
-      text: [
-        "╭━━━〔 🌑 DARK VORTEX 〕━━━╮",
-        "┃",
-        "┃ 🛡️ DELETE-ALL-FROM ACTIVE",
-        "┃",
-        "┣━━━━━━━━━━━━━━━━━━━━━━━━━━",
-        `┃ 🎯 Target: @${targetJid.split("@")[0]}`,
-        "┃",
-        "┃ Status: ACTIVE",
-        "┃",
-        "┃ New messages from this",
-        "┃ participant will be automatically",
-        "┃ deleted while this rule remains active.",
-        "┃",
-        "┃ Disable:",
-        "┃ /deleteallfrom off @user",
-        "┃",
-        "╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯",
-        "",
-        FOOTER,
-      ].join("\n"),
       mentions: [
         targetJid,
       ],
@@ -491,6 +437,10 @@ if (
 
   return true;
 }
+
+// =========================================================
+// 🤖 PROCESS AUTOMATIC DELETIONS
+// =========================================================
 
 /**
  * Called for every incoming group message.
@@ -517,9 +467,10 @@ export async function processDeleteAllFrom(
     return false;
   }
 
-  /*
-   * Never delete the bot's own messages.
-   */
+  // ---------------------------------------------------------
+  // NEVER DELETE THE BOT'S OWN MESSAGES
+  // ---------------------------------------------------------
+
   const botJid =
     sock.user?.id
       ? normalizeJid(
@@ -534,6 +485,10 @@ export async function processDeleteAllFrom(
     return false;
   }
 
+  // ---------------------------------------------------------
+  // CHECK ACTIVE RULE
+  // ---------------------------------------------------------
+
   const rules =
     await loadRules();
 
@@ -542,7 +497,7 @@ export async function processDeleteAllFrom(
 
   const active =
     rules.some(
-      rule =>
+      (rule) =>
         normalizeJid(
           rule.groupJid,
         ) === groupJid &&
@@ -558,27 +513,26 @@ export async function processDeleteAllFrom(
   const key =
     message.key;
 
-  if (
-    !key.id
-  ) {
+  if (!key.id) {
     return false;
   }
+
+  // ---------------------------------------------------------
+  // DELETE MESSAGE
+  // ---------------------------------------------------------
 
   try {
     await sock.sendMessage(
       jid,
       {
         delete: {
-          remoteJid:
-            jid,
+          remoteJid: jid,
           fromMe:
             Boolean(
               key.fromMe,
             ),
-          id:
-            key.id,
-          participant:
-            sender,
+          id: key.id,
+          participant: sender,
         },
       },
     );
@@ -594,11 +548,11 @@ export async function processDeleteAllFrom(
   }
 }
 
-/**
- * Optional utility for diagnostics.
- */
-export async function getDeleteAllFromRules(
-): Promise<DeleteAllFromRules> {
+// =========================================================
+// DIAGNOSTICS
+// =========================================================
+
+export async function getDeleteAllFromRules():
+  Promise<DeleteAllFromRules> {
   return loadRules();
 }
-

@@ -1,4 +1,3 @@
-
 /* =========================================================
    🌑 DARK VORTEX — VORTEX SECURITY COMMAND HANDLER
    ⚡ Powered by Vortex Tech
@@ -50,8 +49,8 @@ import {
 } from "./vortex-security.js";
 
 import {
-  vortexBox,
-} from "../utils/message.js";
+  sendVortexReply,
+} from "../utils/vortex-reply.js";
 
 /* =========================================================
    TYPES
@@ -125,15 +124,12 @@ function progressBar(
 
   const filled =
     Math.round(
-      (safePercent /
-        100) *
+      (safePercent / 100) *
         totalBlocks,
     );
 
   return (
-    "█".repeat(
-      filled,
-    ) +
+    "█".repeat(filled) +
     "░".repeat(
       totalBlocks -
         filled,
@@ -153,53 +149,40 @@ function progressText(
   message?: string,
 ): string {
   const lines = [
-    `🛡️ ${title}`,
+    `🌑 DARK VORTEX • ${title}`,
     "",
-    `${progressBar(percent)}`,
+    progressBar(percent),
     "",
-    `⚙️ ${stage}`,
+    stage,
   ];
 
-  if (
-    message
-  ) {
+  if (message) {
     lines.push(
       "",
       message,
     );
   }
 
-  lines.push(
-    "",
-    "⚡ Powered by Vortex Tech",
-  );
-
-  return vortexBox(
-    "VORTEX SECURITY",
-    lines,
-  );
+  return lines.join("\n");
 }
 
 /* =========================================================
-   COMPLETION BOX
+   COMPLETION MESSAGE
 ========================================================= */
 
 function completionText(
   title: string,
   lines: string[],
 ): string {
-  return vortexBox(
-    "VORTEX SECURITY",
-    [
-      `🛡️ ${title}`,
-      "",
-      progressBar(100),
-      "",
-      ...lines,
-      "",
-      "⚡ Powered by Vortex Tech",
-    ],
-  );
+  return [
+    "🌑 DARK VORTEX • SECURITY",
+    "",
+    progressBar(100),
+    "",
+    title,
+    "",
+    ...lines,
+  ].join("\n");
 }
 
 /* =========================================================
@@ -209,6 +192,7 @@ function completionText(
 async function createProgressReporter(
   sock: WASocket,
   jid: string,
+  quotedMessage?: WAMessage,
 ): Promise<{
   update: SecurityProgress;
   finish: (
@@ -226,26 +210,21 @@ async function createProgressReporter(
       text: string,
     ): Promise<void> => {
       /*
-       * IMPORTANT:
-       * Every stage must use the SAME WhatsApp
-       * message. We never intentionally send a
-       * second progress message.
+       * The first progress message replies to the
+       * command that triggered the operation.
+       *
+       * Every later update edits that same message.
        */
-
-      if (
-        !progressMessage
-      ) {
+      if (!progressMessage) {
         const sentMessage =
-          await sock.sendMessage(
+          await sendVortexReply(
+            sock,
             jid,
-            {
-              text,
-            },
+            text,
+            quotedMessage,
           );
 
-        if (
-          !sentMessage
-        ) {
+        if (!sentMessage) {
           throw new Error(
             "Failed to create VORTEX SECURITY progress message",
           );
@@ -277,7 +256,7 @@ async function createProgressReporter(
     ) => {
       const text =
         progressText(
-          "SECURITY OPERATION",
+          "SECURITY",
           stage,
           percent,
           message,
@@ -294,21 +273,13 @@ async function createProgressReporter(
         );
 
         /*
-         * If the original message was successfully
-         * created, DO NOT send another message.
-         *
-         * This prevents duplicate progress messages.
+         * If the original progress message already
+         * exists, never create a duplicate.
          */
-        if (
-          messageCreated
-        ) {
+        if (messageCreated) {
           return;
         }
 
-        /*
-         * Only if the initial message itself failed
-         * do we leave the error to the caller.
-         */
         throw error;
       }
     };
@@ -329,9 +300,7 @@ async function createProgressReporter(
          * Normal path:
          * edit the existing progress message.
          */
-        if (
-          progressMessage
-        ) {
+        if (progressMessage) {
           await sock.sendMessage(
             jid,
             {
@@ -345,20 +314,18 @@ async function createProgressReporter(
         }
 
         /*
-         * This should only happen if no progress
-         * update was ever successfully sent.
+         * Fallback only if no progress message
+         * was successfully created.
          */
         const sentMessage =
-          await sock.sendMessage(
+          await sendVortexReply(
+            sock,
             jid,
-            {
-              text,
-            },
+            text,
+            quotedMessage,
           );
 
-        if (
-          !sentMessage
-        ) {
+        if (!sentMessage) {
           throw new Error(
             "Failed to create VORTEX SECURITY completion message",
           );
@@ -375,10 +342,8 @@ async function createProgressReporter(
         );
 
         /*
-         * NEVER send another message here.
-         *
-         * Sending a fallback message was causing
-         * duplicate audit/progress messages.
+         * Never send another fallback message.
+         * This prevents duplicate responses.
          */
       }
     };
@@ -397,9 +362,7 @@ function parseLimit(
   value: string | undefined,
   fallback = 20,
 ): number {
-  if (
-    !value
-  ) {
+  if (!value) {
     return fallback;
   }
 
@@ -410,9 +373,7 @@ function parseLimit(
     );
 
   if (
-    !Number.isFinite(
-      parsed,
-    )
+    !Number.isFinite(parsed)
   ) {
     return fallback;
   }
@@ -442,11 +403,8 @@ function getMentionedJid(
     context?.mentionedJid;
 
   if (
-    Array.isArray(
-      mentions,
-    ) &&
-    mentions.length >
-      0
+    Array.isArray(mentions) &&
+    mentions.length > 0
   ) {
     return (
       mentions[0] ??
@@ -466,21 +424,16 @@ function getTargetFromArgs(
       message,
     );
 
-  if (
-    mentioned
-  ) {
+  if (mentioned) {
     return mentioned;
   }
 
   const first =
-    args[0]
-      ?.trim();
+    args[0]?.trim();
 
   if (
     !first ||
-    first.startsWith(
-      "@",
-    )
+    first.startsWith("@")
   ) {
     return null;
   }
@@ -503,33 +456,26 @@ function formatEvent(
     `📊 Status: ${event.status.toUpperCase()}`,
   ];
 
-  if (
-    event.sender
-  ) {
+  if (event.sender) {
     lines.push(
       `👤 Sender: ${event.sender}`,
     );
   }
 
-  if (
-    event.jid
-  ) {
+  if (event.jid) {
     lines.push(
       `💬 Chat: ${event.jid}`,
     );
   }
 
-  if (
-    event.target
-  ) {
+  if (event.target) {
     lines.push(
       `🎯 Target: ${event.target}`,
     );
   }
 
   if (
-    event.details.length >
-    0
+    event.details.length > 0
   ) {
     lines.push(
       "",
@@ -575,7 +521,11 @@ function formatSnapshot(
     `🆔 ${snapshot.id}`,
     `🕒 ${snapshot.timestamp}`,
     `🛡️ Mode: ${snapshot.mode.toUpperCase()}`,
-    `🔕 Quiet: ${snapshot.quiet ? "ON" : "OFF"}`,
+    `🔕 Quiet: ${
+      snapshot.quiet
+        ? "ON"
+        : "OFF"
+    }`,
     `⏸️ Security pause: ${
       snapshot.securityPaused
         ? "ON"
@@ -615,9 +565,7 @@ function formatSnapshot(
 function postureIcon(
   posture: SecurityPosture,
 ): string {
-  switch (
-    posture.level
-  ) {
+  switch (posture.level) {
     case "NORMAL":
       return "🟢";
 
@@ -642,6 +590,7 @@ async function commandSecurityStatus(
   const {
     sock,
     jid,
+    message,
   } = context;
 
   const {
@@ -651,6 +600,7 @@ async function commandSecurityStatus(
     await createProgressReporter(
       sock,
       jid,
+      message,
     );
 
   await update(
@@ -723,9 +673,9 @@ async function commandSecurityStatus(
   await finish(
     "SECURITY STATUS",
     [
-      `${postureIcon(posture)} POSTURE: ${posture.level}`,
+      `${postureIcon(posture)} Posture: ${posture.level}`,
       "",
-      `${modeIcon} MODE: ${mode}`,
+      `${modeIcon} Mode: ${mode}`,
       `🔕 Quiet: ${
         summary.quiet
           ? "ON"
@@ -737,23 +687,23 @@ async function commandSecurityStatus(
           : "OFF"
       }`,
       "",
-      "📊 SECURITY TELEMETRY",
-      `• Events: ${counts.events}`,
-      `• Successful: ${summary.successfulEvents}`,
-      `• Failed: ${summary.failedEvents}`,
-      `• Blocked: ${summary.blockedEvents}`,
-      `• Cancelled: ${summary.cancelledEvents}`,
-      `• Informational: ${summary.informationalEvents}`,
+      "Security telemetry",
+      `Events: ${counts.events}`,
+      `Successful: ${summary.successfulEvents}`,
+      `Failed: ${summary.failedEvents}`,
+      `Blocked: ${summary.blockedEvents}`,
+      `Cancelled: ${summary.cancelledEvents}`,
+      `Informational: ${summary.informationalEvents}`,
       "",
-      `📦 Evidence: ${counts.evidence}`,
-      `📸 Snapshots: ${counts.snapshots}`,
+      `Evidence: ${counts.evidence}`,
+      `Snapshots: ${counts.snapshots}`,
       "",
-      "🧠 SECURITY ASSESSMENT",
+      "Assessment",
       posture.description,
       "",
       latestEvent
-        ? `🕒 Last event: ${latestEvent.type} — ${latestEvent.status.toUpperCase()}`
-        : "🕒 Last event: No security events recorded.",
+        ? `Last event: ${latestEvent.type} — ${latestEvent.status.toUpperCase()}`
+        : "Last event: None recorded.",
       "",
       "🟢 Local security intelligence: ONLINE",
       "🔐 External credential access: NONE",
@@ -772,6 +722,7 @@ async function commandAudit(
   const {
     sock,
     jid,
+    message,
   } = context;
 
   const {
@@ -781,6 +732,7 @@ async function commandAudit(
     await createProgressReporter(
       sock,
       jid,
+      message,
     );
 
   await update(
@@ -834,17 +786,17 @@ async function commandAudit(
     [
       "🟢 Audit completed",
       "",
-      `Events analyzed     ${summary.totalEvents}`,
-      `Successful          ${summary.successfulEvents}`,
-      `Failed              ${summary.failedEvents}`,
-      `Blocked             ${summary.blockedEvents}`,
-      `Cancelled           ${summary.cancelledEvents}`,
-      `Informational       ${summary.informationalEvents}`,
+      `Events analyzed: ${summary.totalEvents}`,
+      `Successful: ${summary.successfulEvents}`,
+      `Failed: ${summary.failedEvents}`,
+      `Blocked: ${summary.blockedEvents}`,
+      `Cancelled: ${summary.cancelledEvents}`,
+      `Informational: ${summary.informationalEvents}`,
       "",
-      `Evidence records    ${summary.totalEvidence}`,
-      `Snapshots           ${summary.totalSnapshots}`,
+      `Evidence: ${summary.totalEvidence}`,
+      `Snapshots: ${summary.totalSnapshots}`,
       "",
-      `${postureIcon(posture)} SECURITY POSTURE: ${posture.level}`,
+      `${postureIcon(posture)} Security posture: ${posture.level}`,
     ],
   );
 }
@@ -869,29 +821,18 @@ async function commandAuditUser(
       message,
     );
 
-  if (
-    !target
-  ) {
-    await sock.sendMessage(
+  if (!target) {
+    await sendVortexReply(
+      sock,
       jid,
-      {
-        text:
-          vortexBox(
-            "VORTEX SECURITY",
-            [
-              "❌ TARGET REQUIRED",
-              "",
-              "Usage:",
-              "audituser @user",
-              "",
-              "Mention the user whose locally",
-              "recorded security activity",
-              "you want to inspect.",
-              "",
-              "⚡ Powered by Vortex Tech",
-            ],
-          ),
-      },
+      [
+        "⚠️ Target required.",
+        "",
+        "Usage: /audituser @user",
+        "",
+        "Mention the user whose security activity you want to inspect.",
+      ].join("\n"),
+      message,
     );
 
     return;
@@ -904,6 +845,7 @@ async function commandAuditUser(
     await createProgressReporter(
       sock,
       jid,
+      message,
     );
 
   await update(
@@ -926,15 +868,13 @@ async function commandAuditUser(
   const failures =
     events.filter(
       (event) =>
-        event.status ===
-        "failed",
+        event.status === "failed",
     ).length;
 
   const blocked =
     events.filter(
       (event) =>
-        event.status ===
-        "blocked",
+        event.status === "blocked",
     ).length;
 
   await update(
@@ -967,10 +907,7 @@ async function commandAuditUser(
     "",
   ];
 
-  if (
-    events.length ===
-    0
-  ) {
+  if (events.length === 0) {
     lines.push(
       "🟢 No locally recorded security activity found.",
     );
@@ -1006,6 +943,7 @@ async function commandAuditGroup(
   const {
     sock,
     jid,
+    message,
   } = context;
 
   const {
@@ -1015,6 +953,7 @@ async function commandAuditGroup(
     await createProgressReporter(
       sock,
       jid,
+      message,
     );
 
   await update(
@@ -1037,15 +976,13 @@ async function commandAuditGroup(
   const failed =
     events.filter(
       (event) =>
-        event.status ===
-        "failed",
+        event.status === "failed",
     ).length;
 
   const blocked =
     events.filter(
       (event) =>
-        event.status ===
-        "blocked",
+        event.status === "blocked",
     ).length;
 
   await update(
@@ -1095,6 +1032,7 @@ async function commandTimeline(
     sock,
     jid,
     args,
+    message,
   } = context;
 
   const limit =
@@ -1110,6 +1048,7 @@ async function commandTimeline(
     await createProgressReporter(
       sock,
       jid,
+      message,
     );
 
   await update(
@@ -1138,17 +1077,12 @@ async function commandTimeline(
     "",
   ];
 
-  if (
-    events.length ===
-    0
-  ) {
+  if (events.length === 0) {
     lines.push(
       "🟢 Security timeline is empty.",
     );
   } else {
-    for (
-      const event of events
-    ) {
+    for (const event of events) {
       lines.push(
         `• ${event.timestamp}`,
         `  ${event.id}`,
@@ -1175,33 +1109,23 @@ async function commandEvent(
     sock,
     jid,
     args,
+    message,
   } = context;
 
   const id =
     args[0]?.trim();
 
-  if (
-    !id
-  ) {
-    await sock.sendMessage(
+  if (!id) {
+    await sendVortexReply(
+      sock,
       jid,
-      {
-        text:
-          vortexBox(
-            "VORTEX SECURITY",
-            [
-              "❌ EVENT ID REQUIRED",
-              "",
-              "Usage:",
-              "event <id>",
-              "",
-              "Example:",
-              "event SEC-XXXXXX-ABC123",
-              "",
-              "⚡ Powered by Vortex Tech",
-            ],
-          ),
-      },
+      [
+        "⚠️ Event ID required.",
+        "",
+        "Usage: /event <id>",
+        "Example: /event SEC-XXXXXX-ABC123",
+      ].join("\n"),
+      message,
     );
 
     return;
@@ -1214,6 +1138,7 @@ async function commandEvent(
     await createProgressReporter(
       sock,
       jid,
+      message,
     );
 
   await update(
@@ -1231,9 +1156,7 @@ async function commandEvent(
     60,
   );
 
-  if (
-    !event
-  ) {
+  if (!event) {
     await update(
       "Event lookup completed.",
       100,
@@ -1291,6 +1214,7 @@ async function commandEvidence(
     sock,
     jid,
     args,
+    message,
   } = context;
 
   const limit =
@@ -1306,6 +1230,7 @@ async function commandEvidence(
     await createProgressReporter(
       sock,
       jid,
+      message,
     );
 
   await update(
@@ -1334,17 +1259,12 @@ async function commandEvidence(
     "",
   ];
 
-  if (
-    evidence.length ===
-    0
-  ) {
+  if (evidence.length === 0) {
     lines.push(
       "🟢 No locally retained security evidence.",
     );
   } else {
-    for (
-      const item of evidence
-    ) {
+    for (const item of evidence) {
       lines.push(
         `🆔 ${item.id}`,
         `🕒 ${item.timestamp}`,
@@ -1372,6 +1292,7 @@ async function commandSnapshots(
     sock,
     jid,
     args,
+    message,
   } = context;
 
   const limit =
@@ -1387,6 +1308,7 @@ async function commandSnapshots(
     await createProgressReporter(
       sock,
       jid,
+      message,
     );
 
   await update(
@@ -1415,17 +1337,12 @@ async function commandSnapshots(
     "",
   ];
 
-  if (
-    snapshots.length ===
-    0
-  ) {
+  if (snapshots.length === 0) {
     lines.push(
       "🟢 No security snapshots recorded.",
     );
   } else {
-    for (
-      const snapshot of snapshots
-    ) {
+    for (const snapshot of snapshots) {
       lines.push(
         `• ${snapshot.id}`,
         `  ${snapshot.timestamp}`,
@@ -1453,6 +1370,7 @@ async function commandSnapshot(
   const {
     sock,
     jid,
+    message,
   } = context;
 
   const {
@@ -1462,6 +1380,7 @@ async function commandSnapshot(
     await createProgressReporter(
       sock,
       jid,
+      message,
     );
 
   await update(
@@ -1524,6 +1443,7 @@ async function commandLockdown(
   const {
     sock,
     jid,
+    message,
   } = context;
 
   const {
@@ -1533,6 +1453,7 @@ async function commandLockdown(
     await createProgressReporter(
       sock,
       jid,
+      message,
     );
 
   await update(
@@ -1568,8 +1489,7 @@ async function commandLockdown(
     [
       "🔒 VORTEX SECURITY lockdown is active.",
       "",
-      "Non-essential security-sensitive",
-      "operations are now restricted.",
+      "Non-essential security-sensitive operations are restricted.",
       "",
       "Use /normal to restore normal mode.",
     ],
@@ -1586,6 +1506,7 @@ async function commandFailsafe(
   const {
     sock,
     jid,
+    message,
   } = context;
 
   const {
@@ -1595,6 +1516,7 @@ async function commandFailsafe(
     await createProgressReporter(
       sock,
       jid,
+      message,
     );
 
   await update(
@@ -1630,8 +1552,7 @@ async function commandFailsafe(
     [
       "🧯 Conservative security mode is active.",
       "",
-      "Non-essential security-sensitive",
-      "operations are restricted.",
+      "Non-essential security-sensitive operations are restricted.",
       "",
       "Use /normal to restore normal mode.",
     ],
@@ -1649,21 +1570,19 @@ async function commandQuiet(
     sock,
     jid,
     args,
+    message,
   } = context;
 
   const requested =
-    args[0]
-      ?.toLowerCase();
+    args[0]?.toLowerCase();
 
   const current =
     await isQuiet();
 
   const enabled =
-    requested ===
-    "on"
+    requested === "on"
       ? true
-      : requested ===
-          "off"
+      : requested === "off"
         ? false
         : !current;
 
@@ -1674,6 +1593,7 @@ async function commandQuiet(
     await createProgressReporter(
       sock,
       jid,
+      message,
     );
 
   await update(
@@ -1697,7 +1617,11 @@ async function commandQuiet(
     "QUIET_MODE",
     "quiet",
     [
-      `Quiet mode: ${enabled ? "enabled" : "disabled"}.`,
+      `Quiet mode: ${
+        enabled
+          ? "enabled"
+          : "disabled"
+      }.`,
     ],
   );
 
@@ -1715,7 +1639,11 @@ async function commandQuiet(
         ? "🔕 Non-critical security notifications are suppressed."
         : "🔔 Security notifications are restored.",
       "",
-      `Current state: ${enabled ? "ON" : "OFF"}`,
+      `Current state: ${
+        enabled
+          ? "ON"
+          : "OFF"
+      }`,
     ],
   );
 }
@@ -1731,21 +1659,19 @@ async function commandSecurityPause(
     sock,
     jid,
     args,
+    message,
   } = context;
 
   const requested =
-    args[0]
-      ?.toLowerCase();
+    args[0]?.toLowerCase();
 
   const current =
     await isSecurityPaused();
 
   const paused =
-    requested ===
-    "on"
+    requested === "on"
       ? true
-      : requested ===
-          "off"
+      : requested === "off"
         ? false
         : !current;
 
@@ -1756,6 +1682,7 @@ async function commandSecurityPause(
     await createProgressReporter(
       sock,
       jid,
+      message,
     );
 
   await update(
@@ -1779,7 +1706,11 @@ async function commandSecurityPause(
     "SECURITY_PAUSE",
     "securitypause",
     [
-      `Security pause: ${paused ? "enabled" : "disabled"}.`,
+      `Security pause: ${
+        paused
+          ? "enabled"
+          : "disabled"
+      }.`,
     ],
   );
 
@@ -1797,7 +1728,11 @@ async function commandSecurityPause(
         ? "⏸️ Security intelligence automation is paused."
         : "▶️ Security intelligence automation is active.",
       "",
-      `Current state: ${paused ? "PAUSED" : "ACTIVE"}`,
+      `Current state: ${
+        paused
+          ? "PAUSED"
+          : "ACTIVE"
+      }`,
     ],
   );
 }
@@ -1812,6 +1747,7 @@ async function commandNormal(
   const {
     sock,
     jid,
+    message,
   } = context;
 
   const {
@@ -1821,6 +1757,7 @@ async function commandNormal(
     await createProgressReporter(
       sock,
       jid,
+      message,
     );
 
   await update(
@@ -1866,6 +1803,7 @@ async function commandSecurityTest(
   const {
     sock,
     jid,
+    message,
   } = context;
 
   const {
@@ -1875,6 +1813,7 @@ async function commandSecurityTest(
     await createProgressReporter(
       sock,
       jid,
+      message,
     );
 
   await update(
@@ -1906,8 +1845,7 @@ async function commandSecurityTest(
     {
       jid,
       status:
-        result.failed >
-        0
+        result.failed > 0
           ? "failed"
           : "success",
     },
@@ -1924,7 +1862,11 @@ async function commandSecurityTest(
     const check of result.checks
   ) {
     lines.push(
-      `${check.status === "PASS" ? "🟢" : "🔴"} ${check.name}`,
+      `${
+        check.status === "PASS"
+          ? "🟢"
+          : "🔴"
+      } ${check.name}`,
       `   ${check.details}`,
       "",
     );
@@ -1946,6 +1888,7 @@ async function commandRecovery(
   const {
     sock,
     jid,
+    message,
   } = context;
 
   const {
@@ -1955,6 +1898,7 @@ async function commandRecovery(
     await createProgressReporter(
       sock,
       jid,
+      message,
     );
 
   await update(
@@ -1984,8 +1928,7 @@ async function commandRecovery(
   const ready =
     posture.level !==
       "CRITICAL" &&
-    counts.events >=
-      0;
+    counts.events >= 0;
 
   await update(
     "Preparing recovery report...",
@@ -1996,7 +1939,11 @@ async function commandRecovery(
     "RECOVERY_CHECK",
     "recovery",
     [
-      `Readiness: ${ready ? "ready" : "restricted"}.`,
+      `Readiness: ${
+        ready
+          ? "ready"
+          : "restricted"
+      }.`,
       `Mode: ${summary.mode}.`,
       `Posture: ${posture.level}.`,
     ],
@@ -2012,7 +1959,11 @@ async function commandRecovery(
   await finish(
     "RECOVERY & READINESS",
     [
-      `${ready ? "🟢" : "🟠"} Readiness: ${
+      `${
+        ready
+          ? "🟢"
+          : "🟠"
+      } Readiness: ${
         ready
           ? "READY"
           : "RESTRICTED"
@@ -2062,9 +2013,7 @@ export async function inspectSecurityRecord(
       id,
     );
 
-  if (
-    event
-  ) {
+  if (event) {
     return {
       type: "event",
       record: event,
@@ -2076,9 +2025,7 @@ export async function inspectSecurityRecord(
       id,
     );
 
-  if (
-    evidence
-  ) {
+  if (evidence) {
     return {
       type: "evidence",
       record: evidence,
@@ -2124,9 +2071,7 @@ export async function handleVortexSecurityCommand(
   };
 
   try {
-    switch (
-      normalized
-    ) {
+    switch (normalized) {
       case "security":
         await commandSecurityStatus(
           context,
@@ -2250,36 +2195,28 @@ export async function handleVortexSecurityCommand(
           status: "failed",
         },
       );
-    } catch (
-      loggingError
-    ) {
+    } catch (loggingError) {
       console.error(
         "VORTEX SECURITY error logging failed:",
         loggingError,
       );
     }
 
-    await sock.sendMessage(
+    await sendVortexReply(
+      sock,
       jid,
-      {
-        text:
-          vortexBox(
-            "VORTEX SECURITY",
-            [
-              "🔴 SECURITY OPERATION ERROR",
-              "",
-              `Command: ${normalized}`,
-              "",
-              error instanceof Error
-                ? error.message
-                : "The security operation failed.",
-              "",
-              "No external action was performed.",
-              "",
-              "⚡ Powered by Vortex Tech",
-            ],
-          ),
-      },
+      [
+        "❌ Security operation failed.",
+        "",
+        `Command: /${normalized}`,
+        "",
+        error instanceof Error
+          ? error.message
+          : "The security operation failed.",
+        "",
+        "No external action was performed.",
+      ].join("\n"),
+      message,
     );
 
     return true;
@@ -2293,4 +2230,3 @@ export async function handleVortexSecurityCommand(
 export {
   SECURITY_COMMANDS,
 };
-

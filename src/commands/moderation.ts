@@ -1,6 +1,5 @@
-
 /* =========================================================
-   🌑 DARK VORTEX — PREMIUM MODERATION ENGINE
+   🌑 DARK VORTEX — MODERATION ENGINE
    ⚡ Powered by Vortex Tech
 ========================================================= */
 
@@ -14,23 +13,16 @@ import type {
 } from "@whiskeysockets/baileys";
 
 import {
-  warningIssued,
-  warningLimitReached,
-  warningStatus,
-  commandUsage,
-  success,
-  error,
-  warning,
-  security,
-  system,
-  info,
-} from "../utils/message.js";
+  sendVortexReply,
+} from "../utils/vortex-reply.js";
 
 /* =========================================================
    DATABASE PATHS
 ========================================================= */
 
-const DATA_DIR = path.resolve("./src/data");
+const DATA_DIR = path.resolve(
+  "./src/data",
+);
 
 const WARNINGS_FILE = path.join(
   DATA_DIR,
@@ -115,10 +107,11 @@ function readJsonFile<T>(
   ensureDatabase();
 
   try {
-    const raw = fs.readFileSync(
-      filePath,
-      "utf8",
-    );
+    const raw =
+      fs.readFileSync(
+        filePath,
+        "utf8",
+      );
 
     if (!raw.trim()) {
       return fallback;
@@ -138,7 +131,11 @@ function writeJsonFile<T>(
 
   fs.writeFileSync(
     filePath,
-    JSON.stringify(data, null, 2),
+    JSON.stringify(
+      data,
+      null,
+      2,
+    ),
     "utf8",
   );
 }
@@ -215,8 +212,11 @@ function saveWarnLimits(
 export function getWarnLimit(
   jid: string,
 ): number {
-  const database = loadWarnLimits();
-  const limit = database[jid];
+  const database =
+    loadWarnLimits();
+
+  const limit =
+    database[jid];
 
   if (
     typeof limit !== "number" ||
@@ -238,14 +238,18 @@ export function setWarnLimit(
   jid: string,
   limit: number,
 ): void {
-  const database = loadWarnLimits();
+  const database =
+    loadWarnLimits();
 
-  database[jid] = Math.max(
-    0,
-    Math.floor(limit),
+  database[jid] =
+    Math.max(
+      0,
+      Math.floor(limit),
+    );
+
+  saveWarnLimits(
+    database,
   );
-
-  saveWarnLimits(database);
 }
 
 /* =========================================================
@@ -261,8 +265,14 @@ function normalizeJid(
 
   return jid
     .trim()
-    .replace(/:\d+(?=@)/, "")
-    .replace(/@c\.us$/i, "@s.whatsapp.net");
+    .replace(
+      /:\d+(?=@)/,
+      "",
+    )
+    .replace(
+      /@c\.us$/i,
+      "@s.whatsapp.net",
+    );
 }
 
 function getJidNumber(
@@ -286,8 +296,11 @@ function sameUser(
     return false;
   }
 
-  const normalizedA = normalizeJid(a);
-  const normalizedB = normalizeJid(b);
+  const normalizedA =
+    normalizeJid(a);
+
+  const normalizedB =
+    normalizeJid(b);
 
   if (
     normalizedA &&
@@ -296,8 +309,15 @@ function sameUser(
     return true;
   }
 
-  const numberA = getJidNumber(normalizedA);
-  const numberB = getJidNumber(normalizedB);
+  const numberA =
+    getJidNumber(
+      normalizedA,
+    );
+
+  const numberB =
+    getJidNumber(
+      normalizedB,
+    );
 
   return Boolean(
     numberA &&
@@ -313,11 +333,61 @@ function sameUser(
 function cleanMention(
   jid: string,
 ): string {
-  const number = getJidNumber(jid);
+  const number =
+    getJidNumber(jid);
 
   return number
     ? `@${number}`
     : "@user";
+}
+
+/* =========================================================
+   REPLY HELPERS
+========================================================= */
+
+/**
+ * Normal Dark Vortex reply.
+ */
+async function sendModerationReply(
+  sock: WASocket,
+  jid: string,
+  text: string,
+  message?: WAMessage,
+): Promise<void> {
+  await sendVortexReply(
+    sock,
+    jid,
+    text,
+    message,
+  );
+}
+
+/**
+ * Reply with real WhatsApp mentions.
+ *
+ * Mentions must be placed in the message
+ * content itself, not send options.
+ */
+async function sendModerationMentionReply(
+  sock: WASocket,
+  jid: string,
+  text: string,
+  mentionedJids: string[],
+  message?: WAMessage,
+): Promise<void> {
+  await sock.sendMessage(
+    jid,
+    {
+      text,
+      mentions:
+        mentionedJids,
+    },
+    message
+      ? {
+          quoted: message,
+        }
+      : undefined,
+  );
 }
 
 /* =========================================================
@@ -327,7 +397,9 @@ function cleanMention(
 function isGroup(
   jid: string,
 ): boolean {
-  return jid.endsWith("@g.us");
+  return jid.endsWith(
+    "@g.us",
+  );
 }
 
 function isAdmin(
@@ -335,8 +407,10 @@ function isAdmin(
     GroupMetadata["participants"][number],
 ): boolean {
   return (
-    participant.admin === "admin" ||
-    participant.admin === "superadmin"
+    participant.admin ===
+      "admin" ||
+    participant.admin ===
+      "superadmin"
   );
 }
 
@@ -345,7 +419,9 @@ async function getGroup(
   jid: string,
 ): Promise<GroupMetadata | null> {
   try {
-    return await sock.groupMetadata(jid);
+    return await sock.groupMetadata(
+      jid,
+    );
   } catch {
     return null;
   }
@@ -357,7 +433,9 @@ async function isBotAdmin(
 ): Promise<boolean> {
   try {
     const metadata =
-      await sock.groupMetadata(jid);
+      await sock.groupMetadata(
+        jid,
+      );
 
     const botJid =
       sock.user?.id || "";
@@ -391,7 +469,9 @@ async function isBotAdmin(
           }
 
           const participantNumber =
-            getJidNumber(item.id);
+            getJidNumber(
+              item.id,
+            );
 
           return Boolean(
             botNumber &&
@@ -438,11 +518,16 @@ function getReplyTarget(
       ?.stickerMessage
       ?.contextInfo;
 
-  if (!context?.quotedMessage) {
+  if (
+    !context?.quotedMessage
+  ) {
     return null;
   }
 
-  return context.participant || null;
+  return (
+    context.participant ||
+    null
+  );
 }
 
 async function requireReplyTarget(
@@ -451,24 +536,29 @@ async function requireReplyTarget(
   message: WAMessage,
 ): Promise<string | null> {
   const target =
-    getReplyTarget(message);
+    getReplyTarget(
+      message,
+    );
 
   if (!target) {
-    await sock.sendMessage(
+    await sendModerationReply(
+      sock,
       jid,
-      {
-        text: commandUsage(
-          "ban / warn",
-          "Reply to a user's message → /ban",
-          "Reply to a user's message to target them precisely.",
-        ),
-      },
+      [
+        "⚙️ Reply required.",
+        "",
+        "Reply to the user's message",
+        "you want to moderate.",
+      ].join("\n"),
+      message,
     );
 
     return null;
   }
 
-  return normalizeJid(target);
+  return normalizeJid(
+    target,
+  );
 }
 
 /* =========================================================
@@ -525,7 +615,8 @@ export function isBanned(
   jid: string,
   user: string,
 ): boolean {
-  const database = loadBans();
+  const database =
+    loadBans();
 
   const groupBans =
     database[jid] || [];
@@ -545,7 +636,8 @@ export function isBanned(
 export function getBannedUsers(
   jid: string,
 ): string[] {
-  const database = loadBans();
+  const database =
+    loadBans();
 
   return [
     ...(database[jid] || []),
@@ -556,7 +648,8 @@ function addBan(
   jid: string,
   user: string,
 ): void {
-  const database = loadBans();
+  const database =
+    loadBans();
 
   if (!database[jid]) {
     database[jid] = [];
@@ -584,14 +677,17 @@ function addBan(
     );
   }
 
-  saveBans(database);
+  saveBans(
+    database,
+  );
 }
 
 function removeBan(
   jid: string,
   user: string,
 ): boolean {
-  const database = loadBans();
+  const database =
+    loadBans();
 
   if (!database[jid]) {
     return false;
@@ -617,12 +713,15 @@ function removeBan(
     before;
 
   if (
-    database[jid].length === 0
+    database[jid].length ===
+    0
   ) {
     delete database[jid];
   }
 
-  saveBans(database);
+  saveBans(
+    database,
+  );
 
   return changed;
 }
@@ -659,7 +758,9 @@ export async function enforceBan(
 
   try {
     const metadata =
-      await sock.groupMetadata(jid);
+      await sock.groupMetadata(
+        jid,
+      );
 
     const participant =
       findParticipant(
@@ -669,7 +770,7 @@ export async function enforceBan(
 
     /*
      * User is already absent.
-     * Ban remains active in the database.
+     * Ban remains active in database.
      */
     if (!participant) {
       return true;
@@ -690,26 +791,17 @@ export async function enforceBan(
       "remove",
     );
 
-    await sock.sendMessage(
+    await sendModerationMentionReply(
+      sock,
       jid,
-      {
-        text: security(
-          "BANNED USER BLOCKED",
-          [
-            `👤 Target: ${cleanMention(
-              participant.id,
-            )}`,
-            "",
-            "🔴 Status: REMOVED",
-            "🛡️ Protection: PERMANENT BAN",
-            "",
-            "🚫 Re-entry protection remains active.",
-          ],
-        ),
-        mentions: [
+      [
+        "🚫 Banned user removed.",
+        "",
+        `${cleanMention(
           participant.id,
-        ],
-      },
+        )} attempted to rejoin.`,
+      ].join("\n"),
+      [participant.id],
     );
 
     return true;
@@ -768,7 +860,9 @@ export function resetWarnings(
     delete database[jid];
   }
 
-  saveWarnings(database);
+  saveWarnings(
+    database,
+  );
 }
 
 /* =========================================================
@@ -779,7 +873,9 @@ export async function addWarning(
   sock: WASocket,
   jid: string,
   target: string,
-  reason = "No reason provided",
+  reason =
+    "No reason provided",
+  quotedMessage?: WAMessage,
 ): Promise<void> {
   const database =
     loadWarnings();
@@ -792,12 +888,15 @@ export async function addWarning(
     normalizeJid(target);
 
   database[jid][user] =
-    (database[jid][user] || 0) + 1;
+    (database[jid][user] || 0) +
+    1;
 
   const count =
     database[jid][user];
 
-  saveWarnings(database);
+  saveWarnings(
+    database,
+  );
 
   const warnLimit =
     getWarnLimit(jid);
@@ -810,23 +909,18 @@ export async function addWarning(
   ======================================================= */
 
   if (warnLimit === 0) {
-    const response =
-      warningIssued(
-        mention,
-        count,
-        0,
-        reason,
-      ).replace(
-        "🚨 Warning limit reached.",
-        "🟢 Automatic removal: OFF.",
-      );
-
-    await sock.sendMessage(
+    await sendModerationMentionReply(
+      sock,
       jid,
-      {
-        text: response,
-        mentions: [user],
-      },
+      [
+        "⚠️ Warning issued.",
+        "",
+        `${mention}, ${reason}`,
+        `Warnings: ${count}`,
+        "Automatic removal: OFF",
+      ].join("\n"),
+      [user],
+      quotedMessage,
     );
 
     return;
@@ -836,7 +930,9 @@ export async function addWarning(
      WARNING LIMIT REACHED
   ======================================================= */
 
-  if (count >= warnLimit) {
+  if (
+    count >= warnLimit
+  ) {
     try {
       await sock.groupParticipantsUpdate(
         jid,
@@ -849,16 +945,17 @@ export async function addWarning(
         user,
       );
 
-      await sock.sendMessage(
+      await sendModerationMentionReply(
+        sock,
         jid,
-        {
-          text: warningLimitReached(
-            mention,
-            warnLimit,
-            reason,
-          ),
-          mentions: [user],
-        },
+        [
+          "👢 Member removed.",
+          "",
+          `${mention} — warning limit reached.`,
+          `Warnings: ${count}/${warnLimit}`,
+        ].join("\n"),
+        [user],
+        quotedMessage,
       );
     } catch (err) {
       console.error(
@@ -866,25 +963,19 @@ export async function addWarning(
         err,
       );
 
-      await sock.sendMessage(
+      await sendModerationMentionReply(
+        sock,
         jid,
-        {
-          text: warning(
-            "WARNING LIMIT REACHED",
-            [
-              `👤 Target: ${mention}`,
-              `⚠️ Warnings: ${count}/${warnLimit}`,
-              "",
-              `📋 Reason: ${reason}`,
-              "",
-              "❌ Automatic removal failed.",
-              "🛡️ The warning record has been retained.",
-              "",
-              "💡 Check Dark Vortex admin permissions.",
-            ],
-          ),
-          mentions: [user],
-        },
+        [
+          "⚠️ Warning limit reached.",
+          "",
+          `${mention} — ${count}/${warnLimit}`,
+          "Member removal failed.",
+          "",
+          "Check Dark Vortex admin access.",
+        ].join("\n"),
+        [user],
+        quotedMessage,
       );
     }
 
@@ -895,17 +986,17 @@ export async function addWarning(
      NORMAL WARNING
   ======================================================= */
 
-  await sock.sendMessage(
+  await sendModerationMentionReply(
+    sock,
     jid,
-    {
-      text: warningIssued(
-        mention,
-        count,
-        warnLimit,
-        reason,
-      ),
-      mentions: [user],
-    },
+    [
+      "⚠️ Warning issued.",
+      "",
+      `${mention}, ${reason}`,
+      `Warning: ${count}/${warnLimit}`,
+    ].join("\n"),
+    [user],
+    quotedMessage,
   );
 }
 
@@ -917,6 +1008,7 @@ async function handleWarnLimit(
   sock: WASocket,
   jid: string,
   args: string[],
+  message: WAMessage,
 ): Promise<void> {
   const currentLimit =
     getWarnLimit(jid);
@@ -926,48 +1018,35 @@ async function handleWarnLimit(
   ======================================================= */
 
   if (!args.length) {
-    if (currentLimit === 0) {
-      await sock.sendMessage(
+    if (
+      currentLimit === 0
+    ) {
+      await sendModerationReply(
+        sock,
         jid,
-        {
-          text: system(
-            "WARNING LIMIT",
-            [
-              "⚙️ Automatic warning removal",
-              "is currently disabled.",
-              "",
-              "📊 Current limit: OFF",
-              "🟢 Warnings can still be issued.",
-              "",
-              "⚡ Enable with:",
-              "/warnlimit 3",
-            ],
-          ),
-        },
+        [
+          "⚙️ Warning limit",
+          "",
+          "Status: OFF",
+          "Warnings remain available.",
+          "Automatic removal is disabled.",
+        ].join("\n"),
+        message,
       );
 
       return;
     }
 
-    await sock.sendMessage(
+    await sendModerationReply(
+      sock,
       jid,
-      {
-        text: system(
-          "WARNING LIMIT",
-          [
-            "🟢 Protection is active.",
-            "",
-            `📊 Current limit: ${currentLimit}`,
-            `🔴 Removal threshold: ${currentLimit} warning(s)`,
-            "",
-            "⚙️ Change limit:",
-            "/warnlimit 5",
-            "",
-            "🟢 Disable automatic removal:",
-            "/warnlimit off",
-          ],
-        ),
-      },
+      [
+        "⚙️ Warning limit",
+        "",
+        `Limit: ${currentLimit}`,
+        "Automatic removal: ON",
+      ].join("\n"),
+      message,
     );
 
     return;
@@ -981,25 +1060,36 @@ async function handleWarnLimit(
     args[0].toLowerCase() ===
     "off"
   ) {
+    if (args.length > 1) {
+      await sendModerationReply(
+        sock,
+        jid,
+        [
+          "⚙️ Usage",
+          "",
+          ".warnlimit off",
+        ].join("\n"),
+        message,
+      );
+
+      return;
+    }
+
     setWarnLimit(
       jid,
       0,
     );
 
-    await sock.sendMessage(
+    await sendModerationReply(
+      sock,
       jid,
-      {
-        text: success(
-          "WARNING LIMIT DISABLED",
-          [
-            "⚠️ Members can still receive warnings.",
-            "🟢 Automatic removal is now OFF.",
-            "",
-            "⚙️ Enable again with:",
-            "/warnlimit 3",
-          ],
-        ),
-      },
+      [
+        "⚙️ Warning limit updated.",
+        "",
+        "Status: OFF",
+        "Automatic removal: disabled",
+      ].join("\n"),
+      message,
     );
 
     return;
@@ -1009,6 +1099,22 @@ async function handleWarnLimit(
      SET NUMBER
   ======================================================= */
 
+  if (args.length > 1) {
+    await sendModerationReply(
+      sock,
+      jid,
+      [
+        "⚙️ Usage",
+        "",
+        ".warnlimit <1-100>",
+        ".warnlimit off",
+      ].join("\n"),
+      message,
+    );
+
+    return;
+  }
+
   const limit =
     Number(args[0]);
 
@@ -1017,25 +1123,17 @@ async function handleWarnLimit(
     limit < 1 ||
     limit > 100
   ) {
-    await sock.sendMessage(
+    await sendModerationReply(
+      sock,
       jid,
-      {
-        text: error(
-          "INVALID WARNING LIMIT",
-          [
-            "❌ The supplied limit is invalid.",
-            "",
-            "📊 Allowed range:",
-            "1 – 100 warnings",
-            "",
-            "📝 Examples:",
-            "/warnlimit 3",
-            "/warnlimit 5",
-            "/warnlimit 10",
-            "/warnlimit off",
-          ],
-        ),
-      },
+      [
+        "⚠️ Invalid warning limit.",
+        "",
+        "Use a number from 1 to 100.",
+        "",
+        "Example: .warnlimit 3",
+      ].join("\n"),
+      message,
     );
 
     return;
@@ -1046,19 +1144,16 @@ async function handleWarnLimit(
     limit,
   );
 
-  await sock.sendMessage(
+  await sendModerationReply(
+    sock,
     jid,
-    {
-      text: success(
-        "WARNING LIMIT UPDATED",
-        [
-          `📊 New limit: ${limit}`,
-          "",
-          `🔴 User will be removed at ${limit} warning(s).`,
-          "🛡️ Automatic enforcement: ENABLED",
-        ],
-      ),
-    },
+    [
+      "⚙️ Warning limit updated.",
+      "",
+      `Limit: ${limit}`,
+      "Automatic removal: ON",
+    ].join("\n"),
+    message,
   );
 }
 
@@ -1093,19 +1188,15 @@ async function banUser(
       target,
     )
   ) {
-    await sock.sendMessage(
+    await sendModerationReply(
+      sock,
       jid,
-      {
-        text: security(
-          "PROTECTED TARGET",
-          [
-            "🛡️ Target: DARK VORTEX BOT",
-            "",
-            "❌ Self-moderation is blocked.",
-            "The bot cannot ban itself.",
-          ],
-        ),
-      },
+      [
+        "🛡️ Action blocked.",
+        "",
+        "Dark Vortex cannot ban itself.",
+      ].join("\n"),
+      message,
     );
 
     return;
@@ -1122,19 +1213,15 @@ async function banUser(
   ------------------------------------------------------- */
 
   if (!participant) {
-    await sock.sendMessage(
+    await sendModerationReply(
+      sock,
       jid,
-      {
-        text: error(
-          "USER NOT FOUND",
-          [
-            `👤 Target: ${cleanMention(target)}`,
-            "",
-            "The replied user is not currently",
-            "a member of this group.",
-          ],
-        ),
-      },
+      [
+        "⚠️ User not found.",
+        "",
+        `${cleanMention(target)} is not currently in this group.`,
+      ].join("\n"),
+      message,
     );
 
     return;
@@ -1147,24 +1234,19 @@ async function banUser(
   if (
     isAdmin(participant)
   ) {
-    await sock.sendMessage(
+    await sendModerationMentionReply(
+      sock,
       jid,
-      {
-        text: security(
-          "ADMIN PROTECTED",
-          [
-            `👤 Target: ${cleanMention(
-              participant.id,
-            )}`,
-            "",
-            "🛡️ Administrators cannot be banned",
-            "by the moderation engine.",
-          ],
-        ),
-        mentions: [
+      [
+        "🛡️ Action blocked.",
+        "",
+        `${cleanMention(
           participant.id,
-        ],
-      },
+        )} is a group admin.`,
+        "Administrators cannot be banned.",
+      ].join("\n"),
+      [participant.id],
+      message,
     );
 
     return;
@@ -1186,27 +1268,18 @@ async function banUser(
       participant.id,
     );
 
-    await sock.sendMessage(
+    await sendModerationMentionReply(
+      sock,
       jid,
-      {
-        text: security(
-          "USER PERMANENTLY BANNED",
-          [
-            `👤 Target: ${cleanMention(
-              participant.id,
-            )}`,
-            "",
-            "🔴 Status: PERMANENTLY BANNED",
-            "🛡️ Re-entry protection: ENABLED",
-            "",
-            "🚫 If the user rejoins,",
-            "Dark Vortex will remove them automatically.",
-          ],
-        ),
-        mentions: [
+      [
+        "🚫 Member banned.",
+        "",
+        `${cleanMention(
           participant.id,
-        ],
-      },
+        )} was removed and added to the ban list.`,
+      ].join("\n"),
+      [participant.id],
+      message,
     );
   } catch (err) {
     console.error(
@@ -1214,28 +1287,19 @@ async function banUser(
       err,
     );
 
-    await sock.sendMessage(
+    await sendModerationMentionReply(
+      sock,
       jid,
-      {
-        text: error(
-          "BAN FAILED",
-          [
-            `👤 Target: ${cleanMention(
-              participant.id,
-            )}`,
-            "",
-            "❌ WhatsApp rejected the removal.",
-            "",
-            "🟢 Ban database:",
-            "NOT UPDATED",
-            "",
-            "💡 Check Dark Vortex admin permissions.",
-          ],
-        ),
-        mentions: [
+      [
+        "⚠️ Ban failed.",
+        "",
+        `${cleanMention(
           participant.id,
-        ],
-      },
+        )} could not be removed.`,
+        "Ban list was not updated.",
+      ].join("\n"),
+      [participant.id],
+      message,
     );
   }
 }
@@ -1278,24 +1342,17 @@ async function unbanUser(
       "add",
     );
 
-    await sock.sendMessage(
+    await sendModerationMentionReply(
+      sock,
       jid,
-      {
-        text: success(
-          "USER UNBANNED",
-          [
-            `👤 Target: ${cleanMention(target)}`,
-            "",
-            wasBanned
-              ? "🟢 Permanent ban removed."
-              : "ℹ️ User was not in the ban database.",
-            "",
-            "📥 Add request sent.",
-            "🛡️ Re-entry protection: CLEARED",
-          ],
-        ),
-        mentions: [target],
-      },
+      [
+        "🟢 User unbanned.",
+        "",
+        `${cleanMention(target)} — ban removed.`,
+        "Re-entry request sent.",
+      ].join("\n"),
+      [target],
+      message,
     );
   } catch (err) {
     console.error(
@@ -1303,29 +1360,19 @@ async function unbanUser(
       err,
     );
 
-    /*
-     * Preserve existing behavior:
-     * the ban record has already been removed,
-     * while WhatsApp may reject the add operation.
-     */
-    await sock.sendMessage(
+    await sendModerationMentionReply(
+      sock,
       jid,
-      {
-        text: warning(
-          "BAN REMOVED",
-          [
-            `👤 Target: ${cleanMention(target)}`,
-            "",
-            wasBanned
-              ? "🟢 Permanent ban removed."
-              : "ℹ️ User was not in the ban database.",
-            "",
-            "⚠️ WhatsApp rejected the add request.",
-            "📥 The user may need to rejoin manually.",
-          ],
-        ),
-        mentions: [target],
-      },
+      [
+        "🟢 Ban removed.",
+        "",
+        `${cleanMention(target)} — ban cleared.`,
+        wasBanned
+          ? "WhatsApp rejected the add request."
+          : "User was not in the ban database.",
+      ].join("\n"),
+      [target],
+      message,
     );
   }
 }
@@ -1337,26 +1384,21 @@ async function unbanUser(
 async function showBanned(
   sock: WASocket,
   jid: string,
+  message: WAMessage,
 ): Promise<void> {
   const banned =
     getBannedUsers(jid);
 
   if (!banned.length) {
-    await sock.sendMessage(
+    await sendModerationReply(
+      sock,
       jid,
-      {
-        text: info(
-          "BANNED USERS",
-          [
-            "🟢 Ban database is clear.",
-            "",
-            "No users are currently",
-            "under permanent ban protection.",
-            "",
-            "🛡️ Re-entry protection: INACTIVE",
-          ],
-        ),
-      },
+      [
+        "🚫 Banned users",
+        "",
+        "No users are currently banned.",
+      ].join("\n"),
+      message,
     );
 
     return;
@@ -1368,22 +1410,18 @@ async function showBanned(
         `${index + 1}. ${cleanMention(user)}`,
     );
 
-  await sock.sendMessage(
+  await sendModerationMentionReply(
+    sock,
     jid,
-    {
-      text: security(
-        "BANNED USERS",
-        [
-          `🚫 Total: ${banned.length}`,
-          "",
-          ...lines,
-          "",
-          "🛡️ Re-entry protection: ACTIVE",
-          "⚡ Banned users are monitored automatically.",
-        ],
-      ),
-      mentions: banned,
-    },
+    [
+      "🚫 Banned users",
+      "",
+      `Total: ${banned.length}`,
+      "",
+      ...lines,
+    ].join("\n"),
+    banned,
+    message,
   );
 }
 
@@ -1394,27 +1432,25 @@ async function showBanned(
 async function clearBans(
   sock: WASocket,
   jid: string,
+  message: WAMessage,
 ): Promise<void> {
   const database =
     loadBans();
 
   const count =
-    database[jid]?.length || 0;
+    database[jid]?.length ||
+    0;
 
   if (!count) {
-    await sock.sendMessage(
+    await sendModerationReply(
+      sock,
       jid,
-      {
-        text: system(
-          "CLEAR BANS",
-          [
-            "🟢 No stored bans were found.",
-            "",
-            "The ban database is already clear.",
-            "🛡️ Re-entry protection: INACTIVE",
-          ],
-        ),
-      },
+      [
+        "🚫 Ban list",
+        "",
+        "Already clear.",
+      ].join("\n"),
+      message,
     );
 
     return;
@@ -1422,25 +1458,19 @@ async function clearBans(
 
   delete database[jid];
 
-  saveBans(database);
+  saveBans(
+    database,
+  );
 
-  await sock.sendMessage(
+  await sendModerationReply(
+    sock,
     jid,
-    {
-      text: success(
-        "BANS CLEARED",
-        [
-          `🧹 Removed ${count} stored ban${
-            count === 1
-              ? ""
-              : "s"
-          }.`,
-          "",
-          "🟢 Ban database cleared.",
-          "🛡️ Re-entry protection: RESET",
-        ],
-      ),
-    },
+    [
+      "🧹 Ban list cleared.",
+      "",
+      `Removed: ${count}`,
+    ].join("\n"),
+    message,
   );
 }
 
@@ -1475,19 +1505,15 @@ async function warnUser(
       target,
     )
   ) {
-    await sock.sendMessage(
+    await sendModerationReply(
+      sock,
       jid,
-      {
-        text: security(
-          "PROTECTED TARGET",
-          [
-            "🛡️ Target: DARK VORTEX BOT",
-            "",
-            "❌ The bot cannot warn itself.",
-            "Self-moderation has been blocked.",
-          ],
-        ),
-      },
+      [
+        "🛡️ Action blocked.",
+        "",
+        "Dark Vortex cannot warn itself.",
+      ].join("\n"),
+      message,
     );
 
     return;
@@ -1504,19 +1530,15 @@ async function warnUser(
   ------------------------------------------------------- */
 
   if (!participant) {
-    await sock.sendMessage(
+    await sendModerationReply(
+      sock,
       jid,
-      {
-        text: error(
-          "USER NOT FOUND",
-          [
-            `👤 Target: ${cleanMention(target)}`,
-            "",
-            "The replied user is not currently",
-            "a member of this group.",
-          ],
-        ),
-      },
+      [
+        "⚠️ User not found.",
+        "",
+        `${cleanMention(target)} is not currently in this group.`,
+      ].join("\n"),
+      message,
     );
 
     return;
@@ -1529,23 +1551,19 @@ async function warnUser(
   if (
     isAdmin(participant)
   ) {
-    await sock.sendMessage(
+    await sendModerationMentionReply(
+      sock,
       jid,
-      {
-        text: security(
-          "ADMIN PROTECTED",
-          [
-            `👤 Target: ${cleanMention(
-              participant.id,
-            )}`,
-            "",
-            "🛡️ Administrators cannot be warned.",
-          ],
-        ),
-        mentions: [
+      [
+        "🛡️ Action blocked.",
+        "",
+        `${cleanMention(
           participant.id,
-        ],
-      },
+        )} is a group admin.`,
+        "Administrators cannot be warned.",
+      ].join("\n"),
+      [participant.id],
+      message,
     );
 
     return;
@@ -1555,6 +1573,8 @@ async function warnUser(
     sock,
     jid,
     participant.id,
+    "Manual warning issued.",
+    message,
   );
 }
 
@@ -1590,16 +1610,22 @@ async function showWarnings(
   const mention =
     cleanMention(target);
 
-  await sock.sendMessage(
+  await sendModerationMentionReply(
+    sock,
     jid,
-    {
-      text: warningStatus(
-        mention,
-        count,
-        warnLimit,
-      ),
-      mentions: [target],
-    },
+    [
+      "⚠️ Warning status",
+      "",
+      `User: ${mention}`,
+      `Warnings: ${count}`,
+      `Limit: ${
+        warnLimit === 0
+          ? "OFF"
+          : warnLimit
+      }`,
+    ].join("\n"),
+    [target],
+    message,
   );
 }
 
@@ -1634,22 +1660,16 @@ async function resetWarning(
     target,
   );
 
-  await sock.sendMessage(
+  await sendModerationMentionReply(
+    sock,
     jid,
-    {
-      text: success(
-        "WARNINGS RESET",
-        [
-          `👤 Target: ${cleanMention(target)}`,
-          "",
-          `⚠️ Previous warnings: ${previous}`,
-          "🟢 Current warnings: 0",
-          "",
-          "♻️ Warning record has been cleared.",
-        ],
-      ),
-      mentions: [target],
-    },
+    [
+      "♻️ Warnings reset.",
+      "",
+      `${cleanMention(target)} — ${previous} warning(s) cleared.`,
+    ].join("\n"),
+    [target],
+    message,
   );
 }
 
@@ -1678,7 +1698,9 @@ export async function handleModerationCommand(
     ]);
 
   if (
-    !moderationCommands.has(command)
+    !moderationCommands.has(
+      command,
+    )
   ) {
     return false;
   }
@@ -1687,23 +1709,18 @@ export async function handleModerationCommand(
      GROUP ONLY
   ======================================================= */
 
-  if (!isGroup(jid)) {
-    await sock.sendMessage(
+  if (
+    !isGroup(jid)
+  ) {
+    await sendModerationReply(
+      sock,
       jid,
-      {
-        text: error(
-          "GROUP ONLY",
-          [
-            `⚡ Command: /${command}`,
-            "",
-            "👥 This moderation command",
-            "can only be used inside a group.",
-            "",
-            "💡 Open a WhatsApp group",
-            "and try again.",
-          ],
-        ),
-      },
+      [
+        "👥 Group only.",
+        "",
+        "This moderation command must be used inside a group.",
+      ].join("\n"),
+      message,
     );
 
     return true;
@@ -1719,22 +1736,15 @@ export async function handleModerationCommand(
       jid,
     ))
   ) {
-    await sock.sendMessage(
+    await sendModerationReply(
+      sock,
       jid,
-      {
-        text: security(
-          "ADMIN ACCESS REQUIRED",
-          [
-            "🛡️ Dark Vortex must be",
-            "a group administrator.",
-            "",
-            "⚔️ Moderation action blocked.",
-            "",
-            "💡 Promote Dark Vortex to admin",
-            "and try again.",
-          ],
-        ),
-      },
+      [
+        "🛡️ Admin access required.",
+        "",
+        "Promote Dark Vortex to group admin.",
+      ].join("\n"),
+      message,
     );
 
     return true;
@@ -1751,6 +1761,7 @@ export async function handleModerationCommand(
       sock,
       jid,
       args,
+      message,
     );
 
     return true;
@@ -1767,20 +1778,15 @@ export async function handleModerationCommand(
     );
 
   if (!metadata) {
-    await sock.sendMessage(
+    await sendModerationReply(
+      sock,
       jid,
-      {
-        text: error(
-          "GROUP ACCESS ERROR",
-          [
-            "❌ Group information could not be retrieved.",
-            "",
-            "⚙️ The moderation action was not executed.",
-            "",
-            "💡 Please try again shortly.",
-          ],
-        ),
-      },
+      [
+        "⚠️ Group data unavailable.",
+        "",
+        "Try the moderation command again.",
+      ].join("\n"),
+      message,
     );
 
     return true;
@@ -1812,6 +1818,7 @@ export async function handleModerationCommand(
       await showBanned(
         sock,
         jid,
+        message,
       );
       return true;
 
@@ -1819,6 +1826,7 @@ export async function handleModerationCommand(
       await clearBans(
         sock,
         jid,
+        message,
       );
       return true;
 

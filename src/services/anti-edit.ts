@@ -4,7 +4,9 @@ import {
   proto,
 } from "@whiskeysockets/baileys";
 
-import { sendVortexReply } from "../utils/vortex-reply.js";
+import {
+  sendVortexReply,
+} from "../utils/vortex-reply.js";
 
 type AntiEditSettings = {
   enabled: boolean;
@@ -91,16 +93,17 @@ setInterval(
   10 * 60 * 1000,
 ).unref();
 
+function isGroup(
+  jid: string | undefined,
+): boolean {
+  return !!jid &&
+    jid.endsWith("@g.us");
+}
+
 function getMessageId(
   message: WAMessage,
 ): string {
   return message.key.id || "";
-}
-
-function isGroup(
-  jid: string | undefined,
-): boolean {
-  return !!jid && jid.endsWith("@g.us");
 }
 
 export function isAntiEditEnabled(
@@ -124,9 +127,12 @@ export function setAntiEdit(
     return;
   }
 
-  groupSettings.set(jid, {
-    enabled,
-  });
+  groupSettings.set(
+    jid,
+    {
+      enabled,
+    },
+  );
 }
 
 export function getAntiEditStatus(
@@ -135,6 +141,13 @@ export function getAntiEditStatus(
   return isAntiEditEnabled(jid);
 }
 
+/*
+ * Cache every incoming group message.
+ *
+ * IMPORTANT:
+ * This must run when the original message
+ * arrives, before WhatsApp edits it.
+ */
 export function rememberMessage(
   message: WAMessage,
 ): void {
@@ -148,34 +161,26 @@ export function rememberMessage(
     return;
   }
 
-  if (
-    message.key.fromMe
-  ) {
+  if (message.key.fromMe) {
     return;
   }
 
-  /*
-   * Anti-Edit is currently group-focused.
-   * Private-message originals are not cached.
-   */
   if (!isGroup(jid)) {
     return;
   }
 
-  /*
-   * Store a cloned message so later
-   * mutations do not overwrite our
-   * original copy.
-   */
   const cloned =
     JSON.parse(
       JSON.stringify(message),
     ) as WAMessage;
 
-  originalMessages.set(id, {
-    message: cloned,
-    storedAt: Date.now(),
-  });
+  originalMessages.set(
+    id,
+    {
+      message: cloned,
+      storedAt: Date.now(),
+    },
+  );
 
   cleanup();
 }
@@ -221,48 +226,46 @@ function extractText(
     return "";
   }
 
-  if (
-    content.conversation
-  ) {
+  if (content.conversation) {
     return content.conversation;
   }
 
   if (
-    content.extendedTextMessage
-      ?.text
+    content.extendedTextMessage?.text
   ) {
     return (
-      content.extendedTextMessage
+      content
+        .extendedTextMessage
         .text
     );
   }
 
   if (
-    content.imageMessage
-      ?.caption
+    content.imageMessage?.caption
   ) {
     return (
-      content.imageMessage
+      content
+        .imageMessage
         .caption
     );
   }
 
   if (
-    content.videoMessage
-      ?.caption
+    content.videoMessage?.caption
   ) {
     return (
-      content.videoMessage
+      content
+        .videoMessage
         .caption
     );
   }
 
   if (
-    content.documentMessage
-      ?.caption
+    content.documentMessage?.caption
   ) {
     return (
-      content.documentMessage
+      content
+        .documentMessage
         .caption
     );
   }
@@ -281,44 +284,29 @@ function getContentType(
   }
 
   if (
-    content.conversation
-  ) {
-    return "text";
-  }
-
-  if (
+    content.conversation ||
     content.extendedTextMessage
   ) {
     return "text";
   }
 
-  if (
-    content.imageMessage
-  ) {
+  if (content.imageMessage) {
     return "image";
   }
 
-  if (
-    content.videoMessage
-  ) {
+  if (content.videoMessage) {
     return "video";
   }
 
-  if (
-    content.audioMessage
-  ) {
+  if (content.audioMessage) {
     return "audio";
   }
 
-  if (
-    content.documentMessage
-  ) {
+  if (content.documentMessage) {
     return "document";
   }
 
-  if (
-    content.stickerMessage
-  ) {
+  if (content.stickerMessage) {
     return "sticker";
   }
 
@@ -343,25 +331,22 @@ function buildAlert(
   const type =
     getContentType(original);
 
-  const lines: string[] = [
-    "╭━━━〔 🌑 ᴅᴀʀᴋ ᴠᴏʀᴛᴇx 〕━━━╮",
-    "┃",
-    "┃  ✏️ MESSAGE EDITED",
-    "┃",
-    `┃  👤 ${name}`,
-    `┃  📦 Type: ${type}`,
-    "┃",
-    "┃  📝 ORIGINAL MESSAGE",
-    "┃",
+  const lines = [
+    "✏️ Message edited.",
+    "",
+    `👤 ${name}`,
+    `Type: ${type}`,
+    "",
+    "Original:",
   ];
 
   if (originalText) {
     lines.push(
-      `┃  ${originalText}`,
+      originalText,
     );
   } else {
     lines.push(
-      "┃  [Original media message]",
+      "[Original media message]",
     );
   }
 
@@ -370,80 +355,112 @@ function buildAlert(
     editedText !== originalText
   ) {
     lines.push(
-      "┃",
-      "┃  🔄 NEW MESSAGE",
-      "┃",
-      `┃  ${editedText}`,
+      "",
+      "New:",
+      editedText,
     );
   }
-
-  lines.push(
-    "┃",
-    "╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯",
-  );
 
   return lines.join("\n");
 }
 
-function extractEditedMessage(
-  update: any,
-): WAMessage | undefined {
-  /*
-   * Modern Baileys can expose the
-   * decrypted edited message directly
-   * through update.message.
-   */
-  if (
-    update?.message
-  ) {
-    return {
-      key: update.key,
-      message: update.message,
-      pushName:
-        update.pushName,
-      messageTimestamp:
-        update.messageTimestamp,
-    } as WAMessage;
-  }
+/*
+ * Baileys can expose the edit payload
+ * directly or inside update.update.
+ */
+function normalizeUpdate(
+  raw: any,
+): {
+  key: any;
+  message: any;
+  updateTimestamp?: number;
+} {
+  const nested =
+    raw?.update;
 
-  return undefined;
+  return {
+    key:
+      raw?.key ??
+      nested?.key,
+
+    message:
+      raw?.message ??
+      nested?.message,
+
+    updateTimestamp:
+      raw?.updateTimestamp ??
+      nested?.updateTimestamp ??
+      raw?.messageTimestamp ??
+      nested?.messageTimestamp,
+  };
+}
+
+function getProtocolEdit(
+  message: any,
+): proto.Message.IProtocolMessage | undefined {
+  return message
+    ?.protocolMessage;
 }
 
 function getEditTargetId(
-  update: any,
+  protocol:
+    | proto.Message.IProtocolMessage
+    | undefined,
 ): string | undefined {
-  const protocol =
-    update?.message
-      ?.protocolMessage;
-
-  if (!protocol) {
-    return undefined;
-  }
-
-  /*
-   * WhatsApp's edit protocol references
-   * the original message through key.
-   */
   return (
-    protocol.key?.id ||
-    protocol.key?.messageId ||
+    protocol?.key?.id ||
     undefined
   );
 }
 
-function getProtocolEdit(
-  update: any,
-): proto.Message.IProtocolMessage | undefined {
-  return update?.message
-    ?.protocolMessage;
+function isMessageEdit(
+  protocol:
+    | proto.Message.IProtocolMessage
+    | undefined,
+): boolean {
+  if (!protocol) {
+    return false;
+  }
+
+  const type =
+    protocol.type;
+
+  return (
+    type ===
+      proto.Message
+        .ProtocolMessage
+        .Type.MESSAGE_EDIT ||
+    Number(type) === 14 ||
+    String(type) ===
+      "MESSAGE_EDIT"
+  );
+}
+
+function extractEditedMessage(
+  key: any,
+  message: any,
+): WAMessage | undefined {
+  if (!message) {
+    return undefined;
+  }
+
+  return {
+    key,
+    message,
+  } as WAMessage;
 }
 
 export async function processAntiEditUpdate(
   sock: WASocket,
-  update: any,
+  rawUpdate: any,
 ): Promise<boolean> {
+  const update =
+    normalizeUpdate(
+      rawUpdate,
+    );
+
   const jid =
-    update?.key?.remoteJid;
+    update.key?.remoteJid;
 
   if (!jid || !isGroup(jid)) {
     return false;
@@ -453,78 +470,63 @@ export async function processAntiEditUpdate(
     return false;
   }
 
-  /*
-   * Never process Dark Vortex's own
-   * outgoing messages.
-   */
-  if (update?.key?.fromMe) {
+  if (update.key?.fromMe) {
     return false;
   }
 
   const protocol =
-    getProtocolEdit(update);
+    getProtocolEdit(
+      update.message,
+    );
 
-  const protocolType =
-    protocol?.type;
-
-  /*
-   * WhatsApp/Baileys represents an edit
-   * as MESSAGE_EDIT.
-   *
-   * We also accept the numeric/string form
-   * for compatibility with different builds.
-   */
-  const isEdit =
-    Number(protocolType) ===
-      proto.Message.ProtocolMessage.Type.MESSAGE_EDIT ||
-    String(protocolType) ===
-      "MESSAGE_EDIT" ||
-    String(protocolType) === "14";
-
-  if (!isEdit) {
+  if (!isMessageEdit(protocol)) {
     return false;
   }
 
   const originalId =
-    getEditTargetId(update);
+    getEditTargetId(
+      protocol,
+    );
 
   if (!originalId) {
     return false;
   }
 
   const original =
-    getOriginal(originalId);
+    getOriginal(
+      originalId,
+    );
 
   if (!original) {
-    /*
-     * We cannot reconstruct an original
-     * message that was never cached.
-     */
     return false;
   }
 
-  const editEventId =
-    `${jid}:${originalId}:${String(
-      update?.updateTimestamp ??
-        update?.messageTimestamp ??
+  const eventId =
+    [
+      jid,
+      originalId,
+      String(
+        update.updateTimestamp ??
         Date.now(),
-    )}`;
+      ),
+    ].join(":");
 
   if (
-    processedEdits.has(
-      editEventId,
-    )
+    processedEdits.has(eventId)
   ) {
     return true;
   }
 
   processedEdits.set(
-    editEventId,
+    eventId,
     Date.now(),
   );
 
   const edited =
-    extractEditedMessage(update);
+    extractEditedMessage(
+      update.key,
+      update.message,
+    );
 
   const alert =
     buildAlert(
@@ -540,10 +542,6 @@ export async function processAntiEditUpdate(
       original,
     );
   } catch {
-    /*
-     * If quoting the original fails,
-     * send the alert without a quote.
-     */
     await sendVortexReply(
       sock,
       jid,

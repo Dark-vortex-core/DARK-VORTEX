@@ -7,41 +7,28 @@ import type {
 } from "@whiskeysockets/baileys";
 
 import {
-  automationStatus,
-  commandUsage,
-  success,
-  error,
-  system,
-  info,
-} from "../utils/message.js";
-
-import {
   sendVortexReply,
 } from "../utils/vortex-reply.js";
 
-/* ============================================================
-   🌑 DARK VORTEX — PREMIUM AUTOMATION SYSTEM
+// ============================================================
+// 🌑 DARK VORTEX — AUTOMATION SYSTEM
+//
+// Features:
+// • Welcome
+// • Goodbye
+// • Autoreply
+// • Custom welcome messages
+// • Custom goodbye messages
+//
+// Variables:
+// • @user
+// • {user}
+// • {group}
+// ============================================================
 
-   Features:
-
-   👋 Welcome
-   👋 Goodbye
-   🤖 Autoreply
-   📝 Custom welcome messages
-   📝 Custom goodbye messages
-
-   Variables:
-
-   @user
-   {user}
-   {group}
-
-   ⚡ Powered by Vortex Tech
-============================================================ */
-
-/* ============================================================
-   STORAGE
-============================================================ */
+// ============================================================
+// STORAGE
+// ============================================================
 
 const DATA_DIR = path.join(
   process.cwd(),
@@ -54,9 +41,9 @@ const DATA_FILE = path.join(
   "automation.json",
 );
 
-/* ============================================================
-   TYPES
-============================================================ */
+// ============================================================
+// TYPES
+// ============================================================
 
 export interface AutomationSettings {
   welcome: boolean;
@@ -69,33 +56,43 @@ export interface AutomationSettings {
 type AutomationStore =
   Record<string, AutomationSettings>;
 
-/* ============================================================
-   DEFAULT SETTINGS
-============================================================ */
+// ============================================================
+// DEFAULT SETTINGS
+// ============================================================
 
 const DEFAULT_SETTINGS: AutomationSettings = {
   welcome: false,
   goodbye: false,
+
   welcomeMessage:
     "👋 Welcome @user to *{group}*!\n\n🌑 Dark Vortex is protecting this group.",
+
   goodbyeMessage:
     "👋 Goodbye @user!\n\n🌑 Dark Vortex wishes you the best.",
+
   autoreply: false,
 };
 
-/* ============================================================
-   STORAGE HELPERS
-============================================================ */
+// ============================================================
+// STORAGE HELPERS
+// ============================================================
 
 function ensureDataFile(): void {
-  fs.mkdirSync(DATA_DIR, {
-    recursive: true,
-  });
+  fs.mkdirSync(
+    DATA_DIR,
+    {
+      recursive: true,
+    },
+  );
 
   if (!fs.existsSync(DATA_FILE)) {
     fs.writeFileSync(
       DATA_FILE,
-      JSON.stringify({}, null, 2),
+      JSON.stringify(
+        {},
+        null,
+        2,
+      ),
       "utf8",
     );
   }
@@ -105,13 +102,34 @@ function loadData(): AutomationStore {
   ensureDataFile();
 
   try {
-    return JSON.parse(
+    const raw =
       fs.readFileSync(
         DATA_FILE,
         "utf8",
-      ),
-    ) as AutomationStore;
-  } catch {
+      );
+
+    if (!raw.trim()) {
+      return {};
+    }
+
+    const parsed =
+      JSON.parse(raw);
+
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      Array.isArray(parsed)
+    ) {
+      return {};
+    }
+
+    return parsed as AutomationStore;
+  } catch (err) {
+    console.error(
+      "Dark Vortex automation load error:",
+      err,
+    );
+
     return {};
   }
 }
@@ -123,7 +141,11 @@ function saveData(
 
   fs.writeFileSync(
     DATA_FILE,
-    JSON.stringify(data, null, 2),
+    JSON.stringify(
+      data,
+      null,
+      2,
+    ),
     "utf8",
   );
 }
@@ -131,7 +153,8 @@ function saveData(
 export function getAutomationSettings(
   jid: string,
 ): AutomationSettings {
-  const data = loadData();
+  const data =
+    loadData();
 
   return {
     ...DEFAULT_SETTINGS,
@@ -143,10 +166,13 @@ function updateSettings(
   jid: string,
   patch: Partial<AutomationSettings>,
 ): AutomationSettings {
-  const data = loadData();
+  const data =
+    loadData();
 
   const current =
-    getAutomationSettings(jid);
+    getAutomationSettings(
+      jid,
+    );
 
   const updated: AutomationSettings = {
     ...current,
@@ -160,9 +186,9 @@ function updateSettings(
   return updated;
 }
 
-/* ============================================================
-   VARIABLE REPLACEMENT
-============================================================ */
+// ============================================================
+// VARIABLE REPLACEMENT
+// ============================================================
 
 function replaceVariables(
   message: string,
@@ -173,14 +199,23 @@ function replaceVariables(
     `@${user.split("@")[0]}`;
 
   return message
-    .replace(/@user/g, userMention)
-    .replace(/\{user\}/gi, userMention)
-    .replace(/\{group\}/gi, group);
+    .replace(
+      /@user/g,
+      userMention,
+    )
+    .replace(
+      /\{user\}/gi,
+      userMention,
+    )
+    .replace(
+      /\{group\}/gi,
+      group,
+    );
 }
 
-/* ============================================================
-   WELCOME
-============================================================ */
+// ============================================================
+// WELCOME
+// ============================================================
 
 export async function sendWelcome(
   sock: WASocket,
@@ -189,17 +224,22 @@ export async function sendWelcome(
   _groupName?: string,
 ): Promise<void> {
   const settings =
-    getAutomationSettings(jid);
+    getAutomationSettings(
+      jid,
+    );
 
   if (!settings.welcome) {
     return;
   }
 
-  let groupName = "this group";
+  let groupName =
+    "this group";
 
   try {
     const metadata =
-      await sock.groupMetadata(jid);
+      await sock.groupMetadata(
+        jid,
+      );
 
     groupName =
       metadata.subject ||
@@ -226,9 +266,9 @@ export async function sendWelcome(
   );
 }
 
-/* ============================================================
-   GOODBYE
-============================================================ */
+// ============================================================
+// GOODBYE
+// ============================================================
 
 export async function sendGoodbye(
   sock: WASocket,
@@ -237,17 +277,22 @@ export async function sendGoodbye(
   _groupName?: string,
 ): Promise<void> {
   const settings =
-    getAutomationSettings(jid);
+    getAutomationSettings(
+      jid,
+    );
 
   if (!settings.goodbye) {
     return;
   }
 
-  let groupName = "this group";
+  let groupName =
+    "this group";
 
   try {
     const metadata =
-      await sock.groupMetadata(jid);
+      await sock.groupMetadata(
+        jid,
+      );
 
     groupName =
       metadata.subject ||
@@ -274,9 +319,9 @@ export async function sendGoodbye(
   );
 }
 
-/* ============================================================
-   AUTOREPLY COMMAND
-============================================================ */
+// ============================================================
+// AUTOREPLY COMMAND
+// ============================================================
 
 async function handleAutoreply(
   sock: WASocket,
@@ -284,68 +329,68 @@ async function handleAutoreply(
   args: string[],
   quotedMessage?: WAMessage,
 ): Promise<boolean> {
-
-  /* ==========================================================
-     GROUP ONLY
-  ========================================================== */
-
-  if (!jid.endsWith("@g.us")) {
-    await sendVortexReply(
+  const reply = async (
+    text: string,
+  ): Promise<WAMessage | undefined> => {
+    return await sendVortexReply(
       sock,
       jid,
-      error(
-        "GROUP ONLY",
-        [
-          "🤖 Autoreply settings",
-          "can only be managed",
-          "inside a WhatsApp group.",
-          "",
-          "💡 Open a group and",
-          "try again.",
-        ],
-      ),
+      text,
       quotedMessage,
+    );
+  };
+
+  // ----------------------------------------------------------
+  // GROUP ONLY
+  // ----------------------------------------------------------
+
+  if (!jid.endsWith("@g.us")) {
+    await reply(
+      [
+        "⚠️ Group only.",
+        "",
+        "Autoreply can only be managed inside a group.",
+      ].join("\n"),
     );
 
     return true;
   }
 
-  /* ==========================================================
-     GROUP METADATA
-  ========================================================== */
+  // ----------------------------------------------------------
+  // GROUP METADATA
+  // ----------------------------------------------------------
 
-  let metadata: any;
+  let metadata:
+    Awaited<
+      ReturnType<WASocket["groupMetadata"]>
+    >;
 
   try {
     metadata =
-      await sock.groupMetadata(jid);
+      await sock.groupMetadata(
+        jid,
+      );
   } catch (err) {
     console.error(
       "Autoreply metadata error:",
       err,
     );
 
-    await sendVortexReply(
-      sock,
-      jid,
-      error(
-        "GROUP DATA ERROR",
-        [
-          "Unable to read group",
-          "information.",
-          "",
-          "💡 Try again in a moment.",
-        ],
-      ),
-      quotedMessage,
+    await reply(
+      [
+        "❌ Group data unavailable.",
+        "",
+        "Unable to read group information.",
+        "Try again in a moment.",
+      ].join("\n"),
     );
 
     return true;
   }
 
-  /* ==========================================================
-     BOT ADMIN
-  ========================================================== */
+  // ----------------------------------------------------------
+  // BOT ADMIN
+  // ----------------------------------------------------------
 
   const botJid =
     sock.user?.id || "";
@@ -355,7 +400,7 @@ async function handleAutoreply(
 
   const botParticipant =
     metadata.participants.find(
-      (participant: any) =>
+      (participant) =>
         participant.id === botJid ||
         participant.id === botLid,
     );
@@ -365,86 +410,58 @@ async function handleAutoreply(
     botParticipant?.admin === "superadmin";
 
   if (!botIsAdmin) {
-    await sendVortexReply(
-      sock,
-      jid,
-      error(
-        "ADMIN ACCESS REQUIRED",
-        [
-          "🛡️ Dark Vortex must be",
-          "a group administrator",
-          "to manage autoreply.",
-          "",
-          "💡 Promote Dark Vortex",
-          "to admin and try again.",
-        ],
-      ),
-      quotedMessage,
+    await reply(
+      [
+        "🛡️ Bot admin required.",
+        "",
+        "Dark Vortex must be a group administrator",
+        "to manage autoreply.",
+      ].join("\n"),
     );
 
     return true;
   }
 
   const settings =
-    getAutomationSettings(jid);
+    getAutomationSettings(
+      jid,
+    );
 
   const value =
-    args[0]?.toLowerCase();
+    args[0]
+      ?.trim()
+      .toLowerCase();
 
-  /* ==========================================================
-     STATUS
-  ========================================================== */
+  // ----------------------------------------------------------
+  // STATUS
+  // ----------------------------------------------------------
 
   if (
     !value ||
     value === "status"
   ) {
-    await sendVortexReply(
-      sock,
-      jid,
-      system(
-        "AUTOMATION CONTROL",
-        [
-          `👋 Welcome: ${
-            settings.welcome
-              ? "🟢 ON"
-              : "🔴 OFF"
-          }`,
-          `👋 Goodbye: ${
-            settings.goodbye
-              ? "🟢 ON"
-              : "🔴 OFF"
-          }`,
-          `🤖 Autoreply: ${
-            settings.autoreply
-              ? "🟢 ON"
-              : "🔴 OFF"
-          }`,
-          "",
-          "🤖 AUTOREPLY",
-          `Status: ${
-            settings.autoreply
-              ? "🟢 ENABLED"
-              : "🔴 DISABLED"
-          }`,
-          "",
-          "💡 Use",
-          `${
-            args.length === 0
-              ? "/autoreply on"
-              : "/autoreply <on|off>"
-          }`,
-        ],
-      ),
-      quotedMessage,
+    await reply(
+      [
+        "🤖 Autoreply",
+        "",
+        `Status: ${
+          settings.autoreply
+            ? "🟢 Enabled"
+            : "🔴 Disabled"
+        }`,
+        "",
+        "Usage:",
+        "/autoreply on",
+        "/autoreply off",
+      ].join("\n"),
     );
 
     return true;
   }
 
-  /* ==========================================================
-     ON
-  ========================================================== */
+  // ----------------------------------------------------------
+  // ON
+  // ----------------------------------------------------------
 
   if (value === "on") {
     updateSettings(
@@ -454,31 +471,20 @@ async function handleAutoreply(
       },
     );
 
-    await sendVortexReply(
-      sock,
-      jid,
-      success(
-        "AUTOREPLY ENABLED",
-        [
-          "🤖 Dark Vortex autoreply",
-          "is now active.",
-          "",
-          "⚡ Custom trigger responses",
-          "will be handled by the",
-          "trigger system.",
-          "",
-          "🟢 Status: ACTIVE",
-        ],
-      ),
-      quotedMessage,
+    await reply(
+      [
+        "🤖 Autoreply enabled.",
+        "",
+        "Trigger responses are now active.",
+      ].join("\n"),
     );
 
     return true;
   }
 
-  /* ==========================================================
-     OFF
-  ========================================================== */
+  // ----------------------------------------------------------
+  // OFF
+  // ----------------------------------------------------------
 
   if (value === "off") {
     updateSettings(
@@ -488,49 +494,38 @@ async function handleAutoreply(
       },
     );
 
-    await sendVortexReply(
-      sock,
-      jid,
-      success(
-        "AUTOREPLY DISABLED",
-        [
-          "🤖 Dark Vortex will no",
-          "longer process automatic",
-          "replies.",
-          "",
-          "🔴 Status: INACTIVE",
-        ],
-      ),
-      quotedMessage,
+    await reply(
+      [
+        "🤖 Autoreply disabled.",
+        "",
+        "Automatic replies are now inactive.",
+      ].join("\n"),
     );
 
     return true;
   }
 
-  /* ==========================================================
-     INVALID
-  ========================================================== */
+  // ----------------------------------------------------------
+  // INVALID
+  // ----------------------------------------------------------
 
-  await sendVortexReply(
-    sock,
-    jid,
-    commandUsage(
-      "autoreply",
+  await reply(
+    [
+      "❌ Invalid option.",
+      "",
+      "Use:",
       "/autoreply on",
-      [
-        "/autoreply off",
-        "/autoreply status",
-      ].join("\n"),
-    ),
-    quotedMessage,
+      "/autoreply off",
+      "/autoreply status",
+    ].join("\n"),
   );
 
   return true;
 }
 
-/* ============================================================
-   AUTOMATION COMMAND HANDLER
-============================================================ */
+// ============================================================
+// AUTOMATION COMMAND HANDLER
+// ============================================================
 
 export async function handleAutomationCommand(
   sock: WASocket,
@@ -539,10 +534,20 @@ export async function handleAutomationCommand(
   args: string[],
   quotedMessage?: WAMessage,
 ): Promise<boolean> {
+  const reply = async (
+    text: string,
+  ): Promise<WAMessage | undefined> => {
+    return await sendVortexReply(
+      sock,
+      jid,
+      text,
+      quotedMessage,
+    );
+  };
 
-  /* ==========================================================
-     AUTOREPLY
-  ========================================================== */
+  // ----------------------------------------------------------
+  // AUTOREPLY
+  // ----------------------------------------------------------
 
   if (command === "autoreply") {
     return handleAutoreply(
@@ -553,38 +558,39 @@ export async function handleAutomationCommand(
     );
   }
 
-  /* ==========================================================
-     WELCOME
-  ========================================================== */
+  // ----------------------------------------------------------
+  // WELCOME
+  // ----------------------------------------------------------
 
   if (command === "welcome") {
     const value =
-      args[0]?.toLowerCase();
+      args[0]
+        ?.trim()
+        .toLowerCase();
 
     const settings =
-      getAutomationSettings(jid);
+      getAutomationSettings(
+        jid,
+      );
 
     if (
       value !== "on" &&
       value !== "off"
     ) {
-      await sendVortexReply(
-        sock,
-        jid,
-        commandUsage(
-          "welcome",
+      await reply(
+        [
+          "👋 Welcome automation",
+          "",
+          `Status: ${
+            settings.welcome
+              ? "🟢 Enabled"
+              : "🔴 Disabled"
+          }`,
+          "",
+          "Usage:",
           "/welcome on",
-          [
-            "/welcome off",
-            "",
-            `Current status: ${
-              settings.welcome
-                ? "🟢 Enabled"
-                : "🔴 Disabled"
-            }`,
-          ].join("\n"),
-        ),
-        quotedMessage,
+          "/welcome off",
+        ].join("\n"),
       );
 
       return true;
@@ -600,69 +606,54 @@ export async function handleAutomationCommand(
       },
     );
 
-    await sendVortexReply(
-      sock,
-      jid,
-      success(
+    await reply(
+      [
         enabled
-          ? "WELCOME ENABLED"
-          : "WELCOME DISABLED",
-        [
-          `👋 Status: ${
-            enabled
-              ? "🟢 ENABLED"
-              : "🔴 DISABLED"
-          }`,
-          "",
-          ...(enabled
-            ? [
-                "New members will receive",
-                "the configured welcome message.",
-              ]
-            : [
-                "Welcome automation is now",
-                "disabled.",
-              ]),
-        ],
-      ),
-      quotedMessage,
+          ? "👋 Welcome enabled."
+          : "👋 Welcome disabled.",
+        "",
+        enabled
+          ? "New members will receive the configured welcome message."
+          : "Welcome automation is now inactive.",
+      ].join("\n"),
     );
 
     return true;
   }
 
-  /* ==========================================================
-     GOODBYE
-  ========================================================== */
+  // ----------------------------------------------------------
+  // GOODBYE
+  // ----------------------------------------------------------
 
   if (command === "goodbye") {
     const value =
-      args[0]?.toLowerCase();
+      args[0]
+        ?.trim()
+        .toLowerCase();
 
     const settings =
-      getAutomationSettings(jid);
+      getAutomationSettings(
+        jid,
+      );
 
     if (
       value !== "on" &&
       value !== "off"
     ) {
-      await sendVortexReply(
-        sock,
-        jid,
-        commandUsage(
-          "goodbye",
+      await reply(
+        [
+          "👋 Goodbye automation",
+          "",
+          `Status: ${
+            settings.goodbye
+              ? "🟢 Enabled"
+              : "🔴 Disabled"
+          }`,
+          "",
+          "Usage:",
           "/goodbye on",
-          [
-            "/goodbye off",
-            "",
-            `Current status: ${
-              settings.goodbye
-                ? "🟢 Enabled"
-                : "🔴 Disabled"
-            }`,
-          ].join("\n"),
-        ),
-        quotedMessage,
+          "/goodbye off",
+        ].join("\n"),
       );
 
       return true;
@@ -678,64 +669,41 @@ export async function handleAutomationCommand(
       },
     );
 
-    await sendVortexReply(
-      sock,
-      jid,
-      success(
+    await reply(
+      [
         enabled
-          ? "GOODBYE ENABLED"
-          : "GOODBYE DISABLED",
-        [
-          `👋 Status: ${
-            enabled
-              ? "🟢 ENABLED"
-              : "🔴 DISABLED"
-          }`,
-          "",
-          ...(enabled
-            ? [
-                "Members leaving the group",
-                "will receive the goodbye message.",
-              ]
-            : [
-                "Goodbye automation is now",
-                "disabled.",
-              ]),
-        ],
-      ),
-      quotedMessage,
+          ? "👋 Goodbye enabled."
+          : "👋 Goodbye disabled.",
+        "",
+        enabled
+          ? "Members leaving the group will receive the configured goodbye message."
+          : "Goodbye automation is now inactive.",
+      ].join("\n"),
     );
 
     return true;
   }
 
-  /* ==========================================================
-     SET WELCOME
-  ========================================================== */
+  // ----------------------------------------------------------
+  // SET WELCOME
+  // ----------------------------------------------------------
 
   if (command === "setwelcome") {
     const message =
       args.join(" ").trim();
 
     if (!message) {
-      await sendVortexReply(
-        sock,
-        jid,
-        commandUsage(
-          "setwelcome",
+      await reply(
+        [
+          "📝 Set welcome message",
+          "",
+          "Usage:",
           "/setwelcome Welcome @user to {group}!",
-          [
-            "",
-            "VARIABLES",
-            "👤 @user",
-            "👤 {user}",
-            "👥 {group}",
-            "",
-            "💡 Example",
-            "/setwelcome 👋 Welcome @user to {group}!",
-          ].join("\n"),
-        ),
-        quotedMessage,
+          "",
+          "Variables:",
+          "@user / {user}",
+          "{group}",
+        ].join("\n"),
       );
 
       return true;
@@ -744,62 +712,46 @@ export async function handleAutomationCommand(
     updateSettings(
       jid,
       {
-        welcomeMessage: message,
+        welcomeMessage:
+          message,
       },
     );
 
-    await sendVortexReply(
-      sock,
-      jid,
-      success(
-        "WELCOME MESSAGE SAVED",
-        [
-          "👋 Your custom welcome",
-          "message has been saved.",
-          "",
-          "AVAILABLE VARIABLES",
-          "👤 @user / {user}",
-          "👥 {group}",
-          "",
-          "🟢 Configuration updated.",
-          "",
-          "💡 Enable it with",
-          "/welcome on",
-        ],
-      ),
-      quotedMessage,
+    await reply(
+      [
+        "✅ Welcome message saved.",
+        "",
+        "Variables:",
+        "@user / {user}",
+        "{group}",
+        "",
+        "Enable with /welcome on",
+      ].join("\n"),
     );
 
     return true;
   }
 
-  /* ==========================================================
-     SET GOODBYE
-  ========================================================== */
+  // ----------------------------------------------------------
+  // SET GOODBYE
+  // ----------------------------------------------------------
 
   if (command === "setgoodbye") {
     const message =
       args.join(" ").trim();
 
     if (!message) {
-      await sendVortexReply(
-        sock,
-        jid,
-        commandUsage(
-          "setgoodbye",
+      await reply(
+        [
+          "📝 Set goodbye message",
+          "",
+          "Usage:",
           "/setgoodbye Goodbye @user!",
-          [
-            "",
-            "VARIABLES",
-            "👤 @user",
-            "👤 {user}",
-            "👥 {group}",
-            "",
-            "💡 Example",
-            "/setgoodbye 👋 Goodbye @user!",
-          ].join("\n"),
-        ),
-        quotedMessage,
+          "",
+          "Variables:",
+          "@user / {user}",
+          "{group}",
+        ].join("\n"),
       );
 
       return true;
@@ -808,72 +760,66 @@ export async function handleAutomationCommand(
     updateSettings(
       jid,
       {
-        goodbyeMessage: message,
+        goodbyeMessage:
+          message,
       },
     );
 
-    await sendVortexReply(
-      sock,
-      jid,
-      success(
-        "GOODBYE MESSAGE SAVED",
-        [
-          "👋 Your custom goodbye",
-          "message has been saved.",
-          "",
-          "AVAILABLE VARIABLES",
-          "👤 @user / {user}",
-          "👥 {group}",
-          "",
-          "🟢 Configuration updated.",
-          "",
-          "💡 Enable it with",
-          "/goodbye on",
-        ],
-      ),
-      quotedMessage,
+    await reply(
+      [
+        "✅ Goodbye message saved.",
+        "",
+        "Variables:",
+        "@user / {user}",
+        "{group}",
+        "",
+        "Enable with /goodbye on",
+      ].join("\n"),
     );
 
     return true;
   }
 
-  /* ==========================================================
-     AUTOMATION STATUS
-  ========================================================== */
+  // ----------------------------------------------------------
+  // AUTOMATION STATUS
+  // ----------------------------------------------------------
 
   if (command === "automation") {
     const settings =
-      getAutomationSettings(jid);
+      getAutomationSettings(
+        jid,
+      );
 
-    await sendVortexReply(
-      sock,
-      jid,
-      automationStatus(
-        settings.welcome,
-        settings.goodbye,
-        settings.autoreply,
-      ) +
-        "\n\n" +
-        info(
-          "CONFIGURATION",
-          [
-            "📝 WELCOME MESSAGE",
-            settings.welcomeMessage,
-            "",
-            "📝 GOODBYE MESSAGE",
-            settings.goodbyeMessage,
-            "",
-            "⚙️ Use the commands below",
-            "to modify automation.",
-            "",
-            "👋 /welcome on|off",
-            "👋 /goodbye on|off",
-            "🤖 /autoreply on|off",
-            "📝 /setwelcome <message>",
-            "📝 /setgoodbye <message>",
-          ],
-        ),
-      quotedMessage,
+    await reply(
+      [
+        "⚙️ Automation",
+        "",
+        `Welcome: ${
+          settings.welcome
+            ? "🟢 ON"
+            : "🔴 OFF"
+        }`,
+
+        `Goodbye: ${
+          settings.goodbye
+            ? "🟢 ON"
+            : "🔴 OFF"
+        }`,
+
+        `Autoreply: ${
+          settings.autoreply
+            ? "🟢 ON"
+            : "🔴 OFF"
+        }`,
+
+        "",
+        "Commands:",
+        "/welcome on|off",
+        "/goodbye on|off",
+        "/autoreply on|off",
+        "/setwelcome <message>",
+        "/setgoodbye <message>",
+      ].join("\n"),
     );
 
     return true;

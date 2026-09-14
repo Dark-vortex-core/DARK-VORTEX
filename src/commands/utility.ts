@@ -4,17 +4,15 @@ import type {
 } from "@whiskeysockets/baileys";
 
 import {
-  error,
-  warning,
-  commandUsage,
-} from "../utils/message.js";
+  sendVortexReply,
+} from "../utils/vortex-reply.js";
 
 // =========================================================
 // REPLIED MESSAGE
 // =========================================================
 
 function getQuotedKey(
-  message: WAMessage
+  message: WAMessage,
 ): WAMessage["key"] | null {
 
   const context =
@@ -51,7 +49,7 @@ function getQuotedKey(
     fromMe:
       Boolean(
         context.participant ===
-        message.key.remoteJid
+        message.key.remoteJid,
       ),
 
     id:
@@ -69,28 +67,25 @@ function getQuotedKey(
 async function deleteRepliedMessage(
   sock: WASocket,
   jid: string,
-  message: WAMessage
+  message: WAMessage,
 ): Promise<void> {
 
   const quotedKey =
     getQuotedKey(message);
 
   if (!quotedKey) {
-    await sock.sendMessage(
+    await sendVortexReply(
+      sock,
       jid,
-      {
-        text:
-          warning(
-            "REPLY REQUIRED",
-            [
-              "💬 Reply to the message",
-              "you want to delete.",
-              "",
-              "📝 Example:",
-              "Reply to a message → /clear",
-            ]
-          ),
-      }
+      [
+        "💬 Reply required.",
+        "",
+        "Reply to the message you want to delete.",
+        "",
+        "Example:",
+        "Reply to a message → /clear",
+      ].join("\n"),
+      message,
     );
 
     return;
@@ -102,30 +97,26 @@ async function deleteRepliedMessage(
       {
         delete:
           quotedKey,
-      }
+      },
     );
 
   } catch (err) {
     console.error(
       "Delete message error:",
-      err
+      err,
     );
 
-    await sock.sendMessage(
+    await sendVortexReply(
+      sock,
       jid,
-      {
-        text:
-          error(
-            "DELETE FAILED",
-            [
-              "I could not delete",
-              "that message.",
-              "",
-              "🛡️ Make sure Dark Vortex",
-              "is a group administrator.",
-            ]
-          ),
-      }
+      [
+        "❌ Delete failed.",
+        "",
+        "I could not delete that message.",
+        "",
+        "Make sure Dark Vortex is a group administrator.",
+      ].join("\n"),
+      message,
     );
   }
 }
@@ -139,7 +130,7 @@ export async function handleUtilityCommand(
   jid: string,
   command: string,
   _args: string[],
-  message: WAMessage
+  message: WAMessage,
 ): Promise<boolean> {
 
   const utilityCommands =
@@ -151,11 +142,22 @@ export async function handleUtilityCommand(
 
   if (
     !utilityCommands.has(
-      command
+      command,
     )
   ) {
     return false;
   }
+
+  const reply = async (
+    text: string,
+  ) => {
+    return await sendVortexReply(
+      sock,
+      jid,
+      text,
+      message,
+    );
+  };
 
   // ---------------------------------------------------------
   // GROUP ONLY
@@ -164,18 +166,12 @@ export async function handleUtilityCommand(
   if (
     !jid.endsWith("@g.us")
   ) {
-    await sock.sendMessage(
-      jid,
-      {
-        text:
-          error(
-            "GROUP ONLY",
-            [
-              "🗑️ This command can only",
-              "be used inside a WhatsApp group.",
-            ]
-          ),
-      }
+    await reply(
+      [
+        "❌ Group only.",
+        "",
+        "This command can only be used inside a WhatsApp group.",
+      ].join("\n"),
     );
 
     return true;
@@ -188,7 +184,7 @@ export async function handleUtilityCommand(
   try {
     const metadata =
       await sock.groupMetadata(
-        jid
+        jid,
       );
 
     const botJid =
@@ -201,7 +197,7 @@ export async function handleUtilityCommand(
       metadata.participants.find(
         (participant) =>
           participant.id === botJid ||
-          participant.id === botLid
+          participant.id === botLid,
       );
 
     const isAdmin =
@@ -209,22 +205,14 @@ export async function handleUtilityCommand(
       botParticipant?.admin === "superadmin";
 
     if (!isAdmin) {
-      await sock.sendMessage(
-        jid,
-        {
-          text:
-            error(
-              "BOT NOT ADMIN",
-              [
-                "🛡️ Dark Vortex needs",
-                "administrator privileges",
-                "to delete messages.",
-                "",
-                "💡 Promote Dark Vortex",
-                "to admin and try again.",
-              ]
-            ),
-        }
+      await reply(
+        [
+          "🛡️ Bot not admin.",
+          "",
+          "Dark Vortex needs administrator privileges to delete messages.",
+          "",
+          "Promote Dark Vortex to admin and try again.",
+        ].join("\n"),
       );
 
       return true;
@@ -233,23 +221,17 @@ export async function handleUtilityCommand(
   } catch (err) {
     console.error(
       "Group metadata error:",
-      err
+      err,
     );
 
-    await sock.sendMessage(
-      jid,
-      {
-        text:
-          error(
-            "ADMIN CHECK FAILED",
-            [
-              "I could not verify",
-              "my administrator status.",
-              "",
-              "💡 Try again in a moment.",
-            ]
-          ),
-      }
+    await reply(
+      [
+        "❌ Admin check failed.",
+        "",
+        "I could not verify my administrator status.",
+        "",
+        "Try again in a moment.",
+      ].join("\n"),
     );
 
     return true;
@@ -262,7 +244,7 @@ export async function handleUtilityCommand(
   await deleteRepliedMessage(
     sock,
     jid,
-    message
+    message,
   );
 
   return true;

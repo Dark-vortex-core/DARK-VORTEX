@@ -1,4 +1,3 @@
-
 import fs from "node:fs";
 import path from "node:path";
 
@@ -8,14 +7,13 @@ import type {
 } from "@whiskeysockets/baileys";
 
 import {
-  success,
-  error,
-  commandUsage,
-} from "../utils/message.js";
+  sendVortexReply,
+} from "../utils/vortex-reply.js";
 
 import {
   isBotGroupAdmin,
 } from "../utils/group-admin.js";
+
 // =========================================================
 // 🌑 DARK VORTEX — SLOWMODE SYSTEM
 // =========================================================
@@ -75,16 +73,18 @@ function loadData(): SlowmodeStore {
   ensureDataFile();
 
   try {
-    const raw = fs.readFileSync(
-      DATA_FILE,
-      "utf8",
-    );
+    const raw =
+      fs.readFileSync(
+        DATA_FILE,
+        "utf8",
+      );
 
     if (!raw.trim()) {
       return {};
     }
 
-    const parsed = JSON.parse(raw);
+    const parsed =
+      JSON.parse(raw);
 
     if (
       !parsed ||
@@ -112,7 +112,11 @@ function saveData(
 
   fs.writeFileSync(
     DATA_FILE,
-    JSON.stringify(data, null, 2),
+    JSON.stringify(
+      data,
+      null,
+      2,
+    ),
     "utf8",
   );
 }
@@ -124,9 +128,11 @@ function saveData(
 function getSettings(
   jid: string,
 ): SlowmodeSettings {
-  const data = loadData();
+  const data =
+    loadData();
 
-  const saved = data[jid];
+  const saved =
+    data[jid];
 
   if (!saved) {
     return {
@@ -140,6 +146,7 @@ function getSettings(
   return {
     enabled:
       saved.enabled === true,
+
     seconds:
       Number.isInteger(seconds) &&
       seconds >= 1 &&
@@ -153,11 +160,13 @@ function setSettings(
   jid: string,
   settings: SlowmodeSettings,
 ): void {
-  const data = loadData();
+  const data =
+    loadData();
 
   data[jid] = {
     enabled:
       settings.enabled === true,
+
     seconds:
       settings.seconds,
   };
@@ -188,7 +197,8 @@ function normalizeJid(
 function getSenderIds(
   message: WAMessage,
 ): string[] {
-  const ids = new Set<string>();
+  const ids =
+    new Set<string>();
 
   const participant =
     message.key.participant;
@@ -198,7 +208,9 @@ function getSenderIds(
 
   if (participant) {
     ids.add(
-      normalizeJid(participant),
+      normalizeJid(
+        participant,
+      ),
     );
   }
 
@@ -207,11 +219,15 @@ function getSenderIds(
     remoteJid.endsWith("@lid")
   ) {
     ids.add(
-      normalizeJid(remoteJid),
+      normalizeJid(
+        remoteJid,
+      ),
     );
   }
 
-  return [...ids].filter(Boolean);
+  return [
+    ...ids,
+  ].filter(Boolean);
 }
 
 function participantMatches(
@@ -222,7 +238,9 @@ function participantMatches(
   senderIds: string[],
 ): boolean {
   const participantId =
-    normalizeJid(participant.id);
+    normalizeJid(
+      participant.id,
+    );
 
   const participantLid =
     normalizeJid(
@@ -244,8 +262,12 @@ function getParticipantKey(
   senderIds: string[],
 ): string {
   return (
-    normalizeJid(participant.id) ||
-    normalizeJid(participant.lid) ||
+    normalizeJid(
+      participant.id,
+    ) ||
+    normalizeJid(
+      participant.lid,
+    ) ||
     senderIds[0] ||
     ""
   );
@@ -260,25 +282,35 @@ export async function handleSlowmodeCommand(
   jid: string,
   command: string,
   args: string[],
+  quotedMessage?: WAMessage,
 ): Promise<boolean> {
   if (command !== "slowmode") {
     return false;
   }
+
+  const reply = async (
+    text: string,
+  ): Promise<WAMessage | undefined> => {
+    return await sendVortexReply(
+      sock,
+      jid,
+      text,
+      quotedMessage,
+    );
+  };
 
   // ---------------------------------------------------------
   // GROUP ONLY
   // ---------------------------------------------------------
 
   if (!jid.endsWith("@g.us")) {
-    await sock.sendMessage(jid, {
-      text: error(
-        "GROUP ONLY",
-        [
-          "🐢 Slowmode can only be",
-          "used inside a WhatsApp group.",
-        ],
-      ),
-    });
+    await reply(
+      [
+        "⚠️ Group only.",
+        "",
+        "Slowmode can only be used inside a group.",
+      ].join("\n"),
+    );
 
     return true;
   }
@@ -294,29 +326,28 @@ export async function handleSlowmodeCommand(
 
   try {
     metadata =
-      await sock.groupMetadata(jid);
+      await sock.groupMetadata(
+        jid,
+      );
   } catch (err) {
     console.error(
       "Slowmode metadata error:",
       err,
     );
 
-    await sock.sendMessage(jid, {
-      text: error(
-        "GROUP DATA ERROR",
-        [
-          "Unable to read group",
-          "information.",
-          "",
-          "💡 Try again in a moment.",
-        ],
-      ),
-    });
+    await reply(
+      [
+        "❌ Group data unavailable.",
+        "",
+        "Unable to read group information.",
+        "Try again in a moment.",
+      ].join("\n"),
+    );
 
     return true;
   }
 
-   // ---------------------------------------------------------
+  // ---------------------------------------------------------
   // BOT ADMIN CHECK
   // ---------------------------------------------------------
 
@@ -327,49 +358,42 @@ export async function handleSlowmodeCommand(
     );
 
   if (!botIsAdmin) {
-    await sock.sendMessage(jid, {
-      text: error(
-        "BOT NOT ADMIN",
-        [
-          "🛡️ Dark Vortex must be",
-          "a group administrator",
-          "to manage slowmode.",
-          "",
-          "💡 Promote Dark Vortex",
-          "to admin and try again.",
-        ],
-      ),
-    });
+    await reply(
+      [
+        "🛡️ Bot admin required.",
+        "",
+        "Dark Vortex must be a group administrator",
+        "to manage slowmode.",
+      ].join("\n"),
+    );
 
     return true;
   }
 
-      const settings =
-        getSettings(jid);
-
-
+  const settings =
+    getSettings(jid);
 
   // ---------------------------------------------------------
   // SHOW STATUS
   // ---------------------------------------------------------
 
   if (args.length === 0) {
-    await sock.sendMessage(jid, {
-      text: commandUsage(
-        "slowmode",
-        "/slowmode 10",
-        [
-          "/slowmode 30",
-          "/slowmode off",
-          "",
-          `Current status: ${
-            settings.enabled
-              ? `🟢 Enabled — ${settings.seconds}s`
-              : "🔴 Disabled"
-          }`,
-        ].join("\n"),
-      ),
-    });
+    await reply(
+      [
+        "🐢 Slowmode",
+        "",
+        `Status: ${
+          settings.enabled
+            ? "🟢 Enabled"
+            : "🔴 Disabled"
+        }`,
+        `Cooldown: ${settings.seconds}s`,
+        "",
+        "Usage:",
+        "/slowmode 30",
+        "/slowmode off",
+      ].join("\n"),
+    );
 
     return true;
   }
@@ -388,25 +412,26 @@ export async function handleSlowmodeCommand(
   // ---------------------------------------------------------
 
   if (value === "off") {
-    setSettings(jid, {
-      enabled: false,
-      seconds:
-        settings.seconds,
-    });
+    setSettings(
+      jid,
+      {
+        enabled: false,
+        seconds:
+          settings.seconds,
+      },
+    );
 
-    lastMessageTimes.delete(jid);
+    lastMessageTimes.delete(
+      jid,
+    );
 
-    await sock.sendMessage(jid, {
-      text: success(
-        "SLOWMODE DISABLED",
-        [
-          "🐢 Members can now send",
-          "messages normally.",
-          "",
-          "🟢 Slowmode is inactive.",
-        ],
-      ),
-    });
+    await reply(
+      [
+        "🐢 Slowmode disabled.",
+        "",
+        "Members can now send messages normally.",
+      ].join("\n"),
+    );
 
     return true;
   }
@@ -423,18 +448,14 @@ export async function handleSlowmodeCommand(
     seconds < 1 ||
     seconds > 3600
   ) {
-    await sock.sendMessage(jid, {
-      text: error(
-        "INVALID TIME",
-        [
-          "⏱️ Choose between",
-          "1 and 3600 seconds.",
-          "",
-          "📝 Example:",
-          "/slowmode 10",
-        ],
-      ),
-    });
+    await reply(
+      [
+        "❌ Invalid cooldown.",
+        "",
+        "Choose between 1 and 3600 seconds.",
+        "Example: /slowmode 10",
+      ].join("\n"),
+    );
 
     return true;
   }
@@ -443,28 +464,28 @@ export async function handleSlowmodeCommand(
   // ENABLE
   // ---------------------------------------------------------
 
-  setSettings(jid, {
-    enabled: true,
-    seconds,
-  });
+  setSettings(
+    jid,
+    {
+      enabled: true,
+      seconds,
+    },
+  );
 
   // Start with a clean cooldown state.
-  lastMessageTimes.delete(jid);
+  lastMessageTimes.delete(
+    jid,
+  );
 
-  await sock.sendMessage(jid, {
-    text: success(
-      "SLOWMODE ENABLED",
-      [
-        `⏱️ Cooldown: ${seconds} seconds`,
-        "",
-        "🛡️ Admins are exempt.",
-        "👤 Members who send too quickly",
-        "will have their message deleted.",
-        "",
-        "🟢 Protection is active.",
-      ],
-    ),
-  });
+  await reply(
+    [
+      "🐢 Slowmode enabled.",
+      "",
+      `Cooldown: ${seconds}s`,
+      "Admins: Exempt",
+      "Action: Delete messages sent too quickly",
+    ].join("\n"),
+  );
 
   return true;
 }
@@ -510,7 +531,9 @@ export async function processSlowmode(
   // ---------------------------------------------------------
 
   const senderIds =
-    getSenderIds(message);
+    getSenderIds(
+      message,
+    );
 
   if (senderIds.length === 0) {
     return false;
@@ -522,7 +545,9 @@ export async function processSlowmode(
 
   try {
     const metadata =
-      await sock.groupMetadata(jid);
+      await sock.groupMetadata(
+        jid,
+      );
 
     const participant =
       metadata.participants.find(
@@ -573,10 +598,13 @@ export async function processSlowmode(
     // -------------------------------------------------------
 
     let groupTimes =
-      lastMessageTimes.get(jid);
+      lastMessageTimes.get(
+        jid,
+      );
 
     if (!groupTimes) {
-      groupTimes = new Map();
+      groupTimes =
+        new Map();
 
       lastMessageTimes.set(
         jid,
@@ -644,7 +672,9 @@ export async function processSlowmode(
         now - timestamp >
         cooldownMs * 2
       ) {
-        groupTimes.delete(key);
+        groupTimes.delete(
+          key,
+        );
       }
     }
 
@@ -660,4 +690,3 @@ export async function processSlowmode(
     return false;
   }
 }
-

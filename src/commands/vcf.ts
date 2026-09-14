@@ -1,4 +1,3 @@
-
 /* =========================================================
    🌑 DARK VORTEX — VCF GROUP CONTACT EXPORT
    ⚡ Powered by Vortex Tech
@@ -13,8 +12,13 @@
 ========================================================= */
 
 import type {
+  WAMessage,
   WASocket,
 } from "@whiskeysockets/baileys";
+
+import {
+  sendVortexReply,
+} from "../utils/vortex-reply.js";
 
 import {
   mkdir,
@@ -22,9 +26,6 @@ import {
 } from "node:fs/promises";
 
 import path from "node:path";
-
-const FOOTER =
-  "⚡ Powered by Vortex Tech";
 
 function escapeVcf(
   value: string,
@@ -46,10 +47,9 @@ function jidToPhone(
 }
 
 export async function handleVcfCommand(
-  sock: WASocket,
-  jid: string,
-  command: string,
+sock: WASocket, jid: string, command: string, args: string[], message: WAMessage,
 ): Promise<boolean> {
+
   if (
     command
       .trim()
@@ -58,25 +58,26 @@ export async function handleVcfCommand(
     return false;
   }
 
+  const reply = async (
+    text: string,
+  ) => {
+    return await sendVortexReply(
+      sock,
+      jid,
+      text,
+      message,
+    );
+  };
+
   if (
     !jid.endsWith("@g.us")
   ) {
-    await sock.sendMessage(
-      jid,
-      {
-        text: [
-          "╭━━━〔 🌑 DARK VORTEX 〕━━━╮",
-          "┃",
-          "┃ ⚠️ GROUP ONLY",
-          "┃",
-          "┃ Use /vcf inside a WhatsApp",
-          "┃ group to export its contacts.",
-          "┃",
-          "╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯",
-          "",
-          FOOTER,
-        ].join("\n"),
-      },
+    await reply(
+      [
+        "⚠️ Group only.",
+        "",
+        "Use /vcf inside a WhatsApp group to export its contacts.",
+      ].join("\n"),
     );
 
     return true;
@@ -126,22 +127,12 @@ export async function handleVcfCommand(
     if (
       contacts.length === 0
     ) {
-      await sock.sendMessage(
-        jid,
-        {
-          text: [
-            "╭━━━〔 🌑 DARK VORTEX 〕━━━╮",
-            "┃",
-            "┃ ❌ NO CONTACTS FOUND",
-            "┃",
-            "┃ No valid participant numbers",
-            "┃ were found in this group.",
-            "┃",
-            "╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯",
-            "",
-            FOOTER,
-          ].join("\n"),
-        },
+      await reply(
+        [
+          "❌ No contacts found.",
+          "",
+          "No valid participant numbers were found in this group.",
+        ].join("\n"),
       );
 
       return true;
@@ -194,51 +185,35 @@ export async function handleVcfCommand(
         fileName:
           "dark-vortex-group-contacts.vcf",
         caption: [
-          "╭━━━〔 🌑 DARK VORTEX 〕━━━╮",
-          "┃",
-          "┃ 📇 GROUP CONTACT EXPORT",
-          "┃",
-          "┣━━━━━━━━━━━━━━━━━━━━━━━━━━",
-          `┃ 👥 Contacts: ${contacts.length}`,
-          `┃ 📁 File: dark-vortex-group-contacts.vcf`,
-          "┃",
-          "┃ Import the VCF into your",
-          "┃ contacts application to save",
-          "┃ the group contacts.",
-          "┃",
-          "╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯",
+          "📇 Group contact export",
           "",
-          FOOTER,
+          `Contacts: ${contacts.length}`,
+          "File: dark-vortex-group-contacts.vcf",
+          "",
+          "Import the VCF into your contacts application to save the group contacts.",
         ].join("\n"),
+      },
+      {
+        quoted: message,
       },
     );
 
     return true;
+
   } catch (error) {
     console.error(
       "[VCF] Contact export failed:",
       error,
     );
 
-    await sock.sendMessage(
-      jid,
-      {
-        text: [
-          "╭━━━〔 🌑 DARK VORTEX 〕━━━╮",
-          "┃",
-          "┃ ❌ VCF EXPORT FAILED",
-          "┃",
-          "┃ Could not generate the group",
-          "┃ contact file.",
-          "┃",
-          "╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯",
-          "",
-          FOOTER,
-        ].join("\n"),
-      },
+    await reply(
+      [
+        "❌ VCF export failed.",
+        "",
+        "Could not generate the group contact file.",
+      ].join("\n"),
     );
 
     return true;
   }
 }
-

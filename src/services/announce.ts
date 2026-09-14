@@ -4,12 +4,6 @@ import type {
 } from "@whiskeysockets/baileys";
 
 import {
-  error,
-  commandUsage,
-  success,
-} from "../utils/message.js";
-
-import {
   sendVortexReply,
 } from "../utils/vortex-reply.js";
 
@@ -86,14 +80,10 @@ export async function handleAnnouncementCommand(
     return false;
   }
 
-  // ---------------------------------------------------------
-  // LOCAL REPLY HELPER
-  // ---------------------------------------------------------
-
   const reply = async (
     text: string,
-  ) => {
-    await sendVortexReply(
+  ): Promise<WAMessage | undefined> => {
+    return await sendVortexReply(
       sock,
       jid,
       text,
@@ -107,13 +97,11 @@ export async function handleAnnouncementCommand(
 
   if (!isGroup(jid)) {
     await reply(
-      error(
-        "GROUP ONLY",
-        [
-          "📢 Announcements can only",
-          "be sent inside a WhatsApp group.",
-        ],
-      ),
+      [
+        "⚠️ Group only.",
+        "",
+        "Announcements can only be sent inside a group.",
+      ].join("\n"),
     );
 
     return true;
@@ -130,7 +118,9 @@ export async function handleAnnouncementCommand(
 
   try {
     metadata =
-      await sock.groupMetadata(jid);
+      await sock.groupMetadata(
+        jid,
+      );
   } catch (err) {
     console.error(
       "Announcement metadata error:",
@@ -138,16 +128,12 @@ export async function handleAnnouncementCommand(
     );
 
     await reply(
-      error(
-        "GROUP DATA ERROR",
-        [
-          "Unable to read group",
-          "information.",
-          "",
-          "💡 Make sure Dark Vortex",
-          "is still a group member.",
-        ],
-      ),
+      [
+        "❌ Group data unavailable.",
+        "",
+        "Unable to read group information.",
+        "Make sure Dark Vortex is still a group member.",
+      ].join("\n"),
     );
 
     return true;
@@ -179,23 +165,18 @@ export async function handleAnnouncementCommand(
 
   const botIsAdmin =
     isAdmin(
-      botParticipant?.admin
-        ?? undefined,
+      botParticipant?.admin ??
+        undefined,
     );
 
   if (!botIsAdmin) {
     await reply(
-      error(
-        "BOT NOT ADMIN",
-        [
-          "🛡️ Dark Vortex needs",
-          "group administrator access",
-          "to send announcements.",
-          "",
-          "💡 Promote Dark Vortex",
-          "to admin and try again.",
-        ],
-      ),
+      [
+        "🛡️ Bot admin required.",
+        "",
+        "Dark Vortex needs group administrator access",
+        "to send announcements.",
+      ].join("\n"),
     );
 
     return true;
@@ -207,16 +188,13 @@ export async function handleAnnouncementCommand(
 
   if (args.length === 0) {
     await reply(
-      commandUsage(
-        "announce",
+      [
+        "📢 Announcement",
+        "",
+        "Usage:",
         "/announce Your message",
-        [
-          "/announce @everyone Your message",
-          "",
-          "📢 The @everyone version",
-          "creates real WhatsApp mentions.",
-        ].join("\n"),
-      ),
+        "/announce @everyone Your message",
+      ].join("\n"),
     );
 
     return true;
@@ -251,11 +229,12 @@ export async function handleAnnouncementCommand(
 
   if (!announcementText) {
     await reply(
-      commandUsage(
-        "announce",
-        "/announce @everyone Meeting starts at 7 PM",
-        "Please provide an announcement message.",
-      ),
+      [
+        "❌ Announcement is empty.",
+        "",
+        "Example:",
+        "/announce Meeting starts at 7 PM",
+      ].join("\n"),
     );
 
     return true;
@@ -267,17 +246,19 @@ export async function handleAnnouncementCommand(
 
   if (!everyone) {
     const text =
-      success(
-        "ANNOUNCEMENT",
-        [
-          `📢 ${announcementText}`,
-        ],
-      );
+      [
+        "📢 Announcement",
+        "",
+        announcementText,
+      ].join("\n");
 
     try {
-      await sock.sendMessage(jid, {
+      await sendVortexReply(
+        sock,
+        jid,
         text,
-      });
+        quotedMessage,
+      );
 
       return true;
     } catch (err) {
@@ -287,15 +268,12 @@ export async function handleAnnouncementCommand(
       );
 
       await reply(
-        error(
-          "SEND FAILED",
-          [
-            "📢 The announcement could",
-            "not be sent.",
-            "",
-            "💡 Please try again.",
-          ],
-        ),
+        [
+          "❌ Announcement failed.",
+          "",
+          "The announcement could not be sent.",
+          "Please try again.",
+        ].join("\n"),
       );
 
       return true;
@@ -325,16 +303,12 @@ export async function handleAnnouncementCommand(
 
   if (mentions.length === 0) {
     await reply(
-      error(
-        "MENTIONS UNAVAILABLE",
-        [
-          "📢 WhatsApp did not provide",
-          "valid participant IDs.",
-          "",
-          "💡 Try the announcement",
-          "again in a moment.",
-        ],
-      ),
+      [
+        "❌ Mentions unavailable.",
+        "",
+        "WhatsApp did not provide valid participant IDs.",
+        "Try again in a moment.",
+      ].join("\n"),
     );
 
     return true;
@@ -365,24 +339,33 @@ export async function handleAnnouncementCommand(
       .join(" ");
 
   const text =
-    success(
-      "ANNOUNCEMENT",
-      [
-        mentionText,
-        "",
-        `📢 ${announcementText}`,
-      ],
-    );
+    [
+      "📢 Announcement",
+      "",
+      mentionText,
+      "",
+      announcementText,
+    ].join("\n");
 
   // ---------------------------------------------------------
   // SEND EVERYONE ANNOUNCEMENT
   // ---------------------------------------------------------
 
   try {
-    await sock.sendMessage(jid, {
-      text,
-      mentions,
-    });
+    await sock.sendMessage(
+      jid,
+      {
+        text,
+        // @everyone requires the actual WhatsApp
+        // participant JIDs for real mentions.
+        mentions,
+      },
+      quotedMessage
+        ? {
+            quoted: quotedMessage,
+          }
+        : undefined,
+    );
 
     return true;
   } catch (err) {
@@ -392,15 +375,12 @@ export async function handleAnnouncementCommand(
     );
 
     await reply(
-      error(
-        "SEND FAILED",
-        [
-          "📢 The announcement could",
-          "not be delivered.",
-          "",
-          "💡 Please try again.",
-        ],
-      ),
+      [
+        "❌ Announcement failed.",
+        "",
+        "The announcement could not be delivered.",
+        "Please try again.",
+      ].join("\n"),
     );
 
     return true;

@@ -1,4 +1,3 @@
-
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,6 +12,7 @@ import type {
   WAMessage,
   WASocket,
 } from "@whiskeysockets/baileys";
+
 import {
   getSessionStatus,
   getSessionAccount,
@@ -20,6 +20,7 @@ import {
   getReconnectCount,
   getSessionStartedAt,
 } from "../services/session-state.js";
+
 import {
   handleVcfCommand,
 } from "./vcf.js";
@@ -91,13 +92,10 @@ import { config } from "../config.js";
 import { isOwner } from "../auth/owner.js";
 
 import {
-  error,
-  info,
   pingResponse,
   unknownCommand,
   internalError,
   formatUptime,
-  success,
 } from "../utils/message.js";
 
 import {
@@ -197,24 +195,14 @@ import {
 /* =========================================================
    🌑 DARK VORTEX — COMMAND HANDLER
 
-   ⚡ Powered by Vortex Tech
+   Central command router.
 
-   Central responsibilities:
-   • Command parsing
-   • Registry resolution
-   • Permission enforcement
-   • Response-mode enforcement
-   • Group/admin enforcement
-   • Owner/VX separation
-   • Security confirmation
-   • Group enable/disable gate
-   • Modular command routing
-   • Internal bot detection
-
-   Security principle:
-   The registry + dispatcher are authoritative.
-   A command cannot become privileged merely because
-   a user knows its name.
+   Response standard:
+   • Concise
+   • Readable
+   • Every normal command reply quotes the trigger
+   • Progress/edit messages remain direct edits
+   • Media responses remain direct media sends
 ========================================================= */
 
 
@@ -410,6 +398,7 @@ interface MenuSystemInfo {
   botName: string;
 }
 
+
 function getPlatformName(): string {
   switch (process.platform) {
     case "win32":
@@ -429,16 +418,21 @@ function getPlatformName(): string {
   }
 }
 
+
 async function getMenuSystemInfo(
   sock: WASocket,
 ): Promise<MenuSystemInfo> {
-  const totalMemory = os.totalmem();
-  const freeMemory = os.freemem();
+  const totalMemory =
+    os.totalmem();
 
-  const usedMemory = Math.max(
-    0,
-    totalMemory - freeMemory,
-  );
+  const freeMemory =
+    os.freemem();
+
+  const usedMemory =
+    Math.max(
+      0,
+      totalMemory - freeMemory,
+    );
 
   const ramPercent =
     totalMemory > 0
@@ -471,7 +465,8 @@ async function getMenuSystemInfo(
   }
 
   return {
-    owner: getOwnerDisplay(),
+    owner:
+      getOwnerDisplay(),
 
     mode:
       config.mode.toUpperCase(),
@@ -589,19 +584,10 @@ function buildCommandHelp(
     `Category: ${categoryLabel}`,
     `Access: ${access || "public"}`,
     "",
-    "Description:",
     command.description,
     "",
-    "Usage:",
-    `${prefix}${usage}`,
-    "",
-    "Aliases:",
-    aliases,
-    "",
-    "Tip:",
-    `Use ${prefix}help <command> for another command.`,
-    "",
-    "╰─── ⚡ VORTEX TECH ───╯",
+    `Usage: ${prefix}${usage}`,
+    `Aliases: ${aliases}`,
   ].join("\n");
 }
 
@@ -701,7 +687,7 @@ function formatCommandLine(
 
 
 /* =========================================================
-   STANDARD CATEGORY MENU
+   CATEGORY MENU
 ========================================================= */
 
 function buildCategoryMenu(
@@ -741,7 +727,7 @@ function buildCategoryMenu(
 
 
 /* =========================================================
-   VX INTELLIGENCE MENU
+   VX MENU
 ========================================================= */
 
 function buildVxMenu(): string {
@@ -772,7 +758,7 @@ function buildVxMenu(): string {
 
 
 /* =========================================================
-   CATEGORY COUNT
+   COMMAND COUNT
 ========================================================= */
 
 function getVisibleCommandCount(): number {
@@ -828,7 +814,9 @@ function buildPremiumMenu(
     "away",
   ] as const;
 
-  for (const categoryId of categories) {
+  for (
+    const categoryId of categories
+  ) {
     const category =
       getCategory(
         categoryId,
@@ -894,8 +882,7 @@ function buildPremiumMenu(
       `│ ${prefix}menu`,
       `│ ${prefix}help <command>`,
       "│",
-      "│ Use .help <command>",
-      "│ for detailed information.",
+      `│ ${getVisibleCommandCount()} commands available`,
       "╰───────────────────────",
     ].join("\n"),
   );
@@ -920,7 +907,9 @@ async function sendPremiumMenu(
   quotedMessage?: WAMessage,
 ): Promise<void> {
   const systemInfo =
-    await getMenuSystemInfo(sock);
+    await getMenuSystemInfo(
+      sock,
+    );
 
   const menu =
     buildPremiumMenu(
@@ -987,26 +976,22 @@ async function handleAwayCommand(
     await sendVortexReply(
       sock,
       jid,
-      info(
-        "AWAY STATUS",
-        [
-          `🕐 Status: ${
-            isOwnerAway()
-              ? "🟢 AWAY"
-              : "🔵 ACTIVE"
-          }`,
-          `⏱️ Inactive: ${duration} minutes`,
-          "",
-          "⏳ Automatic away activates",
-          "after 15 minutes.",
-          "",
-          "📖 COMMANDS",
-          `${getPrefix()}away on`,
-          `${getPrefix()}away off`,
-          `${getPrefix()}setaway <message>`,
-          `${getPrefix()}setgroupaway <message>`,
-        ],
-      ),
+      [
+        "🕐 Away status",
+        "",
+        `Status: ${
+          isOwnerAway()
+            ? "AWAY"
+            : "ACTIVE"
+        }`,
+        `Inactive: ${duration} minutes`,
+        "",
+        "Commands:",
+        `${getPrefix()}away on`,
+        `${getPrefix()}away off`,
+        `${getPrefix()}setaway <message>`,
+        `${getPrefix()}setgroupaway <message>`,
+      ].join("\n"),
       quotedMessage,
     );
 
@@ -1030,15 +1015,12 @@ async function handleAwayCommand(
       await sendVortexReply(
         sock,
         jid,
-        info(
-          "AWAY MODE",
-          [
-            "🕐 Automatic away mode is enabled.",
-            "",
-            "It activates after 15 minutes",
-            "of owner inactivity.",
-          ],
-        ),
+        [
+          "🕐 Away mode",
+          "",
+          "Automatic away mode is enabled.",
+          "It activates after 15 minutes.",
+        ].join("\n"),
         quotedMessage,
       );
 
@@ -1048,15 +1030,12 @@ async function handleAwayCommand(
     await sendVortexReply(
       sock,
       jid,
-      success(
-        "AWAY MODE ENABLED",
-        [
-          "🕐 Status: AWAY",
-          "",
-          "Dark Vortex will now respond",
-          "using your configured away message.",
-        ],
-      ),
+      [
+        "🕐 Away mode enabled.",
+        "",
+        "Status: AWAY",
+        "Dark Vortex will use your away message.",
+      ].join("\n"),
       quotedMessage,
     );
 
@@ -1076,15 +1055,11 @@ async function handleAwayCommand(
     await sendVortexReply(
       sock,
       jid,
-      info(
-        "AWAY MODE DISABLED",
-        [
-          "🔵 Status: ACTIVE",
-          "",
-          "Dark Vortex has marked you",
-          "as active again.",
-        ],
-      ),
+      [
+        "🕐 Away mode disabled.",
+        "",
+        "Status: ACTIVE",
+      ].join("\n"),
       quotedMessage,
     );
 
@@ -1094,17 +1069,16 @@ async function handleAwayCommand(
   await sendVortexReply(
     sock,
     jid,
-    info(
-      "AWAY COMMANDS",
-      [
-        `${getPrefix()}away`,
-        `${getPrefix()}away status`,
-        `${getPrefix()}away on`,
-        `${getPrefix()}away off`,
-        `${getPrefix()}setaway <message>`,
-        `${getPrefix()}setgroupaway <message>`,
-      ],
-    ),
+    [
+      "🕐 Away commands",
+      "",
+      `${getPrefix()}away`,
+      `${getPrefix()}away status`,
+      `${getPrefix()}away on`,
+      `${getPrefix()}away off`,
+      `${getPrefix()}setaway <message>`,
+      `${getPrefix()}setgroupaway <message>`,
+    ].join("\n"),
     quotedMessage,
   );
 
@@ -1219,42 +1193,22 @@ interface AccessContext {
 
 
 function commandAccessAllowed(
-  access: CommandAccess,
+  _access: CommandAccess,
   context: AccessContext,
 ): boolean {
   /*
-   * =======================================================
-   * 🌑 DARK VORTEX — GLOBAL OWNER COMMAND LOCK
+   * GLOBAL OWNER-ONLY LOCK.
    *
-   * Every Dark Vortex command is now owner-only.
-   *
-   * This intentionally overrides:
-   * • public
-   * • user
-   * • admin
-   * • group
-   * • groupAdmin
-   * • ownerGroup
-   * • ownerGroupAdmin
-   * • vx
-   *
-   * The AI assistant remains separate and can still answer
-   * normal Dark Vortex questions.
-   * =======================================================
+   * Do not change this behavior.
    */
 
   if (!context.owner) {
     return false;
   }
 
-  /*
-   * Owner can use every registered command.
-   *
-   * Group-specific commands still require a group where
-   * their existing handlers enforce that requirement.
-   */
   return true;
 }
+
 
 /* =========================================================
    MODE CHECK
@@ -1310,10 +1264,9 @@ async function sendPermissionDenied(
   }
 
   const lines = [
-    "🛡️ Dark Vortex blocked this command.",
+    "🛡️ Command unavailable.",
     "",
-    "👥 This command is available",
-    "inside groups.",
+    "This command can only be used inside groups.",
   ];
 
   if (
@@ -1321,30 +1274,21 @@ async function sendPermissionDenied(
   ) {
     lines.push(
       "",
-      "👑 Group administrator permission",
-      "is required.",
+      "Group administrator permission is required.",
     );
   }
-
-  lines.push(
-    "",
-    "⚡ Powered by Vortex Tech",
-  );
 
   await sendVortexReply(
     sock,
     jid,
-    error(
-      "ACCESS DENIED",
-      lines,
-    ),
+    lines.join("\n"),
     quotedMessage,
   );
 }
 
 
 /* =========================================================
-   👤 WHOIS — TARGET RESOLUTION
+   WHOIS — TARGET
 ========================================================= */
 
 function getWhoisTarget(
@@ -1382,7 +1326,7 @@ function getWhoisTarget(
 
 
 /* =========================================================
-   👤 WHOIS — FORMAT
+   WHOIS — PHONE
 ========================================================= */
 
 function formatWhoisPhone(
@@ -1401,7 +1345,7 @@ function formatWhoisPhone(
 
 
 /* =========================================================
-   👤 WHOIS COMMAND
+   WHOIS
 ========================================================= */
 
 async function handleWhoisCommand(
@@ -1414,16 +1358,11 @@ async function handleWhoisCommand(
     await sendVortexReply(
       sock,
       jid,
-      error(
-        "GROUP COMMAND",
-        [
-          "👥 .whois can only be used",
-          "inside a WhatsApp group.",
-          "",
-          "💡 Reply to a member's message",
-          "or mention them with @user.",
-        ],
-      ),
+      [
+        "👤 WHOIS",
+        "",
+        "This command can only be used inside a group.",
+      ].join("\n"),
       message,
     );
 
@@ -1457,19 +1396,12 @@ async function handleWhoisCommand(
     await sendVortexReply(
       sock,
       jid,
-      info(
-        "WHOIS",
-        [
-          "👤 Select a group member.",
-          "",
-          "📝 USAGE",
-          `${getPrefix()}whois @user`,
-          "",
-          "💬 Or simply reply to",
-          "the user's message with:",
-          `${getPrefix()}whois`,
-        ],
-      ),
+      [
+        "👤 WHOIS",
+        "",
+        `Usage: ${getPrefix()}whois @user`,
+        `Or reply to a member's message with ${getPrefix()}whois`,
+      ].join("\n"),
       message,
     );
 
@@ -1510,16 +1442,11 @@ async function handleWhoisCommand(
       await sendVortexReply(
         sock,
         jid,
-        error(
-          "MEMBER NOT FOUND",
-          [
-            "❌ That user could not be found",
-            "inside this group.",
-            "",
-            "💡 Make sure the selected",
-            "account is still a member.",
-          ],
-        ),
+        [
+          "👤 Member not found.",
+          "",
+          "The selected account is not in this group.",
+        ].join("\n"),
         message,
       );
 
@@ -1555,11 +1482,6 @@ async function handleWhoisCommand(
         sock.user?.lid,
       );
 
-    const status =
-      isBot
-        ? "🌑 DARK VORTEX"
-        : "🟢 GROUP MEMBER";
-
     const displayName =
       (
         participant as {
@@ -1578,31 +1500,16 @@ async function handleWhoisCommand(
       sock,
       jid,
       [
-        "╭━━〔 👤 WHOIS 〕━━╮",
-        "┃",
-        `┃ 👤 Name   : ${displayName}`,
-        `┃ 📱 Number : ${phone}`,
-        `┃ 🛡️ Role   : ${role}`,
-        `┃ 📡 Status : ${status}`,
-        `┃ 🆔 JID    : ${participantJid}`,
-        "┃",
-        "┃ 🔐 VORTEX ACCESS",
-        `┃ Admin    : ${
-          participant.admin
-            ? "YES"
-            : "NO"
-        }`,
-        `┃ Bot      : ${
-          isBot
-            ? "YES"
-            : "NO"
-        }`,
-        "┃",
-        "┃ ⚡ VORTEX CORE",
-        "┃ 🛡️ Security: ACTIVE",
-        "┃",
-        "┃ ⚡ Powered by Vortex Tech",
-        "╰━━━━━━━━━━━━━━━━━━━━━━╯",
+        "👤 WHOIS",
+        "",
+        `Name: ${displayName}`,
+        `Number: ${phone}`,
+        `Role: ${role}`,
+        `Status: ${isBot ? "DARK VORTEX" : "GROUP MEMBER"}`,
+        `JID: ${participantJid}`,
+        "",
+        `Admin: ${participant.admin ? "YES" : "NO"}`,
+        `Bot: ${isBot ? "YES" : "NO"}`,
       ].join("\n"),
       message,
     );
@@ -1617,15 +1524,12 @@ async function handleWhoisCommand(
     await sendVortexReply(
       sock,
       jid,
-      error(
-        "WHOIS FAILED",
-        [
-          "❌ Dark Vortex could not",
-          "inspect that group member.",
-          "",
-          "💡 Try again in a moment.",
-        ],
-      ),
+      [
+        "❌ WHOIS failed.",
+        "",
+        "Unable to inspect that group member.",
+        "Try again in a moment.",
+      ].join("\n"),
       message,
     );
 
@@ -1635,7 +1539,7 @@ async function handleWhoisCommand(
 
 
 /* =========================================================
-   ⚙️ SETTINGS COMMAND
+   SETTINGS
 ========================================================= */
 
 async function handleSettingsCommand(
@@ -1669,18 +1573,15 @@ async function handleSettingsCommand(
     await sendVortexReply(
       sock,
       jid,
-      info(
-        "SETTINGS",
-        [
-          "⚙️ Available sections:",
-          "",
-          `${getPrefix()}settings`,
-          `${getPrefix()}settings bot`,
-          `${getPrefix()}settings owner`,
-          `${getPrefix()}settings system`,
-          `${getPrefix()}settings security`,
-        ],
-      ),
+      [
+        "⚙️ Settings",
+        "",
+        `${getPrefix()}settings`,
+        `${getPrefix()}settings bot`,
+        `${getPrefix()}settings owner`,
+        `${getPrefix()}settings system`,
+        `${getPrefix()}settings security`,
+      ].join("\n"),
       message,
     );
 
@@ -1691,8 +1592,8 @@ async function handleSettingsCommand(
     await getBotVersion();
 
   const lines: string[] = [
-    "╭━━〔 ⚙️ DARK VORTEX SETTINGS 〕━━╮",
-    "┃",
+    "⚙️ DARK VORTEX SETTINGS",
+    "",
   ];
 
   if (
@@ -1700,12 +1601,12 @@ async function handleSettingsCommand(
     section === "bot"
   ) {
     lines.push(
-      "┃ 🤖 BOT",
-      `┃ Name     : ${config.botName}`,
-      `┃ Mode     : ${String(config.mode).toUpperCase()}`,
-      `┃ Prefix   : ${getPrefix()}`,
-      `┃ Version  : ${version}`,
-      "┃",
+      "Bot",
+      `Name: ${config.botName}`,
+      `Mode: ${String(config.mode).toUpperCase()}`,
+      `Prefix: ${getPrefix()}`,
+      `Version: ${version}`,
+      "",
     );
   }
 
@@ -1714,10 +1615,10 @@ async function handleSettingsCommand(
     section === "owner"
   ) {
     lines.push(
-      "┃ 👑 OWNER",
-      `┃ Number   : ${getOwnerDisplay()}`,
-      "┃ Access   : OWNER ONLY",
-      "┃",
+      "Owner",
+      `Number: ${getOwnerDisplay()}`,
+      "Access: OWNER ONLY",
+      "",
     );
   }
 
@@ -1726,13 +1627,13 @@ async function handleSettingsCommand(
     section === "system"
   ) {
     lines.push(
-      "┃ 🖥️ SYSTEM",
-      `┃ Platform : ${process.platform}`,
-      `┃ Host     : ${os.hostname()}`,
-      `┃ Node     : ${process.version}`,
-      `┃ Timezone : ${config.timezone}`,
-      `┃ Uptime   : ${formatUptime(process.uptime())}`,
-      "┃",
+      "System",
+      `Platform: ${process.platform}`,
+      `Host: ${os.hostname()}`,
+      `Node: ${process.version}`,
+      `Timezone: ${config.timezone}`,
+      `Uptime: ${formatUptime(process.uptime())}`,
+      "",
     );
   }
 
@@ -1741,24 +1642,17 @@ async function handleSettingsCommand(
     section === "security"
   ) {
     lines.push(
-      "┃ 🛡️ SECURITY",
-      "┃ Command Access : REGISTRY",
-      "┃ Owner Lock     : ACTIVE",
-      "┃ VX Layer       : ACTIVE",
-      "┃ Protection     : ACTIVE",
-      "┃",
+      "Security",
+      "Command Access: REGISTRY",
+      "Owner Lock: ACTIVE",
+      "VX Layer: ACTIVE",
+      "Protection: ACTIVE",
+      "",
     );
   }
 
   lines.push(
-    "┃ 🔒 Configuration is protected",
-    "┃ from ordinary users.",
-    "┃",
-    "┃ ⚡ VORTEX CORE",
-    "┃ 🛡️ Security: ACTIVE",
-    "┃",
-    "┃ ⚡ Powered by Vortex Tech",
-    "╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯",
+    "Configuration is protected.",
   );
 
   await sendVortexReply(
@@ -1773,7 +1667,7 @@ async function handleSettingsCommand(
 
 
 /* =========================================================
-   💾 BACKUP COMMAND
+   BACKUP
 ========================================================= */
 
 async function handleBackupCommand(
@@ -1809,8 +1703,10 @@ async function handleBackupCommand(
     const backupData = {
       backupType:
         "DARK_VORTEX_CONFIGURATION",
+
       version:
         await getBotVersion(),
+
       createdAt:
         new Date().toISOString(),
 
@@ -1847,39 +1743,33 @@ async function handleBackupCommand(
       },
     };
 
-    await writeFile(
-      backupPath,
+    const serialized =
       JSON.stringify(
         backupData,
         null,
         2,
-      ),
+      );
+
+    await writeFile(
+      backupPath,
+      serialized,
       "utf8",
     );
 
     await sendVortexReply(
       sock,
       jid,
-      success(
-        "BACKUP CREATED",
-        [
-          "💾 Dark Vortex configuration",
-          "backup completed successfully.",
-          "",
-          `📁 File: ${backupFile}`,
-          `📦 Size: ${Buffer.byteLength(
-            JSON.stringify(
-              backupData,
-            ),
-            "utf8",
-          )} bytes`,
-          "",
-          "🔐 WhatsApp authentication",
-          "credentials were NOT included.",
-          "",
-          "🛡️ Backup stored locally.",
-        ],
-      ),
+      [
+        "💾 Backup created.",
+        "",
+        `File: ${backupFile}`,
+        `Size: ${Buffer.byteLength(
+          serialized,
+          "utf8",
+        )} bytes`,
+        "",
+        "WhatsApp authentication credentials were not included.",
+      ].join("\n"),
       message,
     );
 
@@ -1893,16 +1783,12 @@ async function handleBackupCommand(
     await sendVortexReply(
       sock,
       jid,
-      error(
-        "BACKUP FAILED",
-        [
-          "❌ Dark Vortex could not",
-          "create the configuration backup.",
-          "",
-          "💡 Check that the bot process",
-          "has write permission.",
-        ],
-      ),
+      [
+        "❌ Backup failed.",
+        "",
+        "The configuration backup could not be created.",
+        "Check write permissions and try again.",
+      ].join("\n"),
       message,
     );
 
@@ -1912,7 +1798,7 @@ async function handleBackupCommand(
 
 
 /* =========================================================
-   ✏️ ANTI-EDIT COMMAND
+   ANTI-EDIT
 ========================================================= */
 
 async function handleAntiEditCommand(
@@ -1930,14 +1816,9 @@ async function handleAntiEditCommand(
       sock,
       jid,
       [
-        "╭━━━〔 🌑 ᴅᴀʀᴋ ᴠᴏʀᴛᴇx 〕━━━╮",
-        "┃",
-        "┃  ❌ GROUP ONLY",
-        "┃",
-        "┃  Anti-Edit can only be",
-        "┃  configured inside groups.",
-        "┃",
-        "╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯",
+        "✏️ Anti-edit",
+        "",
+        "This command can only be configured inside groups.",
       ].join("\n"),
       message,
     );
@@ -1956,22 +1837,12 @@ async function handleAntiEditCommand(
       sock,
       jid,
       [
-        "╭━━━〔 🌑 ᴅᴀʀᴋ ᴠᴏʀᴛᴇx 〕━━━╮",
-        "┃",
-        "┃  ✏️ ANTI-EDIT",
-        "┃",
-        `┃  Status: ${
-          enabled
-            ? "🟢 ENABLED"
-            : "🔴 DISABLED"
-        }`,
-        "┃",
-        "┃  Usage:",
-        "┃  • .antiedit on",
-        "┃  • .antiedit off",
-        "┃  • .antiedit status",
-        "┃",
-        "╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯",
+        "✏️ Anti-edit",
+        "",
+        `Status: ${enabled ? "ENABLED" : "DISABLED"}`,
+        "",
+        `Use ${getPrefix()}antiedit on`,
+        `Use ${getPrefix()}antiedit off`,
       ].join("\n"),
       message,
     );
@@ -1987,16 +1858,11 @@ async function handleAntiEditCommand(
       sock,
       jid,
       [
-        "╭━━━〔 🌑 ᴅᴀʀᴋ ᴠᴏʀᴛᴇx 〕━━━╮",
-        "┃",
-        "┃  ❌ INVALID OPTION",
-        "┃",
-        "┃  Use:",
-        "┃  • .antiedit on",
-        "┃  • .antiedit off",
-        "┃  • .antiedit status",
-        "┃",
-        "╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯",
+        "✏️ Anti-edit",
+        "",
+        `Use ${getPrefix()}antiedit on`,
+        `Use ${getPrefix()}antiedit off`,
+        `Use ${getPrefix()}antiedit status`,
       ].join("\n"),
       message,
     );
@@ -2016,33 +1882,20 @@ async function handleAntiEditCommand(
     sock,
     jid,
     [
-      "╭━━━〔 🌑 ᴅᴀʀᴋ ᴠᴏʀᴛᴇx 〕━━━╮",
-      "┃",
-      `┃  ✏️ ANTI-EDIT ${
-        enabled
-          ? "ENABLED"
-          : "DISABLED"
-      }`,
-      "┃",
+      `✏️ Anti-edit ${enabled ? "enabled" : "disabled"}.`,
+      "",
       enabled
-        ? "┃  Edited messages will"
-        : "┃  Edited-message detection",
-      enabled
-        ? "┃  now be detected."
-        : "┃  has been disabled.",
-      "┃",
-      enabled
-        ? "┃  Original messages will"
-        : "┃  ",
-      enabled
-        ? "┃  be restored when possible."
-        : "┃  ",
-      "┃",
-      "╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯",
+        ? "Edited messages will be detected and restored when possible."
+        : "Edited-message detection has been disabled.",
     ].join("\n"),
     message,
   );
 }
+
+
+/* =========================================================
+   SESSION FORMATTERS
+========================================================= */
 
 function formatSessionDuration(
   startedAt: number | null,
@@ -2051,24 +1904,28 @@ function formatSessionDuration(
     return "0s";
   }
 
-  const totalSeconds = Math.max(
-    0,
+  const totalSeconds =
+    Math.max(
+      0,
+      Math.floor(
+        (Date.now() - startedAt) / 1000,
+      ),
+    );
+
+  const days =
     Math.floor(
-      (Date.now() - startedAt) / 1000,
-    ),
-  );
+      totalSeconds / 86400,
+    );
 
-  const days = Math.floor(
-    totalSeconds / 86400,
-  );
+  const hours =
+    Math.floor(
+      (totalSeconds % 86400) / 3600,
+    );
 
-  const hours = Math.floor(
-    (totalSeconds % 86400) / 3600,
-  );
-
-  const minutes = Math.floor(
-    (totalSeconds % 3600) / 60,
-  );
+  const minutes =
+    Math.floor(
+      (totalSeconds % 3600) / 60,
+    );
 
   const seconds =
     totalSeconds % 60;
@@ -2097,6 +1954,7 @@ function formatSessionDuration(
   return parts.join(" ");
 }
 
+
 function formatSessionAccount(
   account: string | null,
 ): string {
@@ -2105,7 +1963,10 @@ function formatSessionAccount(
   }
 
   const digits =
-    account.replace(/\D/g, "");
+    account.replace(
+      /\D/g,
+      "",
+    );
 
   if (digits.length <= 6) {
     return digits;
@@ -2113,6 +1974,7 @@ function formatSessionAccount(
 
   return `+${digits.slice(0, 3)}•••${digits.slice(-3)}`;
 }
+
 
 function formatSessionTime(
   timestamp: number | null,
@@ -2132,6 +1994,8 @@ function formatSessionTime(
     },
   );
 }
+
+
 /* =========================================================
    COMMAND HANDLER
 ========================================================= */
@@ -2146,18 +2010,13 @@ export async function handleCommand(
   fromMe: boolean,
 ): Promise<void> {
   try {
-
-    /* =====================================================
-       🌑 DARK VORTEX — AUTOMATIC REPLY SYSTEM
-    ===================================================== */
-
     const sendReply = async (
-      text: string,
+      responseText: string,
     ): Promise<WAMessage | undefined> => {
       return await sendVortexReply(
         sock,
         jid,
-        text,
+        responseText,
         message,
       );
     };
@@ -2192,10 +2051,13 @@ export async function handleCommand(
 
 
     /* =====================================================
-       👑 OWNER ACTIVITY / RESPONSE DETECTION
+       OWNER ACTIVITY
     ===================================================== */
 
-    if (owner && fromMe) {
+    if (
+      owner &&
+      fromMe
+    ) {
       markOwnerActivity();
 
       markOwnerResponse(
@@ -2206,157 +2068,151 @@ export async function handleCommand(
 
 
     /* =====================================================
-       VORTEX SECURITY CONFIRMATION — EARLY HANDLING
+       SECURITY CONFIRMATION
     ===================================================== */
 
     const confirmationHandled =
-  await handleVortexConfirmation(
-    sock,
-    jid,
-    sender,
-    messageText,
-    message,
-  );
-
-if (confirmationHandled) {
-  const confirmedSecurity =
-    consumeConfirmedSecurityExecution();
-
-  if (confirmedSecurity) {
-    if (
-      !owner ||
-      confirmedSecurity.ownerJid !== sender ||
-      confirmedSecurity.chatJid !== jid
-    ) {
-      return;
-    }
-
-    const confirmedCommandDefinition =
-      getCommand(
-        confirmedSecurity.command,
-      );
-
-    if (!confirmedCommandDefinition) {
-      await sendVortexReply(
-        sock,
-        jid,
-        error(
-          "CONFIRMATION FAILED",
-          [
-            "❌ The confirmed command is no longer registered.",
-            "",
-            `Command: ${confirmedSecurity.command}`,
-            "",
-            "The operation was not executed.",
-          ],
-        ),
-        message,
-      );
-
-      return;
-    }
-
-    const confirmedAccess =
-      getCommandAccess(
-        confirmedCommandDefinition,
-      );
-
-    const confirmedGroup =
-      jid.endsWith("@g.us");
-
-    let confirmedGroupAdmin =
-      false;
-
-    if (
-      confirmedGroup &&
-      (
-        confirmedAccess === "admin" ||
-        confirmedAccess === "groupAdmin" ||
-        confirmedAccess === "ownerGroupAdmin"
-      )
-    ) {
-      confirmedGroupAdmin =
-        await isSenderGroupAdmin(
-          sock,
-          jid,
-          sender,
-          senderAlt,
-        );
-    }
-
-    if (
-      !commandAccessAllowed(
-        confirmedAccess,
-        {
-          owner,
-          group:
-            confirmedGroup,
-          groupAdmin:
-            confirmedGroupAdmin,
-        },
-      )
-    ) {
-      return;
-    }
-
-    if (
-      !modeAllowsCommand(
-        config.mode,
-        jid,
-        owner,
-      )
-    ) {
-      return;
-    }
-
-    const securityHandled =
-      await handleVortexSecurityCommand(
+      await handleVortexConfirmation(
         sock,
         jid,
         sender,
-        confirmedSecurity.command,
-        confirmedSecurity.args,
+        messageText,
         message,
       );
 
-    if (securityHandled) {
+    if (confirmationHandled) {
+      const confirmedSecurity =
+        consumeConfirmedSecurityExecution();
+
+      if (confirmedSecurity) {
+        if (
+          !owner ||
+          confirmedSecurity.ownerJid !== sender ||
+          confirmedSecurity.chatJid !== jid
+        ) {
+          return;
+        }
+
+        const confirmedCommandDefinition =
+          getCommand(
+            confirmedSecurity.command,
+          );
+
+        if (!confirmedCommandDefinition) {
+          await sendVortexReply(
+            sock,
+            jid,
+            [
+              "❌ Confirmation failed.",
+              "",
+              `Command: ${confirmedSecurity.command}`,
+              "The command is no longer registered.",
+            ].join("\n"),
+            message,
+          );
+
+          return;
+        }
+
+        const confirmedAccess =
+          getCommandAccess(
+            confirmedCommandDefinition,
+          );
+
+        const confirmedGroup =
+          jid.endsWith("@g.us");
+
+        let confirmedGroupAdmin =
+          false;
+
+        if (
+          confirmedGroup &&
+          (
+            confirmedAccess === "admin" ||
+            confirmedAccess === "groupAdmin" ||
+            confirmedAccess === "ownerGroupAdmin"
+          )
+        ) {
+          confirmedGroupAdmin =
+            await isSenderGroupAdmin(
+              sock,
+              jid,
+              sender,
+              senderAlt,
+            );
+        }
+
+        if (
+          !commandAccessAllowed(
+            confirmedAccess,
+            {
+              owner,
+              group:
+                confirmedGroup,
+              groupAdmin:
+                confirmedGroupAdmin,
+            },
+          )
+        ) {
+          return;
+        }
+
+        if (
+          !modeAllowsCommand(
+            config.mode,
+            jid,
+            owner,
+          )
+        ) {
+          return;
+        }
+
+        const securityHandled =
+          await handleVortexSecurityCommand(
+            sock,
+            jid,
+            sender,
+            confirmedSecurity.command,
+            confirmedSecurity.args,
+            message,
+          );
+
+        if (securityHandled) {
+          return;
+        }
+
+        const ownerHandled =
+          await handleOwnerCommand(
+            sock,
+            jid,
+            confirmedSecurity.command,
+            confirmedSecurity.args,
+            message,
+          );
+
+        if (ownerHandled) {
+          return;
+        }
+
+        const toolsHandled =
+          await handleVortexToolsCommand(
+            sock,
+            jid,
+            sender,
+            confirmedSecurity.command,
+            confirmedSecurity.args,
+            message,
+          );
+
+        if (toolsHandled) {
+          return;
+        }
+
+        return;
+      }
+
       return;
     }
-
-    const ownerHandled =
-      await handleOwnerCommand(
-        sock,
-        jid,
-        confirmedSecurity.command,
-        confirmedSecurity.args,
-        message,
-      );
-
-    if (ownerHandled) {
-      return;
-    }
-
-    const toolsHandled =
-      await handleVortexToolsCommand(
-        sock,
-        jid,
-        sender,
-        confirmedSecurity.command,
-        confirmedSecurity.args,
-        message,
-      );
-
-    if (toolsHandled) {
-      return;
-    }
-
-    return;
-  }
-
-  if (confirmationHandled) {
-    return;
-  }
-}
 
 
     /* =====================================================
@@ -2403,17 +2259,17 @@ if (confirmationHandled) {
                 );
 
             await sendVortexReply(
-  sock,
-  jid,
-  formatBotDetectionAlert(
-    detection,
-    `@${number}`,
-  ),
-  message,
-  {
-    mentions: [sender],
-  } as any,
-);
+              sock,
+              jid,
+              formatBotDetectionAlert(
+                detection,
+                `@${number}`,
+              ),
+              message,
+              {
+                mentions: [sender],
+              } as any,
+            );
           }
         } catch (detectorError) {
           console.error(
@@ -2435,8 +2291,8 @@ if (confirmationHandled) {
       isLatencyCommand
         ? "latency"
         : messageText
-          .slice(prefix.length)
-          .trim();
+            .slice(prefix.length)
+            .trim();
 
     if (!body) {
       return;
@@ -2460,7 +2316,7 @@ if (confirmationHandled) {
 
 
     /* =====================================================
-       COMMAND REGISTRY RESOLUTION
+       COMMAND REGISTRY
     ===================================================== */
 
     const commandDefinition =
@@ -2488,10 +2344,6 @@ if (confirmationHandled) {
       return;
     }
 
-
-    /* =====================================================
-       CANONICAL COMMAND
-    ===================================================== */
 
     const command =
       commandDefinition.name;
@@ -2576,42 +2428,38 @@ if (confirmationHandled) {
     }
 
 
-   /* =====================================================
-   🤖 DARK VORTEX AUTOMATIC BOT DETECTION
-===================================================== */
+    /* =====================================================
+       AUTOMATIC BOT DETECTION
+    ===================================================== */
 
-if (!fromMe) {
-  try {
-    const botDetection =
-      await analyzeIncomingMessage(
-        sender,
-        message,
-      );
+    if (!fromMe) {
+      try {
+        const botDetection =
+          await analyzeIncomingMessage(
+            sender,
+            message,
+          );
 
-    if (
-      botDetection
-    ) {
-      await enforceAutomaticBotDetection(
-        sock,
-        jid,
-        message,
-        sender,
-        botDetection,
-      );
+        if (botDetection) {
+          await enforceAutomaticBotDetection(
+            sock,
+            jid,
+            message,
+            sender,
+            botDetection,
+          );
+        }
+      } catch (detectorError) {
+        console.error(
+          "[DARK VORTEX] Automatic bot detection error:",
+          detectorError,
+        );
+      }
     }
 
-  } catch (detectorError) {
-
-    console.error(
-      "[DARK VORTEX] Automatic bot detection error:",
-      detectorError,
-    );
-
-  }
-}
 
     /* =====================================================
-       DARK VORTEX REST MODE
+       REST MODE
     ===================================================== */
 
     const restResult =
@@ -2873,8 +2721,7 @@ if (!fromMe) {
       const responseMs =
         Math.max(
           1,
-          Date.now() -
-            start,
+          Date.now() - start,
         );
 
       await sendVortexReply(
@@ -2891,7 +2738,7 @@ if (!fromMe) {
 
 
     /* =====================================================
-       LATENCY DETECTOR
+       LATENCY
     ===================================================== */
 
     if (
@@ -2905,21 +2752,17 @@ if (!fromMe) {
         Date.now();
 
       try {
-        await sendVortexReply(
-          sock,
-          jid,
-          [
-            "╭━━〔 ⚡ LATENCY DETECTOR 〕━━╮",
-            "┃",
-            "┃ 📡 Measuring Dark Vortex",
-            "┃    WhatsApp send latency...",
-            "┃",
-            "┃ ⏳ Please wait...",
-            "┃",
-            "╰━━━━━━━━━━━━━━━━━━━━━━━━╯",
-          ].join("\n"),
-          message,
-        );
+        const progress =
+          await sendVortexReply(
+            sock,
+            jid,
+            [
+              "⚡ DARK VORTEX",
+              "",
+              "Measuring WhatsApp latency...",
+            ].join("\n"),
+            message,
+          );
 
         const result =
           await measureLatency(
@@ -2930,40 +2773,47 @@ if (!fromMe) {
         const detectorTime =
           Math.max(
             0,
-            Date.now() -
-              startedAt,
+            Date.now() - startedAt,
           );
 
-        await sendVortexReply(
-          sock,
-          jid,
+        const resultText =
           [
-            "╭━━〔 ⚡ LATENCY RESULT 〕━━╮",
-            "┃",
-            `┃ ${getLatencyIcon(result.level)} Latency : ${result.latencyMs}ms`,
-            `┃ 📊 Level   : ${result.level}`,
-            `┃ 🔌 Socket  : ${
+            "⚡ Latency result",
+            "",
+            `${getLatencyIcon(result.level)} ${result.latencyMs}ms`,
+            `Level: ${result.level}`,
+            `Socket: ${
               result.connected
                 ? "CONNECTED"
                 : "DISCONNECTED"
             }`,
-            `┃ ⏱️ Handler : ${detectorTime}ms`,
-            "┃",
-            "┃ 🧠 Assessment",
-            `┃ ${getLatencyDescription(result.level)}`,
-            "┃",
-            "┃ ℹ️ Measurement represents",
-            "┃    Dark Vortex → WhatsApp",
-            "┃    send-operation latency.",
-            "┃",
-            "┃ ⚡ VORTEX CORE",
-            "┃ 🛡️ Security: ACTIVE",
-            "┃",
-            "┃ ⚡ Powered by Vortex Tech",
-            "╰━━━━━━━━━━━━━━━━━━━━━━━━╯",
-          ].join("\n"),
-          message,
-        );
+            `Handler: ${detectorTime}ms`,
+            "",
+            getLatencyDescription(
+              result.level,
+            ),
+          ].join("\n");
+
+        if (progress) {
+          try {
+            await sock.sendMessage(
+              jid,
+              {
+                text:
+                  resultText,
+                edit:
+                  progress.key,
+              },
+            );
+          } catch {
+            await sendVortexReply(
+              sock,
+              jid,
+              resultText,
+              message,
+            );
+          }
+        }
 
         console.log(
           `[LATENCY] ${result.latencyMs}ms | ${result.level} | ${jid}`,
@@ -2977,21 +2827,16 @@ if (!fromMe) {
         await sendVortexReply(
           sock,
           jid,
-          error(
-            "LATENCY FAILED",
-            [
-              "❌ Dark Vortex could not",
-              "complete the latency measurement.",
-              "",
-              "🔌 Socket:",
+          [
+            "❌ Latency check failed.",
+            "",
+            `Socket: ${
               sock.user?.id
                 ? "CONNECTED"
-                : "DISCONNECTED",
-              "",
-              "💡 Check the WhatsApp connection",
-              "and try again.",
-            ],
-          ),
+                : "DISCONNECTED"
+            }`,
+            "Try again in a moment.",
+          ].join("\n"),
           message,
         );
       }
@@ -2999,8 +2844,9 @@ if (!fromMe) {
       return;
     }
 
+
     /* =====================================================
-       SESSION STATUS
+       SESSION
     ===================================================== */
 
     if (
@@ -3053,29 +2899,26 @@ if (!fromMe) {
           ? "ACTIVE"
           : "STANDBY";
 
-      const sessionText =
-`╭─「 🌑 DARK VORTEX • SESSION 」
-│
-│ ${statusIcon} Status       : ${sessionStatus}
-│ 🔐 Auth         : ${authStatus}
-│ 📱 Account      : ${formatSessionAccount(account)}
-│ 🔗 Connection   : ${connectionLabel}
-│ ⏱️ Session      : ${formatSessionDuration(sessionStartedAt)}
-│ 🔄 Reconnects   : ${reconnects}
-│ ⚡ Pairing Mode : ${pairingMode}
-│ 🛡️ VX Security  : ${vxStatus}
-│
-│ 🕐 Connected    : ${formatSessionTime(sessionStartedAt)}
-│
-╰────────────────────────
-      ⚡ VORTEX TECH`;
-
       await sendReply(
-        sessionText,
+        [
+          "🌑 DARK VORTEX • SESSION",
+          "",
+          `${statusIcon} Status: ${sessionStatus}`,
+          `🔐 Auth: ${authStatus}`,
+          `📱 Account: ${formatSessionAccount(account)}`,
+          `🔗 Connection: ${connectionLabel}`,
+          `⏱️ Duration: ${formatSessionDuration(sessionStartedAt)}`,
+          `🔄 Reconnects: ${reconnects}`,
+          `⚡ Pairing: ${pairingMode}`,
+          `🛡️ VX: ${vxStatus}`,
+          `🕐 Connected: ${formatSessionTime(sessionStartedAt)}`,
+        ].join("\n"),
       );
 
       return;
     }
+
+
     /* =====================================================
        PREFIX
     ===================================================== */
@@ -3089,18 +2932,13 @@ if (!fromMe) {
         await sendVortexReply(
           sock,
           jid,
-          info(
-            "PREFIX SETTINGS",
-            [
-              `🔧 Current: ${getPrefix()}`,
-              "",
-              "📝 USAGE",
-              `${getPrefix()}setprefix !`,
-              "",
-              "💡 Prefix must contain",
-              "1 to 3 characters.",
-            ],
-          ),
+          [
+            "🔧 Prefix settings",
+            "",
+            `Current: ${getPrefix()}`,
+            `Usage: ${getPrefix()}setprefix !`,
+            "Prefix must contain 1–3 characters.",
+          ].join("\n"),
           message,
         );
 
@@ -3116,16 +2954,13 @@ if (!fromMe) {
         await sendVortexReply(
           sock,
           jid,
-          success(
-            "PREFIX UPDATED",
-            [
-              `🔧 New Prefix: ${newPrefix}`,
-              "",
-              `📖 Example: ${newPrefix}menu`,
-              "",
-              "💾 Prefix saved permanently.",
-            ],
-          ),
+          [
+            "✅ Prefix updated.",
+            "",
+            `New prefix: ${newPrefix}`,
+            `Example: ${newPrefix}menu`,
+            "Saved permanently.",
+          ].join("\n"),
           message,
         );
       } catch (err) {
@@ -3137,18 +2972,13 @@ if (!fromMe) {
         await sendVortexReply(
           sock,
           jid,
-          error(
-            "INVALID PREFIX",
-            [
-              "❌ Prefix could not be saved.",
-              "",
-              "📏 Prefix requirements:",
-              "• 1 to 3 characters",
-              "• No spaces",
-              "",
-              `💡 Example: ${getPrefix()}setprefix !`,
-            ],
-          ),
+          [
+            "❌ Invalid prefix.",
+            "",
+            "Requirements:",
+            "• 1–3 characters",
+            "• No spaces",
+          ].join("\n"),
           message,
         );
       }
@@ -3189,19 +3019,11 @@ if (!fromMe) {
         await sendVortexReply(
           sock,
           jid,
-          info(
-            "SET AWAY MESSAGE",
-            [
-              "🕐 Configure your private",
-              "away response.",
-              "",
-              "📝 USAGE",
-              `${getPrefix()}setaway Your away message`,
-              "",
-              "💡 Used for private chats",
-              "when you are away.",
-            ],
-          ),
+          [
+            "🕐 Set away message",
+            "",
+            `Usage: ${getPrefix()}setaway <message>`,
+          ].join("\n"),
           message,
         );
 
@@ -3215,15 +3037,11 @@ if (!fromMe) {
       await sendVortexReply(
         sock,
         jid,
-        success(
-          "AWAY MESSAGE SAVED",
-          [
-            "🕐 Private away message",
-            "has been updated.",
-            "",
-            `📝 ${awayMessage}`,
-          ],
-        ),
+        [
+          "✅ Away message saved.",
+          "",
+          `Message: ${awayMessage}`,
+        ].join("\n"),
         message,
       );
 
@@ -3245,19 +3063,11 @@ if (!fromMe) {
         await sendVortexReply(
           sock,
           jid,
-          info(
-            "SET GROUP AWAY",
-            [
-              "🕐 Configure your group",
-              "away response.",
-              "",
-              "📝 USAGE",
-              `${getPrefix()}setgroupaway Your group away message`,
-              "",
-              "💡 Sent when you are mentioned",
-              "in a group while away.",
-            ],
-          ),
+          [
+            "🕐 Set group away message",
+            "",
+            `Usage: ${getPrefix()}setgroupaway <message>`,
+          ].join("\n"),
           message,
         );
 
@@ -3271,257 +3081,231 @@ if (!fromMe) {
       await sendVortexReply(
         sock,
         jid,
-        success(
-          "GROUP AWAY MESSAGE SAVED",
-          [
-            "👥 Group away message",
-            "has been updated.",
-            "",
-            `📝 ${groupAwayMessage}`,
-          ],
-        ),
+        [
+          "✅ Group away message saved.",
+          "",
+          `Message: ${groupAwayMessage}`,
+        ].join("\n"),
         message,
       );
 
       return;
     }
 
-/* =====================================================
-   🛑 GROUP STATUS CONTROL
-===================================================== */
 
-if (
-  command === "blockgcstatus"
-) {
-  if (!group) {
-    await sendVortexReply(
-      sock,
-      jid,
-      error(
-        "GROUP ONLY",
-        [
-          "🛑 .blockgcstatus can only be used",
-          "inside a WhatsApp group.",
-        ],
-      ),
-      message,
-    );
+    /* =====================================================
+       GROUP STATUS CONTROL
+    ===================================================== */
 
-    return;
-  }
+    if (
+      command === "blockgcstatus"
+    ) {
+      if (!group) {
+        await sendVortexReply(
+          sock,
+          jid,
+          [
+            "🛑 Group only.",
+            "",
+            "Use this command inside a WhatsApp group.",
+          ].join("\n"),
+          message,
+        );
 
-  const action =
-    (
-      args[0] ||
-      ""
-    )
-      .trim()
-      .toLowerCase();
+        return;
+      }
 
-  if (
-    !action ||
-    action === "status"
-  ) {
-    const state =
-      await getGroupStatusState(
-        jid,
-      );
+      const action =
+        (
+          args[0] ||
+          ""
+        )
+          .trim()
+          .toLowerCase();
 
-    await sendVortexReply(
-      sock,
-      jid,
-      info(
-        "GROUP STATUS CONTROL",
-        [
-          "👥 Group Status posting",
-          "",
-          `Status: ${
-            state === "BLOCKED"
-              ? "🔴 BLOCKED"
-              : "🟢 ALLOWED"
-          }`,
-          "",
-          "Use:",
-          `• ${getPrefix()}blockgcstatus on`,
-          `• ${getPrefix()}blockgcstatus off`,
-          `• ${getPrefix()}blockgcstatus status`,
-        ],
-      ),
-      message,
-    );
+      if (
+        !action ||
+        action === "status"
+      ) {
+        const state =
+          await getGroupStatusState(
+            jid,
+          );
 
-    return;
-  }
+        await sendVortexReply(
+          sock,
+          jid,
+          [
+            "👥 Group Status control",
+            "",
+            `Status: ${
+              state === "BLOCKED"
+                ? "BLOCKED"
+                : "ALLOWED"
+            }`,
+            "",
+            `${getPrefix()}blockgcstatus on`,
+            `${getPrefix()}blockgcstatus off`,
+            `${getPrefix()}blockgcstatus status`,
+          ].join("\n"),
+          message,
+        );
 
-  if (
-    action === "on" ||
-    action === "enable" ||
-    action === "enabled"
-  ) {
-    await setGroupStatusBlocked(
-      jid,
-      true,
-    );
+        return;
+      }
 
-    await sendVortexReply(
-      sock,
-      jid,
-      success(
-        "GROUP STATUS BLOCKED",
-        [
-          "🛑 Members are now blocked",
-          "from posting to this group's",
-          "Group Status.",
-          "",
-          "Dark Vortex will monitor",
-          "incoming Group Status activity.",
-        ],
-      ),
-      message,
-    );
+      if (
+        action === "on" ||
+        action === "enable" ||
+        action === "enabled"
+      ) {
+        await setGroupStatusBlocked(
+          jid,
+          true,
+        );
 
-    return;
-  }
+        await sendVortexReply(
+          sock,
+          jid,
+          [
+            "🛑 Group Status blocked.",
+            "",
+            "Members are now blocked from posting to this group's Group Status.",
+          ].join("\n"),
+          message,
+        );
 
-  if (
-    action === "off" ||
-    action === "disable" ||
-    action === "disabled"
-  ) {
-    await setGroupStatusBlocked(
-      jid,
-      false,
-    );
+        return;
+      }
 
-    await sendVortexReply(
-      sock,
-      jid,
-      success(
-        "GROUP STATUS ALLOWED",
-        [
-          "🟢 Members can now post",
-          "to this group's Group Status.",
-        ],
-      ),
-      message,
-    );
+      if (
+        action === "off" ||
+        action === "disable" ||
+        action === "disabled"
+      ) {
+        await setGroupStatusBlocked(
+          jid,
+          false,
+        );
 
-    return;
-  }
+        await sendVortexReply(
+          sock,
+          jid,
+          [
+            "🟢 Group Status allowed.",
+            "",
+            "Members can post to this group's Group Status again.",
+          ].join("\n"),
+          message,
+        );
 
-  await sendVortexReply(
-    sock,
-    jid,
-    error(
-      "INVALID OPTION",
-      [
-        `Usage: ${getPrefix()}blockgcstatus <on|off|status>`,
-        "",
-        "on    → Block Group Status posting",
-        "off   → Allow Group Status posting",
-        "status → Show current setting",
-      ],
-    ),
-    message,
-  );
+        return;
+      }
 
-  return;
-}
-
-/* =====================================================
-   👥 GROUP STATUS
-===================================================== */
-
-if (
-  command === "togcstatus"
-) {
-  if (!group) {
-    await sendVortexReply(
-      sock,
-      jid,
-      error(
-        "GROUP ONLY",
-        [
-          "👥 .togcstatus can only be used",
-          "inside a WhatsApp group.",
-        ],
-      ),
-      message,
-    );
-
-    return;
-  }
-
-  try {
-    const result =
-      await sendGroupStatusFromReply(
-        sock,
-        jid,
-        message,
-      );
-
-    if (!result.success) {
       await sendVortexReply(
         sock,
         jid,
-        error(
-          "GROUP STATUS FAILED",
-          [
-            `❌ ${result.error || "Could not publish the Group Status."}`,
-            "",
-            "💡 Reply to a text, photo, or video",
-            `and use ${getPrefix()}togcstatus`,
-          ],
-        ),
+        [
+          "❌ Invalid option.",
+          "",
+          `Usage: ${getPrefix()}blockgcstatus <on|off|status>`,
+        ].join("\n"),
         message,
       );
 
       return;
     }
 
-    const typeLabel =
-      result.type === "image"
-        ? "🖼️ Image"
-        : result.type === "video"
-          ? "🎥 Video"
-          : "📝 Text";
 
-    await sendVortexReply(
-      sock,
-      jid,
-      [
-        "👥 Group Status published.",
-        "",
-        `Type: ${typeLabel}`,
-        "Destination: This group",
-      ].join("\n"),
-      message,
-    );
-  } catch (err) {
-    console.error(
-      "[DARK VORTEX] Group Status error:",
-      err,
-    );
+    /* =====================================================
+       GROUP STATUS
+    ===================================================== */
 
-    await sendVortexReply(
-      sock,
-      jid,
-      error(
-        "GROUP STATUS FAILED",
-        [
-          "❌ Dark Vortex could not",
-          "publish the Group Status.",
-          "",
-          "💡 Make sure the WhatsApp connection",
-          "is stable and try again.",
-        ],
-      ),
-      message,
-    );
-  }
+    if (
+      command === "togcstatus"
+    ) {
+      if (!group) {
+        await sendVortexReply(
+          sock,
+          jid,
+          [
+            "👥 Group only.",
+            "",
+            "Use this command inside a WhatsApp group.",
+          ].join("\n"),
+          message,
+        );
 
-  return;
-}
+        return;
+      }
+
+      try {
+        const result =
+          await sendGroupStatusFromReply(
+            sock,
+            jid,
+            message,
+          );
+
+        if (!result.success) {
+          await sendVortexReply(
+            sock,
+            jid,
+            [
+              "❌ Group Status failed.",
+              "",
+              result.error ||
+                "Could not publish the Group Status.",
+              "",
+              `Reply to a text, photo, or video and use ${getPrefix()}togcstatus`,
+            ].join("\n"),
+            message,
+          );
+
+          return;
+        }
+
+        const typeLabel =
+          result.type === "image"
+            ? "Image"
+            : result.type === "video"
+              ? "Video"
+              : "Text";
+
+        await sendVortexReply(
+          sock,
+          jid,
+          [
+            "👥 Group Status published.",
+            "",
+            `Type: ${typeLabel}`,
+            "Destination: This group",
+          ].join("\n"),
+          message,
+        );
+      } catch (err) {
+        console.error(
+          "[DARK VORTEX] Group Status error:",
+          err,
+        );
+
+        await sendVortexReply(
+          sock,
+          jid,
+          [
+            "❌ Group Status failed.",
+            "",
+            "Unable to publish the Group Status.",
+            "Check the WhatsApp connection and try again.",
+          ].join("\n"),
+          message,
+        );
+      }
+
+      return;
+    }
+
+
     /* =====================================================
        STATUS
     ===================================================== */
@@ -3542,14 +3326,11 @@ if (
           await sendVortexReply(
             sock,
             jid,
-            success(
-              "STATUS SENT",
-              [
-                "📱 WhatsApp Status published.",
-                "",
-                `📝 ${statusText}`,
-              ],
-            ),
+            [
+              "📱 Status published.",
+              "",
+              `Text: ${statusText}`,
+            ].join("\n"),
             message,
           );
         } catch (err) {
@@ -3561,16 +3342,11 @@ if (
           await sendVortexReply(
             sock,
             jid,
-            error(
-              "STATUS FAILED",
-              [
-                "📱 Dark Vortex could not",
-                "publish the WhatsApp Status.",
-                "",
-                "💡 Check the WhatsApp connection",
-                "and try again.",
-              ],
-            ),
+            [
+              "❌ Status failed.",
+              "",
+              "Could not publish the WhatsApp Status.",
+            ].join("\n"),
             message,
           );
         }
@@ -3612,12 +3388,7 @@ if (
           await sendVortexReply(
             sock,
             jid,
-            success(
-              "STATUS SENT",
-              [
-                "🖼️ Image Status published.",
-              ],
-            ),
+            "🖼️ Image Status published.",
             message,
           );
         } catch (err) {
@@ -3629,13 +3400,11 @@ if (
           await sendVortexReply(
             sock,
             jid,
-            error(
-              "STATUS FAILED",
-              [
-                "🖼️ Dark Vortex could not",
-                "publish the image Status.",
-              ],
-            ),
+            [
+              "❌ Status failed.",
+              "",
+              "Could not publish the image Status.",
+            ].join("\n"),
             message,
           );
         }
@@ -3646,19 +3415,12 @@ if (
       await sendVortexReply(
         sock,
         jid,
-        info(
-          "STATUS COMMAND",
-          [
-            "📱 WhatsApp Status",
-            "",
-            "📝 TEXT STATUS",
-            `• ${getPrefix()}status Hello everyone!`,
-            "",
-            "🖼️ IMAGE STATUS",
-            "Reply to an image with:",
-            `• ${getPrefix()}status`,
-          ],
-        ),
+        [
+          "📱 WhatsApp Status",
+          "",
+          `Text: ${getPrefix()}status Hello everyone!`,
+          `Image: Reply to an image with ${getPrefix()}status`,
+        ].join("\n"),
         message,
       );
 
@@ -3667,7 +3429,7 @@ if (
 
 
     /* =====================================================
-       👤 WHOIS
+       WHOIS
     ===================================================== */
 
     if (
@@ -3685,7 +3447,7 @@ if (
 
 
     /* =====================================================
-       ⚙️ SETTINGS
+       SETTINGS
     ===================================================== */
 
     if (
@@ -3703,7 +3465,7 @@ if (
 
 
     /* =====================================================
-       ✏️ ANTI-EDIT
+       ANTI-EDIT
     ===================================================== */
 
     if (
@@ -3721,7 +3483,7 @@ if (
 
 
     /* =====================================================
-       💾 BACKUP
+       BACKUP
     ===================================================== */
 
     if (
@@ -3741,9 +3503,7 @@ if (
        OWNER COMMANDS
     ===================================================== */
 
-    if (
-      owner
-    ) {
+    if (owner) {
       const ownerHandled =
         await handleOwnerCommand(
           sock,
@@ -3810,7 +3570,7 @@ if (
 
 
     /* =====================================================
-       GROUP CONTROL COMMANDS
+       GROUP CONTROL
     ===================================================== */
 
     const groupHandled =
@@ -3833,9 +3593,7 @@ if (
        DISABLED GROUP GATE
     ===================================================== */
 
-    if (
-      group
-    ) {
+    if (group) {
       const enabled =
         await isGroupEnabled(
           jid,
@@ -3848,7 +3606,7 @@ if (
 
 
     /* =====================================================
-       AUTOMATION
+       SECURITY PANEL
     ===================================================== */
 
     const securityPanelHandled =
@@ -3857,11 +3615,19 @@ if (
         jid,
         command,
         args,
+        message,
       );
 
-    if (securityPanelHandled) {
+    if (
+      securityPanelHandled
+    ) {
       return;
     }
+
+
+    /* =====================================================
+       AUTOMATION
+    ===================================================== */
 
     const automationHandled =
       await handleAutomationCommand(
@@ -3929,6 +3695,7 @@ if (
         jid,
         command,
         args,
+        message,
       );
 
     if (
@@ -3948,6 +3715,7 @@ if (
         jid,
         command,
         args,
+        message,
       );
 
     if (
@@ -3966,6 +3734,7 @@ if (
         sock,
         jid,
         command,
+        message,
       );
 
     if (
@@ -3984,6 +3753,8 @@ if (
         sock,
         jid,
         command,
+        args,
+        message,
       );
 
     if (
@@ -4109,7 +3880,6 @@ if (
     }
 
   } catch (err) {
-
     console.error(
       "Command handler error:",
       err,
@@ -4132,4 +3902,3 @@ if (
     }
   }
 }
-

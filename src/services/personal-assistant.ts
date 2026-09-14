@@ -42,7 +42,7 @@ import {
 // ============================================================
 
 const ASSISTANT_DELAY_MS =
-  20 * 1000;
+  60 * 1000;
 
 const CONVERSATION_EXPIRY_MS =
   30 * 60 * 1000;
@@ -1485,7 +1485,7 @@ function scheduleInitialResponse(
     );
 
   console.log(
-    `⏳ [PERSONAL ASSISTANT] Waiting 20 seconds for Brian: ${conversation.key}`,
+    `⏳ [PERSONAL ASSISTANT] Waiting 60 seconds for Brian: ${conversation.key}`,
   );
 }
 

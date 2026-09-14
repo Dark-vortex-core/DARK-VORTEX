@@ -1,3 +1,4 @@
+
 import fs from "node:fs";
 import path from "node:path";
 import pino from "pino";
@@ -12,11 +13,14 @@ import type {
 } from "@whiskeysockets/baileys";
 
 import {
-  security,
   error,
   commandUsage,
   protectionStatus,
 } from "../utils/message.js";
+
+import {
+  sendVortexReply,
+} from "../utils/vortex-reply.js";
 
 import type {
   BotDetectionResult,
@@ -37,7 +41,7 @@ import {
 //    ↓
 // Real WhatsApp @mention
 //    ↓
-// Explanation
+// Concise contextual response
 //    ↓
 // Configured punishment
 //    ↓
@@ -266,7 +270,7 @@ const floodTracker =
     Map<string, number[]>
   >();
 
-  // ============================================================
+// ============================================================
 // 🤖 AUTOMATIC BOT ENFORCEMENT TRACKER
 // ============================================================
 
@@ -649,22 +653,18 @@ function isBotAdmin(
           participant.id,
           botJid,
         ) ||
-
         sameUser(
           participant.id,
           botLid,
         ) ||
-
         sameUser(
           participant.phoneNumber,
           botJid,
         ) ||
-
         sameUser(
           participant.phoneNumber,
           botLid,
         ) ||
-
         participant.id
           ?.split("@")[0]
           ?.split(":")[0] ===
@@ -711,19 +711,14 @@ function getContextInfo(
   return (
     content.extendedTextMessage
       ?.contextInfo ||
-
     content.imageMessage
       ?.contextInfo ||
-
     content.videoMessage
       ?.contextInfo ||
-
     content.documentMessage
       ?.contextInfo ||
-
     content.audioMessage
       ?.contextInfo ||
-
     (content as any)
       .statusMentionMessage
       ?.contextInfo
@@ -789,7 +784,6 @@ function containsGroupLink(
     /(?:https?:\/\/)?chat\.whatsapp\.com\/[A-Za-z0-9_-]+/i.test(
       text,
     ) ||
-
     /(?:https?:\/\/)?wa\.me\/[A-Za-z0-9?=&/_.-]+/i.test(
       text,
     )
@@ -811,10 +805,7 @@ function containsStatusMention(
     return false;
   }
 
-  // ----------------------------------------------------------
-  // DIRECT STATUS STRUCTURES
-  // ----------------------------------------------------------
-
+  // Direct status structures.
   if (
     content.statusMentionMessage ||
     content.groupStatusMentionMessage ||
@@ -823,17 +814,13 @@ function containsStatusMention(
     return true;
   }
 
-  // ----------------------------------------------------------
-  // CONTEXT
-  // ----------------------------------------------------------
-
   const context =
     getContextInfo(message) as any;
 
   const statusSourceType =
     String(
       context?.statusSourceType ||
-      "",
+        "",
     ).toUpperCase();
 
   if (
@@ -842,10 +829,6 @@ function containsStatusMention(
   ) {
     return true;
   }
-
-  // ----------------------------------------------------------
-  // QUOTED STATUS
-  // ----------------------------------------------------------
 
   const quoted =
     context?.quotedMessage;
@@ -857,10 +840,6 @@ function containsStatusMention(
   ) {
     return true;
   }
-
-  // ----------------------------------------------------------
-  // STATUS BROADCAST JID
-  // ----------------------------------------------------------
 
   const mentions =
     getMentionedJids(message);
@@ -874,10 +853,6 @@ function containsStatusMention(
   ) {
     return true;
   }
-
-  // ----------------------------------------------------------
-  // STATUS JID IN CONTEXT
-  // ----------------------------------------------------------
 
   const possibleStatusJids = [
     context?.statusJid,
@@ -896,10 +871,6 @@ function containsStatusMention(
   ) {
     return true;
   }
-
-  // ----------------------------------------------------------
-  // TEXT FALLBACK
-  // ----------------------------------------------------------
 
   if (
     /@status\b/i.test(text) ||
@@ -944,22 +915,6 @@ function containsMassMention(
 // ============================================================
 // 🤖 ANTI-BOT
 // ============================================================
-//
-// IMPORTANT:
-// WhatsApp/Baileys does not expose a universal reliable
-// "this participant is a bot" flag for every third-party
-// WhatsApp bot.
-//
-// Therefore this detector only reacts to explicit automation
-// signals actually present in the message structure.
-//
-// It deliberately does NOT classify:
-// - @lid accounts
-// - normal commands
-// - normal high-frequency users
-// - ordinary WhatsApp accounts
-//
-// ============================================================
 
 function looksLikeBot(
   message: WAMessage,
@@ -975,7 +930,6 @@ function looksLikeBot(
     return false;
   }
 
-  // Explicit message-level bot indicators.
   if (
     content.botMessage === true ||
     content.botReplyMessage === true ||
@@ -987,7 +941,6 @@ function looksLikeBot(
   const context =
     getContextInfo(message) as any;
 
-  // Explicit context-level indicators.
   if (
     context?.botMessage === true ||
     context?.botReplyMessage === true ||
@@ -996,8 +949,6 @@ function looksLikeBot(
     return true;
   }
 
-  // Explicit custom flags if exposed by the
-  // message object.
   if (
     (message as any).isBot === true ||
     (message as any).bot === true
@@ -1018,14 +969,6 @@ function looksLikeBot(
 // ============================================================
 // 🕵️ ANTI-FAKE
 // ============================================================
-//
-// @lid is a legitimate WhatsApp identity and MUST NOT be
-// considered fake.
-//
-// This detector focuses on malformed or unresolved group
-// participant identities instead.
-//
-// ============================================================
 
 function looksSuspicious(
   participant: any,
@@ -1036,7 +979,9 @@ function looksSuspicious(
 
   const id =
     typeof participant.id === "string"
-      ? normalizeJid(participant.id)
+      ? normalizeJid(
+          participant.id,
+        )
       : "";
 
   const phoneNumber =
@@ -1064,7 +1009,7 @@ function looksSuspicious(
     return false;
   }
 
-  // No usable identity at all.
+  // No usable identity.
   if (
     !id &&
     !phoneNumber
@@ -1098,7 +1043,6 @@ function checkSpam(
 
   if (!group) {
     group = new Map();
-
     spamTracker.set(
       jid,
       group,
@@ -1155,7 +1099,6 @@ function checkFlood(
 
   if (!group) {
     group = new Map();
-
     floodTracker.set(
       jid,
       group,
@@ -1426,8 +1369,44 @@ async function deleteMessage(
 }
 
 // ============================================================
-// PROTECTION RESPONSE
+// CONCISE PROTECTION RESPONSE
 // ============================================================
+
+function protectionLabel(
+  protection: ProtectionName,
+): string {
+  const names:
+    Record<ProtectionName, string> = {
+      antilink:
+        "🔗 Link",
+
+      antigrouplink:
+        "🔗 Group link",
+
+      antistatus:
+        "📱 Status activity",
+
+      antispam:
+        "💬 Spam",
+
+      antibot:
+        "🤖 Bot activity",
+
+      antimention:
+        "📣 Mass mention",
+
+      antiflood:
+        "🌊 Flood",
+
+      antifake:
+        "🕵️ Suspicious account",
+
+      antinsfw:
+        "🔞 NSFW content",
+    };
+
+  return names[protection];
+}
 
 function protectionResponse(
   protection: ProtectionName,
@@ -1440,125 +1419,45 @@ function protectionResponse(
   const mention =
     userMention(sender);
 
-  const names:
-    Record<
-      ProtectionName,
-      string
-    > = {
-      antilink:
-        "🔗 LINK DETECTED",
-
-      antigrouplink:
-        "🔗 GROUP LINK DETECTED",
-
-      antistatus:
-        "📱 STATUS ACTIVITY DETECTED",
-
-      antispam:
-        "💬 SPAM DETECTED",
-
-      antibot:
-        "🤖 BOT ACTIVITY DETECTED",
-
-      antimention:
-        "📣 MASS MENTION DETECTED",
-
-      antiflood:
-        "🌊 FLOOD DETECTED",
-
-      antifake:
-        "🕵️ SUSPICIOUS ACCOUNT DETECTED",
-
-      antinsfw:
-        "🔞 NSFW CONTENT DETECTED",
-    };
-
-  const title =
-    names[protection];
-
-  let lines: string[];
-
-  // ----------------------------------------------------------
-  // DELETE
-  // ----------------------------------------------------------
+  const label =
+    protectionLabel(protection);
 
   if (
     action === "delete"
   ) {
-    lines = [
-      mention,
+    return [
+      `${label} removed.`,
       "",
-      `📋 Reason: ${reason}`,
-      "",
-      "🗑️ Message removed.",
-      "🟢 Protection enforced.",
-      "",
-      "🛡️ Group security remains active.",
-    ];
+      `${mention}, ${reason}`,
+    ].join("\n");
   }
 
-  // ----------------------------------------------------------
-  // WARN
-  // ----------------------------------------------------------
-
-  else if (
+  if (
     action === "warn"
   ) {
-    lines = [
-      mention,
+    return [
+      `⚠️ ${label} detected.`,
       "",
-      `📋 Reason: ${reason}`,
-      "",
-      "🗑️ Message removed.",
-      "",
-      `⚠️ Warning: ${warningCount}/${warnLimit}`,
-
-      warningCount >= warnLimit
-        ? "🚨 Warning limit reached."
-        : "🟡 Please follow the group rules.",
-    ];
+      `${mention}, ${reason}`,
+      `Warning: ${warningCount}/${warnLimit}`,
+    ].join("\n");
   }
 
-  // ----------------------------------------------------------
-  // KICK
-  // ----------------------------------------------------------
-
-  else if (
+  if (
     action === "kick"
   ) {
-    lines = [
-      mention,
+    return [
+      "👢 Member removed.",
       "",
-      `📋 Reason: ${reason}`,
-      "",
-      "🗑️ Message removed.",
-      "👢 Punishment: User removed.",
-      "",
-      "🛡️ Protection action enforced.",
-    ];
+      `${mention} — ${reason}`,
+    ].join("\n");
   }
 
-  // ----------------------------------------------------------
-  // BAN
-  // ----------------------------------------------------------
-
-  else {
-    lines = [
-      mention,
-      "",
-      `📋 Reason: ${reason}`,
-      "",
-      "🗑️ Message removed.",
-      "🚫 Punishment: User banned.",
-      "",
-      "🛡️ Protection action enforced.",
-    ];
-  }
-
-  return security(
-    title,
-    lines,
-  );
+  return [
+    "🚫 Member removed.",
+    "",
+    `${mention} — ${reason}`,
+  ].join("\n");
 }
 
 // ============================================================
@@ -1576,34 +1475,21 @@ async function sendProtectionResponse(
   warnLimit = 3,
   quotedMessage?: WAMessage,
 ): Promise<void> {
-
   try {
-
-    await sock.sendMessage(
+    await sendVortexReply(
+      sock,
       jid,
-      {
-        text:
-          protectionResponse(
-            protection,
-            sender,
-            reason,
-            action,
-            warningCount,
-            warnLimit,
-          ),
-        mentions: [
-          sender,
-        ],
-      },
-      quotedMessage
-        ? {
-            quoted: quotedMessage,
-          }
-        : undefined,
+      protectionResponse(
+        protection,
+        sender,
+        reason,
+        action,
+        warningCount,
+        warnLimit,
+      ),
+      quotedMessage,
     );
-
   } catch (err) {
-
     console.error(
       "[DARK VORTEX] Protection response error:",
       err,
@@ -1614,37 +1500,17 @@ async function sendProtectionResponse(
 // ============================================================
 // 🤖 AUTOMATIC BOT ACTION POLICY
 // ============================================================
-//
-// The AI/detector supplies confidence.
-// The protection configuration decides what Dark Vortex
-// is actually allowed to do.
-//
-// Confidence levels:
-//
-// 0–49   → monitor only
-// 50–74  → monitor only
-// 75–89  → enforcement eligible
-// 90–94  → high-confidence enforcement
-// 95–100 → critical-confidence enforcement
-//
-// The configured antibot action remains authoritative.
-//
-// ============================================================
 
 function getAutomaticBotAction(
   confidence: number,
   configuredAction: ProtectionAction,
 ): ProtectionAction | null {
-
   if (
     !Number.isFinite(confidence) ||
     confidence < 75
   ) {
     return null;
   }
-
-  // The configured group action determines
-  // the maximum enforcement Dark Vortex may use.
 
   if (
     configuredAction === "delete"
@@ -1726,23 +1592,19 @@ async function executeAction(
     );
 
     try {
-      await sock.sendMessage(
+      await sendVortexReply(
+        sock,
         jid,
-        {
-          text:
-            error(
-              "BOT ADMIN REQUIRED",
-              [
-                "🛡️ Protection detected",
-                "an offending message,",
-                "but Dark Vortex cannot",
-                "enforce the action.",
-                "",
-                "👑 Promote Dark Vortex",
-                "to group administrator.",
-              ],
-            ),
-        },
+        error(
+          "BOT ADMIN REQUIRED",
+          [
+            "🛡️ Protection detected an offending message.",
+            "Dark Vortex cannot enforce the action.",
+            "",
+            "💡 Promote Dark Vortex to group admin.",
+          ],
+        ),
+        message,
       );
     } catch {
       // Ignore secondary notification failure.
@@ -1776,16 +1638,16 @@ async function executeAction(
     action === "delete"
   ) {
     await sendProtectionResponse(
-  sock,
-  jid,
-  normalizedSender,
-  protection,
-  action,
-  reason,
-  0,
-  warnLimit,
-  message,
-);
+      sock,
+      jid,
+      normalizedSender,
+      protection,
+      action,
+      reason,
+      0,
+      warnLimit,
+      message,
+    );
 
     recordProtectionAction(
       jid,
@@ -1816,16 +1678,16 @@ async function executeAction(
       );
 
     await sendProtectionResponse(
-  sock,
-  jid,
-  normalizedSender,
-  protection,
-  "warn",
-  reason,
-  warningCount,
-  warnLimit,
-  message,
-);
+      sock,
+      jid,
+      normalizedSender,
+      protection,
+      "warn",
+      reason,
+      warningCount,
+      warnLimit,
+      message,
+    );
 
     recordProtectionAction(
       jid,
@@ -1845,35 +1707,17 @@ async function executeAction(
       warnLimit
     ) {
       try {
-        await sock.sendMessage(
+        await sendVortexReply(
+          sock,
           jid,
-          {
-            text:
-              security(
-                "⚠️ WARNING LIMIT REACHED",
-                [
-                  userMention(
-                    normalizedSender,
-                  ),
-
-                  `🚨 Warnings: ${warningCount}/${warnLimit}`,
-
-                  "",
-
-                  "👢 Maximum warning limit reached.",
-
-                  "🛡️ Dark Vortex is removing the user.",
-
-                  "",
-
-                  "🔴 Protection action: ENFORCED",
-                ],
-              ),
-
-            mentions: [
-              normalizedSender,
-            ],
-          },
+          [
+            "👢 Warning limit reached.",
+            "",
+            `${userMention(normalizedSender)} — ${warningCount}/${warnLimit} warnings.`,
+            "Removing member...",
+          ].join("\n"),
+          message,
+          {},
         );
       } catch (err) {
         console.error(
@@ -1923,16 +1767,16 @@ async function executeAction(
     action === "kick"
   ) {
     await sendProtectionResponse(
-  sock,
-  jid,
-  normalizedSender,
-  protection,
-  "kick",
-  reason,
-  0,
-  warnLimit,
-  message,
-);
+      sock,
+      jid,
+      normalizedSender,
+      protection,
+      "kick",
+      reason,
+      0,
+      warnLimit,
+      message,
+    );
 
     try {
       await sock.groupParticipantsUpdate(
@@ -1972,16 +1816,16 @@ async function executeAction(
     action === "ban"
   ) {
     await sendProtectionResponse(
-  sock,
-  jid,
-  normalizedSender,
-  protection,
-  "ban",
-  reason,
-  0,
-  warnLimit,
-  message,
-);
+      sock,
+      jid,
+      normalizedSender,
+      protection,
+      "ban",
+      reason,
+      0,
+      warnLimit,
+      message,
+    );
 
     try {
       await sock.groupParticipantsUpdate(
@@ -2016,8 +1860,6 @@ async function executeAction(
         err,
       );
 
-      // Keep the local protection record even if
-      // WhatsApp rejects the participant removal.
       recordProtectionBan(
         jid,
         normalizedSender,
@@ -2039,23 +1881,9 @@ async function executeAction(
     }
   }
 }
+
 // ============================================================
 // 🤖 AUTOMATIC AI + BEHAVIORAL BOT ENFORCEMENT
-// ============================================================
-//
-// This is the bridge between:
-//
-// bot-detector.ts
-//       ↓
-// Dark Vortex AI
-//       ↓
-// protection.ts
-//
-// IMPORTANT:
-// AI never directly performs moderation.
-//
-// AI provides evidence.
-// This function applies the existing protection policy.
 // ============================================================
 
 export async function enforceAutomaticBotDetection(
@@ -2065,7 +1893,6 @@ export async function enforceAutomaticBotDetection(
   sender: string,
   detection: BotDetectionResult,
 ): Promise<boolean> {
-
   // ----------------------------------------------------------
   // GROUP ONLY
   // ----------------------------------------------------------
@@ -2077,7 +1904,7 @@ export async function enforceAutomaticBotDetection(
   }
 
   // ----------------------------------------------------------
-  // NEVER ENFORCE AGAINST DARK VORTEX ITSELF
+  // NEVER ENFORCE AGAINST DARK VORTEX
   // ----------------------------------------------------------
 
   if (
@@ -2243,11 +2070,12 @@ export async function enforceAutomaticBotDetection(
     detection.ai?.reason;
 
   const reasonParts: string[] = [
-    `Automated bot behavior detected with ${confidence.toFixed(1)}% combined confidence.`,
+    `Automated bot behavior detected with ${confidence.toFixed(1)}% confidence.`,
   ];
 
   if (
-    typeof aiProbability === "number"
+    typeof aiProbability ===
+    "number"
   ) {
     reasonParts.push(
       `AI probability: ${aiProbability.toFixed(1)}%.`,
@@ -2255,7 +2083,8 @@ export async function enforceAutomaticBotDetection(
   }
 
   if (
-    typeof aiConfidence === "number"
+    typeof aiConfidence ===
+    "number"
   ) {
     reasonParts.push(
       `AI confidence: ${aiConfidence.toFixed(1)}%.`,
@@ -2266,7 +2095,7 @@ export async function enforceAutomaticBotDetection(
     detection.ai?.risk
   ) {
     reasonParts.push(
-      `Risk level: ${detection.ai.risk}.`,
+      `Risk: ${detection.ai.risk}.`,
     );
   }
 
@@ -2286,7 +2115,6 @@ export async function enforceAutomaticBotDetection(
   // ----------------------------------------------------------
 
   try {
-
     await executeAction(
       sock,
       jid,
@@ -2299,9 +2127,7 @@ export async function enforceAutomaticBotDetection(
     );
 
     return true;
-
   } catch (err) {
-
     console.error(
       "[DARK VORTEX] Automatic bot enforcement failed:",
       err,
@@ -2310,6 +2136,7 @@ export async function enforceAutomaticBotDetection(
     return false;
   }
 }
+
 // ============================================================
 // COMMAND CONFIGURATION
 // ============================================================
@@ -2319,7 +2146,7 @@ export async function handleProtectionCommand(
   jid: string,
   command: string,
   args: string[],
-  _message?: WAMessage,
+  message?: WAMessage,
 ): Promise<boolean> {
   const protectionCommands =
     new Set<
@@ -2329,20 +2156,14 @@ export async function handleProtectionCommand(
     >([
       "antilink",
       "antigrouplink",
-
-      // Existing command.
       "antistatus",
-
-      // New alias.
       "antistatusmention",
-
       "antispam",
       "antibot",
       "antimention",
       "antiflood",
       "antifake",
       "antinsfw",
-
       "protection",
     ]);
 
@@ -2364,22 +2185,18 @@ export async function handleProtectionCommand(
   if (
     !jid.endsWith("@g.us")
   ) {
-    await sock.sendMessage(
+    await sendVortexReply(
+      sock,
       jid,
-      {
-        text:
-          error(
-            "GROUP ONLY",
-            [
-              "🛡️ Protection settings",
-              "can only be changed",
-              "inside a WhatsApp group.",
-              "",
-              "💡 Open a group and",
-              "try again.",
-            ],
-          ),
-      },
+      error(
+        "GROUP ONLY",
+        [
+          "🛡️ Protection settings are group-only.",
+          "",
+          "💡 Run this command inside a group.",
+        ],
+      ),
+      message,
     );
 
     return true;
@@ -2402,20 +2219,18 @@ export async function handleProtectionCommand(
       err,
     );
 
-    await sock.sendMessage(
+    await sendVortexReply(
+      sock,
       jid,
-      {
-        text:
-          error(
-            "GROUP DATA ERROR",
-            [
-              "Unable to read group",
-              "information.",
-              "",
-              "💡 Try again in a moment.",
-            ],
-          ),
-      },
+      error(
+        "GROUP DATA ERROR",
+        [
+          "Unable to read group information.",
+          "",
+          "💡 Try again in a moment.",
+        ],
+      ),
+      message,
     );
 
     return true;
@@ -2431,22 +2246,19 @@ export async function handleProtectionCommand(
       metadata,
     )
   ) {
-    await sock.sendMessage(
+    await sendVortexReply(
+      sock,
       jid,
-      {
-        text:
-          error(
-            "ADMIN ACCESS REQUIRED",
-            [
-              "🛡️ Dark Vortex must be",
-              "a group administrator",
-              "to manage protection.",
-              "",
-              "💡 Promote Dark Vortex",
-              "to admin and try again.",
-            ],
-          ),
-      },
+      error(
+        "ADMIN ACCESS REQUIRED",
+        [
+          "🛡️ Dark Vortex must be a group admin",
+          "to manage protection.",
+          "",
+          "💡 Promote Dark Vortex and try again.",
+        ],
+      ),
+      message,
     );
 
     return true;
@@ -2474,62 +2286,38 @@ export async function handleProtectionCommand(
     const settings =
       getSettings(jid);
 
-    await sock.sendMessage(
+    await sendVortexReply(
+      sock,
       jid,
-      {
-        text:
-          protectionStatus({
-            antilink:
-              settings.antilink.enabled,
+      protectionStatus({
+        antilink:
+          settings.antilink.enabled,
 
-            antigrouplink:
-              settings.antigrouplink.enabled,
+        antigrouplink:
+          settings.antigrouplink.enabled,
 
-            antistatus:
-              settings.antistatus.enabled,
+        antistatus:
+          settings.antistatus.enabled,
 
-            antispam:
-              settings.antispam.enabled,
+        antispam:
+          settings.antispam.enabled,
 
-            antibot:
-              settings.antibot.enabled,
+        antibot:
+          settings.antibot.enabled,
 
-            antimention:
-              settings.antimention.enabled,
+        antimention:
+          settings.antimention.enabled,
 
-            antiflood:
-              settings.antiflood.enabled,
+        antiflood:
+          settings.antiflood.enabled,
 
-            antifake:
-              settings.antifake.enabled,
+        antifake:
+          settings.antifake.enabled,
 
-            antinsfw:
-              settings.antinsfw.enabled,
-          }) +
-
-          "\n\n" +
-
-          security(
-            "PROTECTION THRESHOLDS",
-            [
-              `⚠️ Warn limit: ${settings.warnLimit}`,
-
-              `💬 Spam: ${settings.spamMessages} messages / ${settings.spamWindowSeconds}s`,
-
-              `🌊 Flood: ${settings.floodMessages} messages / ${settings.floodWindowSeconds}s`,
-
-              `👑 Protect admins: ${
-                settings.protectAdmins
-                  ? "ON"
-                  : "OFF"
-              }`,
-
-              "",
-
-              "🛡️ Security engine: ACTIVE",
-            ],
-          ),
-      },
+        antinsfw:
+          settings.antinsfw.enabled,
+      }),
+      message,
     );
 
     return true;
@@ -2539,175 +2327,178 @@ export async function handleProtectionCommand(
   // CONFIGURE PROTECTION
   // ==========================================================
 
-  const actionValues: ProtectionAction[] = [
-  "delete",
-  "warn",
-  "kick",
-  "ban",
-];
+  const actionValues:
+    ProtectionAction[] = [
+      "delete",
+      "warn",
+      "kick",
+      "ban",
+    ];
 
-const mode =
-  args[0]?.trim().toLowerCase();
+  const mode =
+    args[0]?.trim().toLowerCase();
 
-const requestedAction =
-  args[1]?.trim().toLowerCase();
+  const requestedAction =
+    args[1]?.trim().toLowerCase();
 
-const current =
-  getSettings(jid)[protection];
+  const current =
+    getSettings(jid)[protection];
 
-let updated: ProtectionSettings;
+  let updated:
+    ProtectionSettings;
 
-/*
- * .antilink off
- */
-if (mode === "off") {
-  if (args.length > 1) {
-    await sock.sendMessage(
-      jid,
-      {
-        text: commandUsage(
+  // ----------------------------------------------------------
+  // .antilink off
+  // ----------------------------------------------------------
+
+  if (
+    mode === "off"
+  ) {
+    if (args.length > 1) {
+      await sendVortexReply(
+        sock,
+        jid,
+        commandUsage(
           protection,
-          `/${protection} off`,
+          `${protection} off`,
         ),
-      },
-    );
+        message,
+      );
 
-    return true;
+      return true;
+    }
+
+    updated = {
+      ...current,
+      enabled: false,
+    };
   }
 
-  updated = {
-    ...current,
-    enabled: false,
-  };
-}
+  // ----------------------------------------------------------
+  // .antilink on
+  // .antilink on warn
+  // .antilink on kick
+  // .antilink on ban
+  // .antilink on delete
+  // ----------------------------------------------------------
 
-/*
- * .antilink on
- * .antilink on warn
- * .antilink on kick
- * .antilink on ban
- * .antilink on delete
- */
-else if (mode === "on") {
-  if (
-    args.length > 2 ||
-    (
-      requestedAction &&
-      !actionValues.includes(
-        requestedAction as ProtectionAction,
+  else if (
+    mode === "on"
+  ) {
+    if (
+      args.length > 2 ||
+      (
+        requestedAction &&
+        !actionValues.includes(
+          requestedAction as ProtectionAction,
+        )
       )
+    ) {
+      await sendVortexReply(
+        sock,
+        jid,
+        commandUsage(
+          protection,
+          `${protection} on [delete|warn|kick|ban]`,
+        ),
+        message,
+      );
+
+      return true;
+    }
+
+    updated = {
+      ...current,
+
+      enabled: true,
+
+      action:
+        requestedAction
+          ? requestedAction as ProtectionAction
+          : current.action,
+    };
+  }
+
+  // ----------------------------------------------------------
+  // Backward-compatible shorthand.
+  // ----------------------------------------------------------
+
+  else if (
+    actionValues.includes(
+      mode as ProtectionAction,
     )
   ) {
-    await sock.sendMessage(
-      jid,
-      {
-        text: commandUsage(
+    if (args.length > 1) {
+      await sendVortexReply(
+        sock,
+        jid,
+        commandUsage(
           protection,
-          `/${protection} on [delete|warn|kick|ban]`,
+          `${protection} [on|off|delete|warn|kick|ban]`,
         ),
-      },
+        message,
+      );
+
+      return true;
+    }
+
+    updated = {
+      ...current,
+
+      enabled: true,
+
+      action:
+        mode as ProtectionAction,
+    };
+  }
+
+  // ----------------------------------------------------------
+  // Invalid mode.
+  // ----------------------------------------------------------
+
+  else {
+    await sendVortexReply(
+      sock,
+      jid,
+      commandUsage(
+        protection,
+        `${protection} on [delete|warn|kick|ban]`,
+      ),
+      message,
     );
 
     return true;
   }
 
-  updated = {
-    ...current,
-    enabled: true,
-    action:
-      requestedAction
-        ? requestedAction as ProtectionAction
-        : current.action,
-  };
-}
+  // ==========================================================
+  // SAVE
+  // ==========================================================
 
-/*
- * .antilink delete
- * .antilink warn
- * .antilink kick
- * .antilink ban
- *
- * Backward-compatible shorthand.
- */
-else if (
-  actionValues.includes(
-    mode as ProtectionAction,
-  )
-) {
-  if (args.length > 1) {
-    await sock.sendMessage(
-      jid,
-      {
-        text: commandUsage(
-          protection,
-          `/${protection} [on|off|delete|warn|kick|ban]`,
-        ),
-      },
-    );
-
-    return true;
-  }
-
-  updated = {
-    ...current,
-    enabled: true,
-    action:
-      mode as ProtectionAction,
-  };
-}
-
-/*
- * Invalid mode.
- */
-else {
-  await sock.sendMessage(
+  updateSettings(
     jid,
     {
-      text: commandUsage(
-        protection,
-        `/${protection} on [delete|warn|kick|ban]`,
-      ),
+      [protection]: updated,
     },
   );
 
-  return true;
-}
-
-updateSettings(
-  jid,
-  {
-    [protection]: updated,
-  },
-);
+  // ==========================================================
+  // CONCISE CONFIRMATION
+  // ==========================================================
 
   const status =
     updated.enabled
-      ? `🟢 ENABLED • Action: ${updated.action.toUpperCase()}`
-      : "🔴 DISABLED";
+      ? `🟢 Enabled · ${updated.action.toUpperCase()}`
+      : "🔴 Disabled";
 
-  await sock.sendMessage(
+  await sendVortexReply(
+    sock,
     jid,
-    {
-      text:
-        security(
-          "PROTECTION UPDATED",
-          [
-            `🛡️ Feature: ${protectionCommand}`,
-
-            `⚙️ Status: ${status}`,
-
-            "",
-
-            "🟢 Protection settings",
-            "have been saved successfully.",
-
-            "",
-
-            "⚡ Dark Vortex security engine",
-            "will enforce the new configuration.",
-          ],
-        ),
-    },
+    [
+      `🛡️ ${protectionCommand}`,
+      "",
+      `Status: ${status}`,
+    ].join("\n"),
+    message,
   );
 
   return true;
@@ -2780,11 +2571,6 @@ export async function processProtection(
   // ----------------------------------------------------------
   // ADMINS
   // ----------------------------------------------------------
-  //
-  // Admins remain exempt by default.
-  //
-  // protectAdmins can later be enabled if desired.
-  //
 
   if (
     isAdmin(
@@ -2814,7 +2600,7 @@ export async function processProtection(
       normalizedSender,
       "antigrouplink",
       settings.antigrouplink.action,
-      "WhatsApp group links are not allowed in this group.",
+      "WhatsApp group links aren't allowed in this group.",
       settings.warnLimit,
     );
 
@@ -2836,7 +2622,7 @@ export async function processProtection(
       normalizedSender,
       "antilink",
       settings.antilink.action,
-      "Links are not allowed in this group.",
+      "links aren't allowed in this group.",
       settings.warnLimit,
     );
 
@@ -2844,7 +2630,7 @@ export async function processProtection(
   }
 
   // ==========================================================
-  // 3. 📱 WHATSAPP STATUS MENTIONS
+  // 3. WHATSAPP STATUS MENTIONS
   // ==========================================================
 
   if (
@@ -2861,7 +2647,7 @@ export async function processProtection(
       normalizedSender,
       "antistatus",
       settings.antistatus.action,
-      "WhatsApp Status mentions are not allowed in this group.",
+      "WhatsApp Status mentions aren't allowed in this group.",
       settings.warnLimit,
     );
 
@@ -2886,7 +2672,7 @@ export async function processProtection(
       normalizedSender,
       "antimention",
       settings.antimention.action,
-      "Mass mentions are not allowed in this group.",
+      "mass mentions aren't allowed in this group.",
       settings.warnLimit,
     );
 
@@ -2894,7 +2680,7 @@ export async function processProtection(
   }
 
   // ==========================================================
-  // 5. 🤖 OTHER BOTS
+  // 5. OTHER BOTS
   // ==========================================================
 
   if (
@@ -2908,7 +2694,7 @@ export async function processProtection(
       normalizedSender,
       "antibot",
       settings.antibot.action,
-      "Automated bot activity is not allowed in this group.",
+      "automated bot activity isn't allowed in this group.",
       settings.warnLimit,
     );
 
@@ -2916,7 +2702,7 @@ export async function processProtection(
   }
 
   // ==========================================================
-  // 6. 🕵️ FAKE / SUSPICIOUS ACCOUNT
+  // 6. FAKE / SUSPICIOUS ACCOUNT
   // ==========================================================
 
   if (
@@ -2933,7 +2719,6 @@ export async function processProtection(
             member.id,
             normalizedSender,
           ) ||
-
           sameUser(
             member.phoneNumber,
             normalizedSender,
@@ -2952,7 +2737,7 @@ export async function processProtection(
         normalizedSender,
         "antifake",
         settings.antifake.action,
-        "Suspicious or unresolved account identity was detected.",
+        "a suspicious or unresolved account identity was detected.",
         settings.warnLimit,
       );
 
@@ -2980,7 +2765,7 @@ export async function processProtection(
       normalizedSender,
       "antispam",
       settings.antispam.action,
-      "Spam activity is not allowed in this group.",
+      "spam activity isn't allowed in this group.",
       settings.warnLimit,
     );
 
@@ -3006,7 +2791,7 @@ export async function processProtection(
       normalizedSender,
       "antiflood",
       settings.antiflood.action,
-      "Sending messages too quickly is not allowed in this group.",
+      "sending messages too quickly isn't allowed in this group.",
       settings.warnLimit,
     );
 
@@ -3014,7 +2799,7 @@ export async function processProtection(
   }
 
   // ==========================================================
-  // 9. 🔞 NSFW IMAGE DETECTION
+  // 9. NSFW IMAGE DETECTION
   // ==========================================================
 
   if (
@@ -3186,3 +2971,4 @@ setInterval(
   },
   5 * 60 * 1000,
 );
+

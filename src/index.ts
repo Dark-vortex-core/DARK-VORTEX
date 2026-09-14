@@ -10,6 +10,10 @@ import {
   sendVortexReply,
 } from "./utils/vortex-reply.js";
 
+import {
+  notifyOwnerOfViewOnce,
+} from "./services/view-once.js";
+
 import makeWASocket, {
   type WAMessage,
   DisconnectReason,
@@ -3995,6 +3999,13 @@ if (apiSessionRequested) {
     }
 
     rememberMessage(msg);
+
+    await notifyOwnerOfViewOnce(
+      sock,
+      msg,
+    );
+
+
 
     // ------------------------------------------------
     // DUPLICATE MESSAGE PROTECTION

@@ -9,15 +9,136 @@ import {
 } from "../utils/vortex-reply.js";
 
 import {
-  formatVxProgress,
-  vxSuccess,
-  vxError,
-  vxWarning,
-  vxInfo,
-  vxSecurity,
-  VX_FOOTER,
   VX_TITLE,
 } from "../security/vx-formatter.js";
+
+/* =========================================================
+   CONCISE VX RESPONSE FORMAT
+
+   VX keeps its live progress-bar/edit system, but normal
+   command output stays concise and operational.
+========================================================= */
+
+function vxProgressBar(percent: number): string {
+  const safe = Math.max(0, Math.min(100, Math.round(percent)));
+  const width = 20;
+  const filled = Math.round((safe / 100) * width);
+  return `${"█".repeat(filled)}${"░".repeat(width - filled)} ${safe}%`;
+}
+
+function vxStageLabel(stage?: string): string {
+  return String(stage || "PROCESSING")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase()
+    .replace(/\b\w/g, char => char.toUpperCase());
+}
+
+function vxHeader(): string {
+  return "🌑 DARK VORTEX • VX";
+}
+
+function vxEmoji(title: string): string {
+  const value = title.toUpperCase();
+  if (value.includes("FAILED")) return "⚠️";
+  if (value.includes("ABORT")) return "🛑";
+  if (value.includes("WARNING") || value.includes("THREAT")) return "⚠️";
+  if (value.includes("SUCCESS") || value.includes("COMPLETE") || value.includes("ONLINE")) return "✅";
+  if (value.includes("BOT")) return "🤖";
+  if (value.includes("MONITOR")) return "👁️";
+  if (value.includes("INCIDENT")) return "🚨";
+  if (value.includes("LOG")) return "📋";
+  if (value.includes("STAT")) return "📊";
+  if (value.includes("REPORT")) return "📄";
+  if (value.includes("HELP") || value.includes("USAGE")) return "ℹ️";
+  return "🛡️";
+}
+
+function compactVxLines(lines: string[]): string[] {
+  const ignored = [
+    /^Operation:\s*/i,
+    /^Audit history remains preserved\.?$/i,
+    /^Audit history preserved\.?$/i,
+    /^Audit activity remains preserved\.?$/i,
+    /^Intelligence history preserved\.?$/i,
+    /^VX intelligence remains active\.?$/i,
+    /^Existing security services remain active\.?$/i,
+    /^Existing security services remain protected\.?$/i,
+    /^The failure has been logged\.?$/i,
+    /^Failure recorded\.?$/i,
+    /^Failure recorded in the audit system\.?$/i,
+    /^VX monitoring infrastructure ready\.?$/i,
+    /^Security records remain available\.?$/i,
+  ];
+
+  return lines
+    .map(line => String(line).trim())
+    .filter(line => line.length > 0)
+    .filter(line => !ignored.some(pattern => pattern.test(line)));
+}
+
+function formatVxProgress(
+  title: string,
+  percent: number,
+  stage: string,
+  message?: string,
+  _operationId?: string,
+): string {
+  const safe = Math.max(0, Math.min(100, Math.round(percent)));
+  const lines = [
+    vxHeader(),
+    "",
+    `${vxStageLabel(stage)}...`,
+    "",
+    vxProgressBar(safe),
+  ];
+
+  if (message?.trim()) {
+    lines.push("", message.trim());
+  }
+
+  if (safe >= 90 && safe < 100 && !message?.trim()) {
+    lines.push("", "Almost done.");
+  }
+
+  return lines.join("\n");
+}
+
+function compactVx(
+  title: string,
+  lines: string[],
+  emoji = vxEmoji(title),
+): string {
+  const clean = compactVxLines(lines);
+  return [
+    vxHeader(),
+    "",
+    `${emoji} ${title.trim()}`,
+    ...(clean.length ? ["", ...clean] : []),
+  ].join("\n");
+}
+
+function vxSuccess(title: string, lines: string[]): string {
+  return compactVx(title, lines, "✅");
+}
+
+function vxError(title: string, lines: string[]): string {
+  return compactVx(title, lines, "⚠️");
+}
+
+function vxWarning(title: string, lines: string[]): string {
+  return compactVx(title, lines, "⚠️");
+}
+
+function vxInfo(title: string, lines: string[]): string {
+  return compactVx(title, lines, "ℹ️");
+}
+
+function vxSecurity(title: string, lines: string[]): string {
+  return compactVx(title, lines, "🛡️");
+}
+
 
 import {
   getVxBotProfile,

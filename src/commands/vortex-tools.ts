@@ -29,13 +29,12 @@ import {
 } from "../generators/roast-generator.js";
 
 import {
-  vortexBox,
-  error,
   info,
   security,
   system,
   success,
   warning,
+  error,
   cleanUserNumber,
   userMention,
 } from "../utils/message.js";
@@ -128,22 +127,10 @@ interface PendingFinalKey {
    VORTEX REPLY HELPER
 ========================================================= */
 
-/*
- * Every normal response from this command module
- * goes through sendVortexReply().
- *
- * This provides:
- * • Native WhatsApp quoted reply
- * • Automatic Read More for long messages
- * • Consistent Dark Vortex reply behavior
- *
- * Media, broadcasts, report delivery, and intentional
- * progress edits remain direct sock.sendMessage() calls.
- */
-
-type VortexReplyOptions = MiscMessageGenerationOptions & {
-  mentions?: string[];
-};
+type VortexReplyOptions =
+  MiscMessageGenerationOptions & {
+    mentions?: string[];
+  };
 
 async function sendReply(
   sock: WASocket,
@@ -203,8 +190,7 @@ export function createSecurityConfirmation(
   command: string,
   args: string[],
 ): void {
-  const now =
-    Date.now();
+  const now = Date.now();
 
   pendingSecurityConfirmation = {
     ownerJid,
@@ -220,8 +206,7 @@ export function createSecurityConfirmation(
       SECURITY_CONFIRMATION_TIMEOUT,
   };
 
-  confirmedSecurityExecution =
-    null;
+  confirmedSecurityExecution = null;
 }
 
 /* =========================================================
@@ -229,8 +214,7 @@ export function createSecurityConfirmation(
 ========================================================= */
 
 export function clearSecurityConfirmation(): void {
-  pendingSecurityConfirmation =
-    null;
+  pendingSecurityConfirmation = null;
 }
 
 /* =========================================================
@@ -248,9 +232,7 @@ export function getSecurityConfirmation():
 
 export function isSecurityConfirmationExpired():
   boolean {
-  if (
-    !pendingSecurityConfirmation
-  ) {
+  if (!pendingSecurityConfirmation) {
     return false;
   }
 
@@ -269,8 +251,7 @@ export function consumeConfirmedSecurityExecution():
   const execution =
     confirmedSecurityExecution;
 
-  confirmedSecurityExecution =
-    null;
+  confirmedSecurityExecution = null;
 
   return execution;
 }
@@ -312,27 +293,16 @@ async function ensureDataFiles(): Promise<void> {
   const defaults: Array<
     [string, unknown[]]
   > = [
-    [
-      REPORTS_FILE,
-      [],
-    ],
-    [
-      AUDIT_FILE,
-      [],
-    ],
-    [
-      DIAGNOSTICS_FILE,
-      [],
-    ],
+    [REPORTS_FILE, []],
+    [AUDIT_FILE, []],
+    [DIAGNOSTICS_FILE, []],
   ];
 
   for (
     const [file, fallback] of defaults
   ) {
     try {
-      await fs.access(
-        file,
-      );
+      await fs.access(file);
     } catch {
       await fs.writeFile(
         file,
@@ -411,10 +381,7 @@ async function addAudit(
     details,
   });
 
-  if (
-    records.length >
-    500
-  ) {
+  if (records.length > 500) {
     records.splice(
       0,
       records.length - 500,
@@ -439,15 +406,12 @@ async function createReport(
   risk: SecurityReport["risk"],
 ): Promise<SecurityReport> {
   const reports =
-    await readJson<
-      SecurityReport[]
-    >(
+    await readJson<SecurityReport[]>(
       REPORTS_FILE,
       [],
     );
 
-  const report:
-    SecurityReport = {
+  const report: SecurityReport = {
     id:
       `VX-${Date.now().toString(36).toUpperCase()}-${crypto
         .randomBytes(3)
@@ -459,8 +423,7 @@ async function createReport(
     createdAt:
       new Date().toISOString(),
 
-    status:
-      "pending",
+    status: "pending",
 
     destination:
       process.env
@@ -482,14 +445,9 @@ async function createReport(
     risk,
   };
 
-  reports.push(
-    report,
-  );
+  reports.push(report);
 
-  if (
-    reports.length >
-    200
-  ) {
+  if (reports.length > 200) {
     reports.splice(
       0,
       reports.length - 200,
@@ -512,20 +470,15 @@ async function getReport(
   reportId: string,
 ): Promise<SecurityReport | null> {
   const reports =
-    await readJson<
-      SecurityReport[]
-    >(
+    await readJson<SecurityReport[]>(
       REPORTS_FILE,
       [],
     );
 
   return (
     reports.find(
-      (
-        report,
-      ) =>
-        report.id ===
-        reportId,
+      (report) =>
+        report.id === reportId,
     ) || null
   );
 }
@@ -536,31 +489,21 @@ async function getReport(
 
 async function updateReport(
   reportId: string,
-  changes:
-    Partial<SecurityReport>,
-): Promise<
-  SecurityReport | null
-> {
+  changes: Partial<SecurityReport>,
+): Promise<SecurityReport | null> {
   const reports =
-    await readJson<
-      SecurityReport[]
-    >(
+    await readJson<SecurityReport[]>(
       REPORTS_FILE,
       [],
     );
 
   const index =
     reports.findIndex(
-      (
-        report,
-      ) =>
-        report.id ===
-        reportId,
+      (report) =>
+        report.id === reportId,
     );
 
-  if (
-    index === -1
-  ) {
+  if (index === -1) {
     return null;
   }
 
@@ -594,21 +537,15 @@ function getTargetJid(
 
   if (
     mentioned &&
-    mentioned.length >
-      0
+    mentioned.length > 0
   ) {
-    return (
-      mentioned[0] ||
-      null
-    );
+    return mentioned[0] || null;
   }
 
   const participant =
     context?.participant;
 
-  if (
-    participant
-  ) {
+  if (participant) {
     return participant;
   }
 
@@ -624,13 +561,6 @@ async function getTargetDisplayName(
   message: WAMessage,
   targetJid: string,
 ): Promise<string> {
-  /*
-   * --------------------------------------------------------
-   * 1. If the target is the sender of this message,
-   *    WhatsApp's pushName is the best available name.
-   * --------------------------------------------------------
-   */
-
   const senderJid =
     message.key.participant ||
     message.key.remoteJid ||
@@ -642,12 +572,6 @@ async function getTargetDisplayName(
   ) {
     return message.pushName.trim();
   }
-
-  /*
-   * --------------------------------------------------------
-   * 2. In groups, resolve the target from group metadata.
-   * --------------------------------------------------------
-   */
 
   const chatJid =
     message.key.remoteJid;
@@ -662,30 +586,24 @@ async function getTargetDisplayName(
         );
 
       const participant =
-  metadata.participants.find(
-    (member) => {
-      const data =
-        member as any;
+        metadata.participants.find(
+          (member) => {
+            const data =
+              member as any;
 
-      return (
-        data.id === targetJid ||
-        data.jid === targetJid ||
-        data.lid === targetJid
-      );
-    },
-  );
+            return (
+              data.id === targetJid ||
+              data.jid === targetJid ||
+              data.lid === targetJid
+            );
+          },
+        );
 
       if (participant) {
         const name =
-          (
-            participant as any
-          ).notify ||
-          (
-            participant as any
-          ).name ||
-          (
-            participant as any
-          ).verifiedName;
+          (participant as any).notify ||
+          (participant as any).name ||
+          (participant as any).verifiedName;
 
         if (
           typeof name === "string" &&
@@ -694,19 +612,13 @@ async function getTargetDisplayName(
           return name.trim();
         }
       }
-    } catch (error) {
+    } catch (err) {
       console.error(
         "⚠️ [PRINTINSULT] Failed to resolve target name:",
-        error,
+        err,
       );
     }
   }
-
-  /*
-   * --------------------------------------------------------
-   * 3. Safe fallback.
-   * --------------------------------------------------------
-   */
 
   return cleanUserNumber(
     targetJid,
@@ -720,17 +632,13 @@ async function getTargetDisplayName(
 function targetHelp(
   command: string,
 ): string {
-  return info(
-    "TARGET REQUIRED",
-    [
-      `⚡ Command: ${getPrefix()}${command}`,
-      "",
-      "👤 Mention a user or reply",
-      "to their message.",
-      "",
-      `📝 Example: ${getPrefix()}${command} @user`,
-    ],
-  );
+  return [
+    "👤 Target required.",
+    "",
+    `Mention a user or reply to their message.`,
+    "",
+    `Example: ${getPrefix()}${command} @user`,
+  ].join("\n");
 }
 
 /* =========================================================
@@ -742,62 +650,45 @@ function analyzeObservableBotIndicators(
 ): {
   indicators: string[];
   findings: string[];
-  risk:
-    SecurityReport["risk"];
+  risk: SecurityReport["risk"];
 } {
-  const indicators:
-    string[] = [];
-
-  const findings:
-    string[] = [];
+  const indicators: string[] = [];
+  const findings: string[] = [];
 
   const content =
     message.message;
 
-  if (
-    content?.botInvokeMessage
-  ) {
+  if (content?.botInvokeMessage) {
     indicators.push(
       "WhatsApp bot-related message metadata observed.",
     );
   }
 
-  if (
-    content?.interactiveMessage
-  ) {
+  if (content?.interactiveMessage) {
     indicators.push(
       "Interactive automation-style message structure observed.",
     );
   }
 
-  if (
-    content?.buttonsMessage
-  ) {
+  if (content?.buttonsMessage) {
     indicators.push(
       "Legacy button-style message structure observed.",
     );
   }
 
-  if (
-    content?.listMessage
-  ) {
+  if (content?.listMessage) {
     indicators.push(
       "List-style interactive message structure observed.",
     );
   }
 
-  if (
-    content?.templateMessage
-  ) {
+  if (content?.templateMessage) {
     indicators.push(
       "Template-style message structure observed.",
     );
   }
 
-  if (
-    indicators.length >
-    0
-  ) {
+  if (indicators.length > 0) {
     findings.push(
       "Automation-related message structures were observed.",
     );
@@ -805,8 +696,7 @@ function analyzeObservableBotIndicators(
     return {
       indicators,
       findings,
-      risk:
-        "REVIEW",
+      risk: "REVIEW",
     };
   }
 
@@ -817,8 +707,7 @@ function analyzeObservableBotIndicators(
   return {
     indicators,
     findings,
-    risk:
-      "LOW",
+    risk: "LOW",
   };
 }
 
@@ -849,26 +738,19 @@ async function checkBot(
     },
   );
 
-  /* -------------------------------------------------------
-     INITIAL PROGRESS MESSAGE
-  ------------------------------------------------------- */
-
   const progressMessage =
     await sendReply(
       sock,
       jid,
-      vortexBox(
-        "🛡️ BOT VERIFICATION",
-        [
-          `🎯 Target: ${userMention(targetJid)}`,
-          "",
-          "🔄 Initializing verification...",
-          "",
-          "▱▱▱▱▱▱▱▱▱▱ 0%",
-          "",
-          "🟡 Status: INITIALIZING",
-        ],
-      ),
+      [
+        "🌑 DARK VORTEX • VX",
+        "",
+        `Scanning ${userMention(targetJid)}...`,
+        "",
+        "▱▱▱▱▱▱▱▱▱▱ 0%",
+        "",
+        "Initializing...",
+      ].join("\n"),
       message,
       {
         mentions: [
@@ -876,10 +758,6 @@ async function checkBot(
         ],
       },
     );
-
-  /* -------------------------------------------------------
-     SMALL DELAY HELPER
-  ------------------------------------------------------- */
 
   const wait =
     async (
@@ -893,10 +771,6 @@ async function checkBot(
           ),
       );
     };
-
-  /* -------------------------------------------------------
-     UPDATE PROGRESS
-  ------------------------------------------------------- */
 
   const updateProgress =
     async (
@@ -924,9 +798,7 @@ async function checkBot(
         );
 
       const bar =
-        "▰".repeat(
-          filled,
-        ) +
+        "▰".repeat(filled) +
         "▱".repeat(
           10 - filled,
         );
@@ -934,19 +806,15 @@ async function checkBot(
       await sock.sendMessage(
         jid,
         {
-          text:
-            vortexBox(
-              "🛡️ BOT VERIFICATION",
-              [
-                `🎯 Target: ${userMention(targetJid)}`,
-                "",
-                ...lines,
-                "",
-                `${bar} ${progress}%`,
-                "",
-                `🟡 Status: ${status}`,
-              ],
-            ),
+          text: [
+            "🌑 DARK VORTEX • VX",
+            "",
+            ...lines,
+            "",
+            `${bar} ${progress}%`,
+            "",
+            `Status: ${status}`,
+          ].join("\n"),
           ...(progressMessage?.key
             ? {
                 edit:
@@ -965,10 +833,9 @@ async function checkBot(
 
     await updateProgress(
       25,
-      "READING OBSERVABLE DATA",
+      "READING DATA",
       [
-        "📡 Reading observable message data...",
-        "🔍 Preparing metadata analysis...",
+        "Reading observable message data...",
       ],
     );
 
@@ -976,10 +843,10 @@ async function checkBot(
 
     await updateProgress(
       50,
-      "ANALYZING MESSAGE STRUCTURE",
+      "ANALYZING",
       [
-        "📡 Analyzing message metadata...",
-        "🤖 Checking automation indicators...",
+        "Analyzing message metadata...",
+        "Checking automation indicators...",
       ],
     );
 
@@ -992,10 +859,9 @@ async function checkBot(
 
     await updateProgress(
       75,
-      "VERIFYING SECURITY STATE",
+      "VERIFYING",
       [
-        "🔐 Checking observable authentication state...",
-        "🛡️ Comparing detected indicators...",
+        "Reviewing observable security indicators...",
       ],
     );
 
@@ -1005,9 +871,8 @@ async function checkBot(
       90,
       "ALMOST DONE",
       [
-        "🔎 Finalizing security assessment...",
+        "Finalizing security assessment...",
         "⚠️ Almost done...",
-        "📋 Preparing verification report...",
       ],
     );
 
@@ -1044,39 +909,28 @@ async function checkBot(
       },
     );
 
-    const finalBar =
-      "▰".repeat(10);
-
     await sock.sendMessage(
       jid,
       {
-        text:
-          security(
-            "BOT VERIFICATION COMPLETE",
-            [
-              `🎯 Target: ${userMention(targetJid)}`,
-              "",
-              `${finalBar} 100%`,
-              "",
-              "🟢 Status: COMPLETE",
-              "",
-              `🤖 Indicators: ${
-                analysis.indicators
-                  .length > 0
-                  ? "DETECTED"
-                  : "NOT OBSERVED"
-              }`,
-              "🔐 Authentication: UNVERIFIED",
-              `⚠️ Risk: ${analysis.risk}`,
-              "",
-              "📋 Observable checks completed.",
-              `📄 Report ID: ${report.id}`,
-              "",
-              "📤 Report: READY FOR OWNER REVIEW",
-              "",
-              "╰─── DARK VORTEX BOT APEX SECURITY ───╯",
-            ],
-          ),
+        text: [
+          "🌑 DARK VORTEX • VX",
+          "",
+          `${userMention(targetJid)}`,
+          "",
+          "██████████████████ 100%",
+          "",
+          "Scan complete.",
+          "",
+          `Bot indicators: ${
+            analysis.indicators.length > 0
+              ? "DETECTED"
+              : "NOT OBSERVED"
+          }`,
+          `Authentication: UNVERIFIED`,
+          `Risk: ${analysis.risk}`,
+          "",
+          `Report: ${report.id}`,
+        ].join("\n"),
         ...(progressMessage?.key
           ? {
               edit:
@@ -1109,17 +963,12 @@ async function checkBot(
       await sock.sendMessage(
         jid,
         {
-          text:
-            error(
-              "BOT VERIFICATION FAILED",
-              [
-                `🎯 Target: ${userMention(targetJid)}`,
-                "",
-                "❌ The verification could not be completed.",
-                "",
-                "🛡️ No security action was performed.",
-              ],
-            ),
+          text: [
+            "❌ VX scan failed.",
+            "",
+            "Unable to complete bot verification.",
+            "No security action was performed.",
+          ].join("\n"),
           ...(progressMessage?.key
             ? {
                 edit:
@@ -1168,18 +1017,15 @@ async function scanBot(
     await sendReply(
       sock,
       jid,
-      vortexBox(
-        "🛡️ BOT SECURITY SCAN",
-        [
-          `🎯 Target: ${userMention(targetJid)}`,
-          "",
-          "🔄 Initializing deep observable scan...",
-          "",
-          "▱▱▱▱▱▱▱▱▱▱ 0%",
-          "",
-          "🟡 Status: INITIALIZING",
-        ],
-      ),
+      [
+        "🌑 DARK VORTEX • VX",
+        "",
+        `Scanning ${userMention(targetJid)}...`,
+        "",
+        "▱▱▱▱▱▱▱▱▱▱ 0%",
+        "",
+        "Initializing...",
+      ].join("\n"),
       message,
       {
         mentions: [
@@ -1227,9 +1073,7 @@ async function scanBot(
         );
 
       const bar =
-        "▰".repeat(
-          filled,
-        ) +
+        "▰".repeat(filled) +
         "▱".repeat(
           10 - filled,
         );
@@ -1237,19 +1081,15 @@ async function scanBot(
       await sock.sendMessage(
         jid,
         {
-          text:
-            vortexBox(
-              "🛡️ BOT SECURITY SCAN",
-              [
-                `🎯 Target: ${userMention(targetJid)}`,
-                "",
-                ...lines,
-                "",
-                `${bar} ${progress}%`,
-                "",
-                `🟡 Status: ${status}`,
-              ],
-            ),
+          text: [
+            "🌑 DARK VORTEX • VX",
+            "",
+            ...lines,
+            "",
+            `${bar} ${progress}%`,
+            "",
+            `Status: ${status}`,
+          ].join("\n"),
           ...(progressMessage?.key
             ? {
                 edit:
@@ -1270,8 +1110,7 @@ async function scanBot(
       25,
       "INITIAL SCAN",
       [
-        "📡 Reading observable message data...",
-        "🔍 Initializing security inspection...",
+        "Reading observable message data...",
       ],
     );
 
@@ -1279,11 +1118,10 @@ async function scanBot(
 
     await updateProgress(
       50,
-      "ANALYZING MESSAGE STRUCTURE",
+      "ANALYZING",
       [
-        "📡 Inspecting message structures...",
-        "🤖 Checking automation indicators...",
-        "🔎 Reviewing observable metadata...",
+        "Inspecting message structures...",
+        "Checking automation indicators...",
       ],
     );
 
@@ -1296,29 +1134,23 @@ async function scanBot(
 
     await updateProgress(
       75,
-      "BUILDING SECURITY ASSESSMENT",
+      "ASSESSING",
       [
-        "🛡️ Correlating observable indicators...",
-        "🔐 Reviewing authentication state...",
-        "⚠️ Evaluating security evidence...",
+        "Correlating observable indicators...",
+        "Reviewing security evidence...",
       ],
     );
 
-    const findings =
-      [
-        ...analysis.findings,
+    const findings = [
+      ...analysis.findings,
+      "Authentication cannot be independently verified from normal WhatsApp message metadata.",
+      "No unauthorized takeover or credential access was attempted.",
+    ];
 
-        "Authentication cannot be independently verified from normal WhatsApp message metadata.",
-
-        "No unauthorized takeover or credential access was attempted.",
-      ];
-
-    const evidence =
-      [
-        ...analysis.indicators,
-
-        "Observable message-level analysis completed.",
-      ];
+    const evidence = [
+      ...analysis.indicators,
+      "Observable message-level analysis completed.",
+    ];
 
     await wait(700);
 
@@ -1326,8 +1158,7 @@ async function scanBot(
       90,
       "ALMOST DONE",
       [
-        "🔎 Finalizing security assessment...",
-        "📋 Preparing detailed scan report...",
+        "Finalizing security assessment...",
         "⚠️ Almost done...",
       ],
     );
@@ -1368,36 +1199,25 @@ async function scanBot(
     await sock.sendMessage(
       jid,
       {
-        text:
-          security(
-            "BOT SECURITY SCAN COMPLETE",
-            [
-              `🎯 Target: ${userMention(targetJid)}`,
-              "",
-              "▰▰▰▰▰▰▰▰▰▰ 100%",
-              "",
-              "🟢 Status: COMPLETE",
-              "",
-              "🔍 Verification: COMPLETE",
-              `🤖 Bot indicators: ${
-                analysis.indicators.length
-                  ? "DETECTED"
-                  : "NOT OBSERVED"
-              }`,
-              "🔐 Auth state: UNVERIFIED",
-              "📡 Observable activity: ANALYZED",
-              `🛡️ Risk assessment: ${analysis.risk}`,
-              "",
-              "🚫 Unauthorized takeover: BLOCKED",
-              "",
-              `📄 Report: ${report.id}`,
-              "📋 Detailed report prepared.",
-              "",
-              "📤 Report: READY FOR OWNER REVIEW",
-              "",
-              "╰─── DARK VORTEX BOT APEX SECURITY ───╯",
-            ],
-          ),
+        text: [
+          "🌑 DARK VORTEX • VX",
+          "",
+          `${userMention(targetJid)}`,
+          "",
+          "██████████████████ 100%",
+          "",
+          "Scan complete.",
+          "",
+          `Bot indicators: ${
+            analysis.indicators.length
+              ? "DETECTED"
+              : "NOT OBSERVED"
+          }`,
+          "Authentication: UNVERIFIED",
+          `Risk: ${analysis.risk}`,
+          "",
+          `Report: ${report.id}`,
+        ].join("\n"),
         ...(progressMessage?.key
           ? {
               edit:
@@ -1430,17 +1250,12 @@ async function scanBot(
       await sock.sendMessage(
         jid,
         {
-          text:
-            error(
-              "BOT SECURITY SCAN FAILED",
-              [
-                `🎯 Target: ${userMention(targetJid)}`,
-                "",
-                "❌ The security scan could not be completed.",
-                "",
-                "🛡️ No unauthorized security action was performed.",
-              ],
-            ),
+          text: [
+            "❌ VX scan failed.",
+            "",
+            "Unable to complete the security scan.",
+            "No unauthorized action was performed.",
+          ].join("\n"),
           ...(progressMessage?.key
             ? {
                 edit:
@@ -1484,38 +1299,28 @@ async function showProgress(
       }
     | undefined;
 
-  if (
-    requested
-  ) {
+  if (requested) {
     entry =
       scanProgress.get(
         requested,
       );
   } else {
     const values =
-      [
-        ...scanProgress.values(),
-      ];
+      [...scanProgress.values()];
 
     entry =
       values.at(-1);
   }
 
-  if (
-    !entry
-  ) {
+  if (!entry) {
     await sendReply(
       sock,
       jid,
-      info(
-        "SCAN PROGRESS",
-        [
-          "📡 No active or recent scan found.",
-          "",
-          `💡 Use ${getPrefix()}checkbot @user`,
-          `💡 Use ${getPrefix()}scanbot @user`,
-        ],
-      ),
+      [
+        "📊 No scan found.",
+        "",
+        `Use ${getPrefix()}checkbot @user or ${getPrefix()}scanbot @user.`,
+      ].join("\n"),
       message,
     );
 
@@ -1526,33 +1331,39 @@ async function showProgress(
     Date.now() -
     entry.startedAt;
 
+  const filled =
+    Math.floor(
+      entry.progress / 10,
+    );
+
+  const bar =
+    "▰".repeat(filled) +
+    "▱".repeat(
+      10 - filled,
+    );
+
   await sendReply(
     sock,
     jid,
-    system(
-      "SCAN PROGRESS",
-      [
-        `⚡ Command: ${entry.command}`,
-
-        entry.target
-          ? `🎯 Target: ${userMention(entry.target)}`
-          : "",
-
-        `📊 Progress: ${entry.progress}%`,
-
-        `🟢 Status: ${entry.status.toUpperCase()}`,
-
-        `⏱️ Runtime: ${Math.max(
-          0,
-          Math.floor(
-            elapsed /
-              1000,
-          ),
-        )}s`,
-      ].filter(
-        Boolean,
-      ),
-    ),
+    [
+      "🌑 DARK VORTEX • VX",
+      "",
+      `Command: ${entry.command}`,
+      entry.target
+        ? `Target: ${userMention(entry.target)}`
+        : "",
+      "",
+      `${bar} ${entry.progress}%`,
+      `Status: ${entry.status.toUpperCase()}`,
+      `Runtime: ${Math.max(
+        0,
+        Math.floor(
+          elapsed / 1000,
+        ),
+      )}s`,
+    ]
+      .filter(Boolean)
+      .join("\n"),
     message,
     entry.target
       ? {
@@ -1574,9 +1385,7 @@ async function showAudit(
   message?: WAMessage,
 ): Promise<void> {
   const records =
-    await readJson<
-      AuditRecord[]
-    >(
+    await readJson<AuditRecord[]>(
       AUDIT_FILE,
       [],
     );
@@ -1586,20 +1395,15 @@ async function showAudit(
       .slice(-8)
       .reverse();
 
-  if (
-    !recent.length
-  ) {
+  if (!recent.length) {
     await sendReply(
       sock,
       jid,
-      info(
-        "SECURITY AUDIT",
-        [
-          "📋 No legacy audit records available.",
-          "",
-          "🟢 Audit database is clean.",
-        ],
-      ),
+      [
+        "📋 Security audit",
+        "",
+        "No audit records available.",
+      ].join("\n"),
       message,
     );
 
@@ -1607,12 +1411,12 @@ async function showAudit(
   }
 
   const lines = [
-    `📋 Records: ${records.length}`,
+    "📋 Security audit",
+    "",
+    `Records: ${records.length}`,
     "",
     ...recent.map(
-      (
-        record,
-      ) =>
+      (record) =>
         `• ${record.command.toUpperCase()} — ${
           record.target
             ? cleanUserNumber(
@@ -1621,17 +1425,12 @@ async function showAudit(
             : "SYSTEM"
         }`,
     ),
-    "",
-    "🛡️ Legacy VX Audit Logging: ACTIVE",
   ];
 
   await sendReply(
     sock,
     jid,
-    security(
-      "LEGACY SECURITY AUDIT",
-      lines,
-    ),
+    lines.join("\n"),
     message,
   );
 }
@@ -1651,8 +1450,7 @@ async function runSystemDiagnostic(
 
   const diagnostic:
     DiagnosticRecord = {
-    id:
-      crypto.randomUUID(),
+    id: crypto.randomUUID(),
 
     timestamp:
       new Date().toISOString(),
@@ -1683,9 +1481,7 @@ async function runSystemDiagnostic(
             memory.rss /
             1024 /
             1024
-          ).toFixed(
-            1,
-          ),
+          ).toFixed(1),
         ),
 
       heapUsedMB:
@@ -1694,21 +1490,16 @@ async function runSystemDiagnostic(
             memory.heapUsed /
             1024 /
             1024
-          ).toFixed(
-            1,
-          ),
+          ).toFixed(1),
         ),
 
       cpus:
-        os.cpus()
-          .length,
+        os.cpus().length,
     },
   };
 
   const history =
-    await readJson<
-      DiagnosticRecord[]
-    >(
+    await readJson<DiagnosticRecord[]>(
       DIAGNOSTICS_FILE,
       [],
     );
@@ -1717,10 +1508,7 @@ async function runSystemDiagnostic(
     diagnostic,
   );
 
-  if (
-    history.length >
-    200
-  ) {
+  if (history.length > 200) {
     history.splice(
       0,
       history.length - 200,
@@ -1745,23 +1533,21 @@ async function runSystemDiagnostic(
   await sendReply(
     sock,
     jid,
-    system(
-      "SYSTEM DIAGNOSTIC",
-      [
-        "🟢 Runtime: HEALTHY",
-        `🧠 Node.js: ${process.version}`,
-        `💻 Platform: ${process.platform}`,
-        `⚙️ Architecture: ${process.arch}`,
-        `🧵 CPU Cores: ${os.cpus().length}`,
-        `💾 Memory RSS: ${diagnostic.details.rssMB} MB`,
-        `🧠 Heap Used: ${diagnostic.details.heapUsedMB} MB`,
-        `⏱️ Process Uptime: ${diagnostic.details.uptimeSeconds}s`,
-        `🆔 PID: ${process.pid}`,
-        "",
-        "📡 Connection diagnostics executed.",
-        "🛡️ Security services remain active.",
-      ],
-    ),
+    [
+      "🖥️ System diagnostic",
+      "",
+      "Status: HEALTHY",
+      `Node.js: ${process.version}`,
+      `Platform: ${process.platform}`,
+      `Architecture: ${process.arch}`,
+      `CPU cores: ${os.cpus().length}`,
+      `Memory: ${diagnostic.details.rssMB} MB`,
+      `Heap: ${diagnostic.details.heapUsedMB} MB`,
+      `Uptime: ${diagnostic.details.uptimeSeconds}s`,
+      `PID: ${process.pid}`,
+      "",
+      "Security services: ACTIVE",
+    ].join("\n"),
     message,
   );
 }
@@ -1803,22 +1589,19 @@ async function runIpTrace(
   await sendReply(
     sock,
     jid,
-    info(
-      "NETWORK DIAGNOSTIC",
-      [
-        "📡 Mode: SAFE DIAGNOSTIC",
-        `💻 Host: ${os.hostname()}`,
-        `🖥️ Platform: ${process.platform}`,
-        `⚙️ Architecture: ${process.arch}`,
-        "",
-        "🔐 Privacy boundary:",
-        "No WhatsApp user's private IP",
-        "address was traced or exposed.",
-        "",
-        `📄 Diagnostic ID: ${report.id}`,
-        "🟢 Status: COMPLETE",
-      ],
-    ),
+    [
+      "📡 Network diagnostic",
+      "",
+      "Mode: SAFE",
+      `Host: ${os.hostname()}`,
+      `Platform: ${process.platform}`,
+      `Architecture: ${process.arch}`,
+      "",
+      "Privacy: No WhatsApp user's private IP was traced or exposed.",
+      "",
+      `Diagnostic ID: ${report.id}`,
+      "Status: COMPLETE",
+    ].join("\n"),
     message,
   );
 }
@@ -1848,28 +1631,20 @@ async function runS9(
   await sendReply(
     sock,
     jid,
-    vortexBox(
-      "⚡ S9 PROTOCOL",
-      [
-        "🔐 Initializing System 9...",
-        "📡 Running in low-profile mode",
-        "👁️ Detection checks: ACTIVE",
-        "⚙️ Runtime: HEALTHY",
-        "🛡️ Security: ACTIVE",
-        `💾 Memory: ${(
-          memory.rss /
-          1024 /
-          1024
-        ).toFixed(
-          1,
-        )} MB`,
-        "📡 Connection: ONLINE",
-        "",
-        "✅ Status: ACTIVE",
-        "",
-        "╰─── SECURE CHANNEL ───╯",
-      ],
-    ),
+    [
+      "⚡ S9 Protocol",
+      "",
+      "Status: ACTIVE",
+      "Detection checks: ACTIVE",
+      "Runtime: HEALTHY",
+      "Security: ACTIVE",
+      `Memory: ${(
+        memory.rss /
+        1024 /
+        1024
+      ).toFixed(1)} MB`,
+      "Connection: ONLINE",
+    ].join("\n"),
     message,
   );
 }
@@ -1916,26 +1691,15 @@ async function insultUser(
   await sendReply(
     sock,
     jid,
-    vortexBox(
-      "👤 USER DIAGNOSTIC",
-      [
-        `🎯 Target: ${targetName}`,
-        "",
-        `🔍 Personality scan: ${diagnostic.personality}`,
-        `🧠 Brain activity: ${diagnostic.brainActivity}%`,
-        `⚡ Common sense: ${diagnostic.logic}`,
-        `📡 Social signal: ${diagnostic.socialSignal}`,
-        `😎 Confidence: ${diagnostic.confidence}%`,
-        "",
-        "💀 VORTEX ASSESSMENT",
-        "",
-        `“${diagnostic.roast}”`,
-        "",
-        `📊 Roast level: ${diagnostic.roastLevel}%`,
-        "",
-        `✅ Diagnosis: ${diagnostic.diagnosis}`,
-      ],
-    ),
+    [
+      "😈 Dark Vortex roast",
+      "",
+      `Target: ${targetName}`,
+      "",
+      diagnostic.roast,
+      "",
+      `Roast level: ${diagnostic.roastLevel}%`,
+    ].join("\n"),
     message,
     {
       mentions: [
@@ -1956,42 +1720,29 @@ async function armFinalKey(
   message?: WAMessage,
 ): Promise<void> {
   const reports =
-    await readJson<
-      SecurityReport[]
-    >(
+    await readJson<SecurityReport[]>(
       REPORTS_FILE,
       [],
     );
 
   const pending =
-    [
-      ...reports,
-    ]
+    [...reports]
       .reverse()
       .find(
-        (
-          report,
-        ) =>
+        (report) =>
           report.status ===
           "pending",
       );
 
-  if (
-    !pending
-  ) {
+  if (!pending) {
     await sendReply(
       sock,
       jid,
-      warning(
-        "NO PENDING REPORT",
-        [
-          "📋 There is no pending security report.",
-          "",
-          "Run a scan first:",
-          `${getPrefix()}checkbot @user`,
-          `${getPrefix()}scanbot @user`,
-        ],
-      ),
+      [
+        "⚠️ No pending report.",
+        "",
+        `Run ${getPrefix()}checkbot @user or ${getPrefix()}scanbot @user first.`,
+      ].join("\n"),
       message,
     );
 
@@ -2003,36 +1754,28 @@ async function armFinalKey(
     2 * 60 * 1000;
 
   pendingFinalKey = {
-    reportId:
-      pending.id,
-
+    reportId: pending.id,
     ownerJid,
-
     expiresAt,
   };
 
   await sendReply(
     sock,
     jid,
-    warning(
-      "FINAL REPORT KEY",
-      [
-        `📄 Report: ${pending.id}`,
-        "",
-        "📤 A security report is ready.",
-        "",
-        pending.destination
-          ? `📍 Destination: ${pending.destination}`
-          : "📍 Destination: NOT CONFIGURED",
-        "",
-        "Do you want to send the report?",
-        "",
-        "✅ CONFIRM",
-        "🛑 ABORT REPORT",
-        "",
-        "⏱️ Confirmation expires in 2 minutes.",
-      ],
-    ),
+    [
+      "📄 Report ready",
+      "",
+      `Report: ${pending.id}`,
+      pending.destination
+        ? `Destination: ${pending.destination}`
+        : "Destination: NOT CONFIGURED",
+      "",
+      "Send this report?",
+      "Reply *CONFIRM* to send.",
+      "Reply *ABORT REPORT* to cancel.",
+      "",
+      "Expires in 2 minutes.",
+    ].join("\n"),
     message,
   );
 }
@@ -2050,23 +1793,16 @@ async function sendReport(
   const destination =
     report.destination;
 
-  if (
-    !destination
-  ) {
+  if (!destination) {
     await sendReply(
       sock,
       jid,
-      error(
-        "REPORT DESTINATION MISSING",
-        [
-          "📤 No WhatsApp report destination is configured.",
-          "",
-          "Add this to your .env:",
-          "VORTEX_REPORT_DESTINATION=234XXXXXXXXXX@s.whatsapp.net",
-          "",
-          "Then restart Dark Vortex.",
-        ],
-      ),
+      [
+        "❌ Report destination missing.",
+        "",
+        "Add VORTEX_REPORT_DESTINATION to .env",
+        "then restart Dark Vortex.",
+      ].join("\n"),
       message,
     );
 
@@ -2074,50 +1810,38 @@ async function sendReport(
   }
 
   const reportText =
-    vortexBox(
-      "🛡️ DARK VORTEX BOT APEX SECURITY REPORT",
-      [
-        `🔎 Report Type: ${report.type}`,
-        `📄 Report ID: ${report.id}`,
-        `🎯 Target: ${userMention(report.target.jid)}`,
-        `🕐 Time: ${report.createdAt}`,
-        "",
-        `⚠️ Risk Assessment: ${report.risk}`,
-        "",
-        "📋 Findings:",
-        ...report.findings.map(
-          (
-            item,
-          ) =>
-            `• ${item}`,
-        ),
-        "",
-        "🔎 Evidence:",
-        ...report.evidence.map(
-          (
-            item,
-          ) =>
-            `• ${item}`,
-        ),
-        "",
-        "📤 Report Status: SENT",
-        "",
-        "╰─── DARK VORTEX BOT APEX SECURITY ───╯",
-      ],
-    );
+    [
+      "🌑 DARK VORTEX • SECURITY REPORT",
+      "",
+      `Type: ${report.type}`,
+      `Report: ${report.id}`,
+      `Target: ${cleanUserNumber(
+        report.target.jid,
+      )}`,
+      `Time: ${report.createdAt}`,
+      "",
+      `Risk: ${report.risk}`,
+      "",
+      "Findings:",
+      ...report.findings.map(
+        (item) =>
+          `• ${item}`,
+      ),
+      "",
+      "Evidence:",
+      ...report.evidence.map(
+        (item) =>
+          `• ${item}`,
+      ),
+      "",
+      "Status: SENT",
+    ].join("\n");
 
   try {
-    /*
-     * This is intentionally NOT sendVortexReply().
-     *
-     * The report is being delivered to the configured
-     * destination, not replying to the command message.
-     */
     await sock.sendMessage(
       destination,
       {
-        text:
-          reportText,
+        text: reportText,
         mentions: [
           report.target.jid,
         ],
@@ -2127,8 +1851,7 @@ async function sendReport(
     await updateReport(
       report.id,
       {
-        status:
-          "sent",
+        status: "sent",
       },
     );
 
@@ -2144,20 +1867,15 @@ async function sendReport(
     await sendReply(
       sock,
       jid,
-      success(
-        "REPORT SENT",
-        [
-          `📄 Report: ${report.id}`,
-          `📍 Destination: ${destination}`,
-          "",
-          "📤 Security report delivered to the configured WhatsApp destination.",
-        ],
-      ),
+      [
+        "✅ Report sent.",
+        "",
+        `Report: ${report.id}`,
+        `Destination: ${destination}`,
+      ].join("\n"),
       message,
     );
-  } catch (
-    err
-  ) {
+  } catch (err) {
     console.error(
       "Vortex report send error:",
       err,
@@ -2166,15 +1884,12 @@ async function sendReport(
     await sendReply(
       sock,
       jid,
-      error(
-        "REPORT DELIVERY FAILED",
-        [
-          `📄 Report: ${report.id}`,
-          "",
-          "❌ WhatsApp delivery failed.",
-          "🟡 The report remains pending.",
-        ],
-      ),
+      [
+        "❌ Report delivery failed.",
+        "",
+        `Report: ${report.id}`,
+        "The report remains pending.",
+      ].join("\n"),
       message,
     );
   }
@@ -2202,20 +1917,16 @@ async function confirmFinalKey(
     Date.now() >
     pendingFinalKey.expiresAt
   ) {
-    pendingFinalKey =
-      null;
+    pendingFinalKey = null;
 
     await sendReply(
       sock,
       jid,
-      warning(
-        "CONFIRMATION EXPIRED",
-        [
-          "⏱️ The final report key expired.",
-          "",
-          `Run ${getPrefix()}finalkey again to create a new confirmation request.`,
-        ],
-      ),
+      [
+        "⏱️ Confirmation expired.",
+        "",
+        `Run ${getPrefix()}finalkey again.`,
+      ].join("\n"),
       message,
     );
 
@@ -2227,29 +1938,20 @@ async function confirmFinalKey(
       pendingFinalKey.reportId,
     );
 
-  if (
-    !report
-  ) {
-    pendingFinalKey =
-      null;
+  if (!report) {
+    pendingFinalKey = null;
 
     await sendReply(
       sock,
       jid,
-      error(
-        "REPORT NOT FOUND",
-        [
-          "📄 The pending report could not be located.",
-        ],
-      ),
+      "❌ Pending report not found.",
       message,
     );
 
     return;
   }
 
-  pendingFinalKey =
-    null;
+  pendingFinalKey = null;
 
   await sendReport(
     sock,
@@ -2280,14 +1982,12 @@ async function abortFinalKey(
   const reportId =
     pendingFinalKey.reportId;
 
-  pendingFinalKey =
-    null;
+  pendingFinalKey = null;
 
   await updateReport(
     reportId,
     {
-      status:
-        "aborted",
+      status: "aborted",
     },
   );
 
@@ -2302,15 +2002,12 @@ async function abortFinalKey(
   await sendReply(
     sock,
     jid,
-    warning(
-      "REPORT ABORTED",
-      [
-        `📄 Report: ${reportId}`,
-        "",
-        "🛑 No report was sent.",
-        "🟢 Pending report cleared.",
-      ],
-    ),
+    [
+      "🛑 Report aborted.",
+      "",
+      `Report: ${reportId}`,
+      "Nothing was sent.",
+    ].join("\n"),
     message,
   );
 }
@@ -2325,25 +2022,19 @@ async function syncVortex(
   message?: WAMessage,
 ): Promise<void> {
   const reports =
-    await readJson<
-      SecurityReport[]
-    >(
+    await readJson<SecurityReport[]>(
       REPORTS_FILE,
       [],
     );
 
   const audits =
-    await readJson<
-      AuditRecord[]
-    >(
+    await readJson<AuditRecord[]>(
       AUDIT_FILE,
       [],
     );
 
   const diagnostics =
-    await readJson<
-      DiagnosticRecord[]
-    >(
+    await readJson<DiagnosticRecord[]>(
       DIAGNOSTICS_FILE,
       [],
     );
@@ -2361,19 +2052,16 @@ async function syncVortex(
   await sendReply(
     sock,
     jid,
-    system(
-      "VORTEX SYNC",
-      [
-        "🔄 Synchronization complete.",
-        "",
-        `📋 Security reports: ${reports.length}`,
-        `🛡️ Audit records: ${audits.length}`,
-        `⚙️ Diagnostic records: ${diagnostics.length}`,
-        "",
-        "🟢 Local security state synchronized.",
-        "🟢 Persistent storage verified.",
-      ],
-    ),
+    [
+      "🔄 Vortex sync complete.",
+      "",
+      `Reports: ${reports.length}`,
+      `Audit records: ${audits.length}`,
+      `Diagnostics: ${diagnostics.length}`,
+      "",
+      "Storage: VERIFIED",
+      "Security state: SYNCHRONIZED",
+    ].join("\n"),
     message,
   );
 }
@@ -2395,7 +2083,7 @@ export async function handleVortexConfirmation(
       .toUpperCase();
 
   /* -------------------------------------------------------
-     EXISTING FINAL REPORT CONFIRMATION
+     FINAL REPORT CONFIRMATION
   ------------------------------------------------------- */
 
   if (
@@ -2404,7 +2092,8 @@ export async function handleVortexConfirmation(
   ) {
     if (
       !pendingFinalKey ||
-      pendingFinalKey.ownerJid !== sender
+      pendingFinalKey.ownerJid !==
+        sender
     ) {
       return false;
     }
@@ -2439,31 +2128,61 @@ export async function handleVortexConfirmation(
     return false;
   }
 
-  /* -------------------------------------------------------
-     ONLY THE OWNER WHO CREATED THE CONFIRMATION
-     CAN ANSWER IT
-  ------------------------------------------------------- */
+     const normalizeConfirmationJid = (
+    value: string | undefined,
+  ): string => {
+    if (!value) {
+      return "";
+    }
+
+    return value
+      .trim()
+      .replace(
+        /:\d+(?=@)/,
+        "",
+      );
+  };
+
+  const sameJid =
+    (
+      left: string | undefined,
+      right: string | undefined,
+    ): boolean => {
+      const normalizedLeft =
+        normalizeConfirmationJid(
+          left,
+        );
+
+      const normalizedRight =
+        normalizeConfirmationJid(
+          right,
+        );
+
+      return (
+        normalizedLeft !== "" &&
+        normalizedRight !== "" &&
+        normalizedLeft ===
+          normalizedRight
+      );
+    };
 
   if (
-    confirmation.ownerJid !== sender
+    !sameJid(
+      confirmation.ownerJid,
+      sender,
+    )
   ) {
     return false;
   }
 
-  /* -------------------------------------------------------
-     CONFIRMATION MUST BE ANSWERED IN THE SAME CHAT
-  ------------------------------------------------------- */
-
   if (
-    confirmation.chatJid !== jid
+    !sameJid(
+      confirmation.chatJid,
+      jid,
+    )
   ) {
     return false;
   }
-
-  /* -------------------------------------------------------
-     EXPIRATION
-  ------------------------------------------------------- */
-
   if (
     isSecurityConfirmationExpired()
   ) {
@@ -2473,16 +2192,13 @@ export async function handleVortexConfirmation(
     await sendReply(
       sock,
       jid,
-      warning(
-        "SECURITY CONFIRMATION EXPIRED",
-        [
-          "⏱️ The VORTEX SECURITY confirmation expired.",
-          "",
-          "🛑 No security operation was executed.",
-          "",
-          `Run ${getPrefix()}${confirmation.command} again if you still want to continue.`,
-        ],
-      ),
+      [
+        "⏱️ Confirmation expired.",
+        "",
+        "No security operation was executed.",
+        "",
+        `Run ${getPrefix()}${confirmation.command} again if needed.`,
+      ].join("\n"),
       message,
     );
 
@@ -2493,16 +2209,12 @@ export async function handleVortexConfirmation(
      YES
   ------------------------------------------------------- */
 
-  if (
-    normalized === "YES"
-  ) {
+  if (normalized === "YES") {
     const confirmedCommand =
       confirmation.command;
 
     const confirmedArgs =
-      [
-        ...confirmation.args,
-      ];
+      [...confirmation.args];
 
     confirmedSecurityExecution = {
       ownerJid:
@@ -2526,16 +2238,12 @@ export async function handleVortexConfirmation(
     await sendReply(
       sock,
       jid,
-      vortexBox(
-        "🛡️ VORTEX SECURITY",
-        [
-          "✅ OWNER CONFIRMATION ACCEPTED",
-          "",
-          `🔐 Operation: ${confirmedCommand.toUpperCase()}`,
-          "",
-          "⚙️ Executing authorized security operation...",
-        ],
-      ),
+      [
+        "✅ Confirmed.",
+        "",
+        `Operation: ${confirmedCommand.toUpperCase()}`,
+        "Executing...",
+      ].join("\n"),
       message,
     );
 
@@ -2560,25 +2268,16 @@ export async function handleVortexConfirmation(
     await sendReply(
       sock,
       jid,
-      warning(
-        "SECURITY OPERATION CANCELLED",
-        [
-          `🔐 Operation: ${command.toUpperCase()}`,
-          "",
-          "🛑 No security operation was executed.",
-          "🟢 Authorization state cleared.",
-        ],
-      ),
+      [
+        "🛑 Action cancelled.",
+        "",
+        `Operation: ${command.toUpperCase()}`,
+      ].join("\n"),
       message,
     );
 
     return true;
   }
-
-  /* -------------------------------------------------------
-     OTHER MESSAGE
-     Do NOT consume or modify the confirmation.
-  ------------------------------------------------------- */
 
   return false;
 }
@@ -2596,61 +2295,19 @@ export async function sendSecurityConfirmationPrompt(
   await sendReply(
     sock,
     jid,
-    vortexBox(
-      "🌑 DARK VORTEX • BLACK GATE",
-      [
-        "╔══════════════════════╗",
-        "      SECURITY LOCK",
-        "╚══════════════════════╝",
-        "",
-        "⚠️ AN AUTHORIZED OPERATION",
-        "   IS AWAITING YOUR DECISION.",
-        "",
-        `🎯 TARGET OPERATION`,
-        `   ▸ ${command.toUpperCase()}`,
-        "",
-        "╭─「 VORTEX CONTROL 」",
-        "│",
-        "│ 👤 Authority   : OWNER",
-        "│ 🛡️ Clearance   : VERIFIED",
-        "│ 🔐 Security    : ARMED",
-        "│ ⚡ Execution   : LOCKED",
-        "│ ⏳ Window      : 30 SECONDS",
-        "│",
-        "╰──────────────────────",
-        "",
-        "╭─「 SYSTEM MESSAGE 」",
-        "│",
-        "│ The requested operation has been",
-        "│ intercepted by the VORTEX SECURITY",
-        "│ authorization layer.",
-        "│",
-        "│ No action has been executed.",
-        "│ Awaiting final owner authorization.",
-        "│",
-        "╰──────────────────────",
-        "",
-        "🟢  YES",
-        "    └─ AUTHORIZE EXECUTION",
-        "",
-        "🔴  NO",
-        "    └─ DENY & CANCEL",
-        "",
-        "You may also reply with:",
-        "CANCEL  •  ABORT",
-        "",
-        "⚠️ Failure to respond within 30 seconds",
-        "   will automatically terminate the request.",
-        "",
-        "╰─── 🌑 VORTEX SECURITY CORE ───╯",
-        "       ⚡ VORTEX TECH",
-      ],
-    ),
+    [
+      "⚠️ Confirm action",
+      "",
+      `Operation: ${command.toUpperCase()}`,
+      "",
+      "Reply *YES* to continue.",
+      "Reply *NO* to cancel.",
+      "",
+      "Expires in 30 seconds.",
+    ].join("\n"),
     message,
   );
 }
-
-
 
 /* =========================================================
    SECURITY COMMAND IDENTIFICATION
@@ -2703,9 +2360,7 @@ export async function handleVortexToolsCommand(
       .trim()
       .toLowerCase();
 
-  switch (
-    normalized
-  ) {
+  switch (normalized) {
     /* -------------------------------------------------------
        BOT CHECK
     ------------------------------------------------------- */
@@ -2716,9 +2371,7 @@ export async function handleVortexToolsCommand(
           message,
         );
 
-      if (
-        !target
-      ) {
+      if (!target) {
         await sendReply(
           sock,
           jid,
@@ -2751,9 +2404,7 @@ export async function handleVortexToolsCommand(
           message,
         );
 
-      if (
-        !target
-      ) {
+      if (!target) {
         await sendReply(
           sock,
           jid,
@@ -2848,8 +2499,7 @@ export async function handleVortexToolsCommand(
     case "print":
     case "printinsult": {
       if (
-        normalized ===
-          "print" &&
+        normalized === "print" &&
         args[0]?.toLowerCase() !==
           "insult"
       ) {
@@ -2861,9 +2511,7 @@ export async function handleVortexToolsCommand(
           message,
         );
 
-      if (
-        !target
-      ) {
+      if (!target) {
         await sendReply(
           sock,
           jid,

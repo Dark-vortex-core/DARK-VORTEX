@@ -1887,6 +1887,12 @@ export async function restoreNormalMode(): Promise<void> {
   const previousMode =
     state.mode;
 
+  const wasQuiet =
+    state.quiet;
+
+  const wasSecurityPaused =
+    state.securityPaused;
+
   state.mode =
     "normal";
 
@@ -1901,10 +1907,9 @@ export async function restoreNormalMode(): Promise<void> {
   );
 
   if (
-    previousMode !==
-      "normal" ||
-    state.quiet ||
-    state.securityPaused
+    previousMode !== "normal" ||
+    wasQuiet ||
+    wasSecurityPaused
   ) {
     await recordSecurityEvent(
       "NORMAL_MODE",

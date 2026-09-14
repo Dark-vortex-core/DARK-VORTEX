@@ -6,33 +6,14 @@ import type {
   WASocket,
 } from "@whiskeysockets/baileys";
 
-const BRAND = "🌑 DARK VORTEX";
-const POWERED_BY = "⚡ Powered by Vortex Tech";
+import {
+  sendVortexReply,
+} from "../utils/vortex-reply.js";
 
 const DATA_DIR = path.resolve("./src/data");
 const RULES_FILE = path.join(DATA_DIR, "rules.json");
 
 type RulesDatabase = Record<string, string>;
-
-// ============================================================
-// MESSAGE BOX
-// ============================================================
-
-function vortexBox(
-  title: string,
-  lines: string[]
-): string {
-  return [
-    `╭━━━〔 ${BRAND} 〕━━━╮`,
-    `┃`,
-    `┃ ${title}`,
-    `┃`,
-    ...lines.map((line) => `┃ ${line}`),
-    `┃`,
-    `╰━━━━━━━━━━━━━━━━━━━━━━╯`,
-    `      ${POWERED_BY}`,
-  ].join("\n");
-}
 
 // ============================================================
 // DATABASE
@@ -49,7 +30,7 @@ function ensureDatabase(): void {
     fs.writeFileSync(
       RULES_FILE,
       JSON.stringify({}, null, 2),
-      "utf8"
+      "utf8",
     );
   }
 }
@@ -61,8 +42,8 @@ function loadDatabase(): RulesDatabase {
     return JSON.parse(
       fs.readFileSync(
         RULES_FILE,
-        "utf8"
-      )
+        "utf8",
+      ),
     ) as RulesDatabase;
   } catch {
     return {};
@@ -70,7 +51,7 @@ function loadDatabase(): RulesDatabase {
 }
 
 function saveDatabase(
-  database: RulesDatabase
+  database: RulesDatabase,
 ): void {
   ensureDatabase();
 
@@ -79,9 +60,9 @@ function saveDatabase(
     JSON.stringify(
       database,
       null,
-      2
+      2,
     ),
-    "utf8"
+    "utf8",
   );
 }
 
@@ -90,7 +71,7 @@ function saveDatabase(
 // ============================================================
 
 function getRules(
-  jid: string
+  jid: string,
 ): string {
   const database =
     loadDatabase();
@@ -104,7 +85,7 @@ function getRules(
 
 function setRules(
   jid: string,
-  rules: string
+  rules: string,
 ): void {
   const database =
     loadDatabase();
@@ -119,7 +100,7 @@ function setRules(
 // ============================================================
 
 function clearRules(
-  jid: string
+  jid: string,
 ): void {
   const database =
     loadDatabase();
@@ -134,7 +115,7 @@ function clearRules(
 // ============================================================
 
 function isGroup(
-  jid: string
+  jid: string,
 ): boolean {
   return jid.endsWith("@g.us");
 }
@@ -148,7 +129,7 @@ export async function handleRulesCommand(
   jid: string,
   command: string,
   args: string[],
-  _message: WAMessage
+  message: WAMessage,
 ): Promise<boolean> {
 
   const supportedCommands = [
@@ -159,11 +140,22 @@ export async function handleRulesCommand(
 
   if (
     !supportedCommands.includes(
-      command
+      command,
     )
   ) {
     return false;
   }
+
+  const reply = async (
+    text: string,
+  ) => {
+    return await sendVortexReply(
+      sock,
+      jid,
+      text,
+      message,
+    );
+  };
 
   // ----------------------------------------------------------
   // GROUP ONLY
@@ -171,16 +163,12 @@ export async function handleRulesCommand(
 
   if (!isGroup(jid)) {
 
-    await sock.sendMessage(
-      jid,
-      {
-        text: vortexBox(
-          "❌ GROUP ONLY",
-          [
-            "Rules commands can only be used inside groups.",
-          ]
-        ),
-      }
+    await reply(
+      [
+        "❌ Group only.",
+        "",
+        "Rules commands can only be used inside groups.",
+      ].join("\n"),
     );
 
     return true;
@@ -197,19 +185,15 @@ export async function handleRulesCommand(
 
     if (!rules) {
 
-      await sock.sendMessage(
-        jid,
-        {
-          text: vortexBox(
-            "📜 GROUP RULES",
-            [
-              "⚠️ No rules have been configured yet.",
-              "",
-              "👑 Owner can create them with:",
-              "/setrules Your group rules here",
-            ]
-          ),
-        }
+      await reply(
+        [
+          "📜 Group rules",
+          "",
+          "No rules have been configured yet.",
+          "",
+          "Create them with:",
+          "/setrules Your group rules here",
+        ].join("\n"),
       );
 
       return true;
@@ -220,17 +204,15 @@ export async function handleRulesCommand(
         .split("\n")
         .map(
           (line, index) =>
-            `${index + 1}. ${line}`
+            `${index + 1}. ${line}`,
         );
 
-    await sock.sendMessage(
-      jid,
-      {
-        text: vortexBox(
-          "📜 GROUP RULES",
-          ruleLines
-        ),
-      }
+    await reply(
+      [
+        "📜 Group rules",
+        "",
+        ...ruleLines,
+      ].join("\n"),
     );
 
     return true;
@@ -247,19 +229,15 @@ export async function handleRulesCommand(
 
     if (!rules) {
 
-      await sock.sendMessage(
-        jid,
-        {
-          text: vortexBox(
-            "❌ MISSING RULES",
-            [
-              "Usage:",
-              "/setrules Be respectful",
-              "",
-              "You can also use multiple rules separated by |",
-            ]
-          ),
-        }
+      await reply(
+        [
+          "❌ Missing rules.",
+          "",
+          "Usage:",
+          "/setrules Be respectful",
+          "",
+          "Separate multiple rules with |",
+        ].join("\n"),
       );
 
       return true;
@@ -270,33 +248,27 @@ export async function handleRulesCommand(
         .split("|")
         .map(
           (rule) =>
-            rule.trim()
+            rule.trim(),
         )
         .filter(Boolean)
         .join("\n");
 
     setRules(
       jid,
-      formattedRules
+      formattedRules,
     );
 
-    await sock.sendMessage(
-      jid,
-      {
-        text: vortexBox(
-          "✅ RULES UPDATED",
-          [
-            "📜 New group rules:",
-            "",
-            ...formattedRules
-              .split("\n")
-              .map(
-                (rule, index) =>
-                  `${index + 1}. ${rule}`
-              ),
-          ]
-        ),
-      }
+    await reply(
+      [
+        "✅ Rules updated.",
+        "",
+        ...formattedRules
+          .split("\n")
+          .map(
+            (rule, index) =>
+              `${index + 1}. ${rule}`,
+          ),
+      ].join("\n"),
     );
 
     return true;
@@ -312,16 +284,12 @@ export async function handleRulesCommand(
 
     clearRules(jid);
 
-    await sock.sendMessage(
-      jid,
-      {
-        text: vortexBox(
-          "🗑️ RULES CLEARED",
-          [
-            "The group's saved rules have been removed.",
-          ]
-        ),
-      }
+    await reply(
+      [
+        "🗑️ Rules cleared.",
+        "",
+        "The group's saved rules have been removed.",
+      ].join("\n"),
     );
 
     return true;

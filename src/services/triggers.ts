@@ -11,19 +11,12 @@ import {
 } from "./automation.js";
 
 import {
-  success,
-  error,
-  info,
-  commandUsage,
-} from "../utils/message.js";
+  sendVortexReply,
+} from "../utils/vortex-reply.js";
 
 import {
   isBotGroupAdmin,
 } from "../utils/group-admin.js";
-
-import {
-  sendVortexReply,
-} from "../utils/vortex-reply.js";
 
 // =========================================================
 // 🌑 DARK VORTEX — TRIGGER SYSTEM
@@ -55,14 +48,21 @@ type TriggerStore =
 // =========================================================
 
 function ensureDataFile(): void {
-  fs.mkdirSync(DATA_DIR, {
-    recursive: true,
-  });
+  fs.mkdirSync(
+    DATA_DIR,
+    {
+      recursive: true,
+    },
+  );
 
   if (!fs.existsSync(DATA_FILE)) {
     fs.writeFileSync(
       DATA_FILE,
-      JSON.stringify({}, null, 2),
+      JSON.stringify(
+        {},
+        null,
+        2,
+      ),
       "utf8",
     );
   }
@@ -72,16 +72,18 @@ function loadTriggers(): TriggerStore {
   ensureDataFile();
 
   try {
-    const raw = fs.readFileSync(
-      DATA_FILE,
-      "utf8",
-    );
+    const raw =
+      fs.readFileSync(
+        DATA_FILE,
+        "utf8",
+      );
 
     if (!raw.trim()) {
       return {};
     }
 
-    const parsed = JSON.parse(raw);
+    const parsed =
+      JSON.parse(raw);
 
     if (
       !parsed ||
@@ -109,7 +111,11 @@ function saveTriggers(
 
   fs.writeFileSync(
     DATA_FILE,
-    JSON.stringify(data, null, 2),
+    JSON.stringify(
+      data,
+      null,
+      2,
+    ),
     "utf8",
   );
 }
@@ -159,13 +165,16 @@ function extractMessageText(
 function looksLikeCommand(
   text: string,
 ): boolean {
-  const value = text.trim();
+  const value =
+    text.trim();
 
   if (!value) {
     return false;
   }
 
-  return /^[/!#.\u200b]/.test(value);
+  return /^[/!#.\u200b]/.test(
+    value,
+  );
 }
 
 // =========================================================
@@ -177,12 +186,19 @@ function triggerMatches(
   trigger: string,
 ): boolean {
   const message =
-    normalizeTrigger(messageText);
+    normalizeTrigger(
+      messageText,
+    );
 
   const target =
-    normalizeTrigger(trigger);
+    normalizeTrigger(
+      trigger,
+    );
 
-  if (!message || !target) {
+  if (
+    !message ||
+    !target
+  ) {
     return false;
   }
 
@@ -191,20 +207,13 @@ function triggerMatches(
     return true;
   }
 
-  // Very short triggers should not match inside
-  // unrelated words.
+  // Very short triggers should not match
+  // inside unrelated words.
   if (target.length < 3) {
     return false;
   }
 
   // Word-boundary style matching.
-  //
-  // Example:
-  // trigger = "hello"
-  // "hello everyone" -> true
-  // "say hello"      -> true
-  // "helloworld"     -> false
-
   const escaped =
     target.replace(
       /[.*+?^${}()|[\]\\]/g,
@@ -217,7 +226,9 @@ function triggerMatches(
       "iu",
     );
 
-  return pattern.test(message);
+  return pattern.test(
+    message,
+  );
 }
 
 // =========================================================
@@ -231,28 +242,32 @@ export async function handleTriggerCommand(
   args: string[],
   quotedMessage?: WAMessage,
 ): Promise<boolean> {
-
   if (command !== "trigger") {
     return false;
   }
+
+  const reply = async (
+    text: string,
+  ): Promise<WAMessage | undefined> => {
+    return await sendVortexReply(
+      sock,
+      jid,
+      text,
+      quotedMessage,
+    );
+  };
 
   // ---------------------------------------------------------
   // GROUP ONLY
   // ---------------------------------------------------------
 
   if (!jid.endsWith("@g.us")) {
-    await sendVortexReply(
-      sock,
-      jid,
-      error(
-        "GROUP ONLY",
-        [
-          "⚡ Trigger configuration can",
-          "only be used inside a",
-          "WhatsApp group.",
-        ],
-      ),
-      quotedMessage,
+    await reply(
+      [
+        "⚠️ Group only.",
+        "",
+        "Triggers can only be configured inside a group.",
+      ].join("\n"),
     );
 
     return true;
@@ -262,32 +277,29 @@ export async function handleTriggerCommand(
   // BOT ADMIN CHECK
   // ---------------------------------------------------------
 
-  let metadata: Awaited<
-    ReturnType<WASocket["groupMetadata"]>
-  >;
+  let metadata:
+    Awaited<
+      ReturnType<WASocket["groupMetadata"]>
+    >;
 
   try {
     metadata =
-      await sock.groupMetadata(jid);
+      await sock.groupMetadata(
+        jid,
+      );
   } catch (err) {
     console.error(
       "Trigger metadata error:",
       err,
     );
 
-    await sendVortexReply(
-      sock,
-      jid,
-      error(
-        "GROUP DATA ERROR",
-        [
-          "Unable to read group",
-          "information.",
-          "",
-          "💡 Try again in a moment.",
-        ],
-      ),
-      quotedMessage,
+    await reply(
+      [
+        "❌ Group data unavailable.",
+        "",
+        "Unable to read group information.",
+        "Try again in a moment.",
+      ].join("\n"),
     );
 
     return true;
@@ -300,21 +312,13 @@ export async function handleTriggerCommand(
     );
 
   if (!botIsAdmin) {
-    await sendVortexReply(
-      sock,
-      jid,
-      error(
-        "BOT NOT ADMIN",
-        [
-          "🛡️ Dark Vortex must be",
-          "a group administrator",
-          "to manage triggers.",
-          "",
-          "💡 Promote Dark Vortex",
-          "to admin and try again.",
-        ],
-      ),
-      quotedMessage,
+    await reply(
+      [
+        "🛡️ Bot admin required.",
+        "",
+        "Dark Vortex must be a group administrator",
+        "to manage triggers.",
+      ].join("\n"),
     );
 
     return true;
@@ -325,7 +329,9 @@ export async function handleTriggerCommand(
   // ---------------------------------------------------------
 
   const action =
-    args[0]?.toLowerCase();
+    args[0]
+      ?.trim()
+      .toLowerCase();
 
   const store =
     loadTriggers();
@@ -342,22 +348,19 @@ export async function handleTriggerCommand(
   // ---------------------------------------------------------
 
   if (!action) {
-    await sendVortexReply(
-      sock,
-      jid,
-      commandUsage(
-        "trigger",
-        "/trigger add hello Hi everyone 👋",
-        [
-          "/trigger list",
-          "/trigger remove hello",
-          "/trigger clear",
-          "",
-          "🤖 Enable automatic responses:",
-          "/autoreply on",
-        ].join("\n"),
-      ),
-      quotedMessage,
+    await reply(
+      [
+        "⚡ Trigger",
+        "",
+        "Commands:",
+        "/trigger add <trigger> <response>",
+        "/trigger list",
+        "/trigger remove <trigger>",
+        "/trigger clear",
+        "",
+        "Enable automatic responses with:",
+        "/autoreply on",
+      ].join("\n"),
     );
 
     return true;
@@ -369,22 +372,25 @@ export async function handleTriggerCommand(
 
   if (action === "add") {
     if (args.length < 3) {
-      await sendVortexReply(
-        sock,
-        jid,
-        commandUsage(
-          "trigger add",
+      await reply(
+        [
+          "❌ Invalid trigger command.",
+          "",
+          "Usage:",
           "/trigger add <trigger> <response>",
-          "Example: /trigger add hello Hello 👋",
-        ),
-        quotedMessage,
+          "",
+          "Example:",
+          "/trigger add hello Hello 👋",
+        ].join("\n"),
       );
 
       return true;
     }
 
     const trigger =
-      normalizeTrigger(args[1]);
+      normalizeTrigger(
+        args[1],
+      );
 
     const response =
       args
@@ -393,49 +399,36 @@ export async function handleTriggerCommand(
         .trim();
 
     if (!trigger) {
-      await sendVortexReply(
-        sock,
-        jid,
-        error(
-          "INVALID TRIGGER",
-          [
-            "The trigger cannot be empty.",
-          ],
-        ),
-        quotedMessage,
+      await reply(
+        [
+          "❌ Invalid trigger.",
+          "",
+          "The trigger cannot be empty.",
+        ].join("\n"),
       );
 
       return true;
     }
 
     if (!response) {
-      await sendVortexReply(
-        sock,
-        jid,
-        error(
-          "INVALID RESPONSE",
-          [
-            "The response cannot be empty.",
-          ],
-        ),
-        quotedMessage,
+      await reply(
+        [
+          "❌ Invalid response.",
+          "",
+          "The response cannot be empty.",
+        ].join("\n"),
       );
 
       return true;
     }
 
     if (trigger.length > 100) {
-      await sendVortexReply(
-        sock,
-        jid,
-        error(
-          "TRIGGER TOO LONG",
-          [
-            "Keep triggers below",
-            "100 characters.",
-          ],
-        ),
-        quotedMessage,
+      await reply(
+        [
+          "❌ Trigger too long.",
+          "",
+          "Keep triggers below 100 characters.",
+        ].join("\n"),
       );
 
       return true;
@@ -447,20 +440,15 @@ export async function handleTriggerCommand(
 
     saveTriggers(store);
 
-    await sendVortexReply(
-      sock,
-      jid,
-      success(
-        "TRIGGER SAVED",
-        [
-          `⚡ Trigger: ${trigger}`,
-          `💬 Response: ${response}`,
-          "",
-          "🤖 Use /autoreply on",
-          "to activate automatic replies.",
-        ],
-      ),
-      quotedMessage,
+    await reply(
+      [
+        "✅ Trigger saved.",
+        "",
+        `Trigger: ${trigger}`,
+        `Response: ${response}`,
+        "",
+        "Enable automatic replies with /autoreply on.",
+      ].join("\n"),
     );
 
     return true;
@@ -472,23 +460,20 @@ export async function handleTriggerCommand(
 
   if (action === "list") {
     const triggers =
-      Object.keys(groupTriggers);
+      Object.keys(
+        groupTriggers,
+      );
 
     if (triggers.length === 0) {
-      await sendVortexReply(
-        sock,
-        jid,
-        info(
-          "TRIGGER LIST",
-          [
-            "No triggers have been",
-            "configured yet.",
-            "",
-            "📝 Example:",
-            "/trigger add hello Hello 👋",
-          ],
-        ),
-        quotedMessage,
+      await reply(
+        [
+          "⚡ Trigger list",
+          "",
+          "No triggers configured.",
+          "",
+          "Example:",
+          "/trigger add hello Hello 👋",
+        ].join("\n"),
       );
 
       return true;
@@ -496,22 +481,21 @@ export async function handleTriggerCommand(
 
     const lines =
       triggers.map(
-        (trigger, index) =>
+        (
+          trigger,
+          index,
+        ) =>
           `${index + 1}. ${trigger}`,
       );
 
-    await sendVortexReply(
-      sock,
-      jid,
-      info(
-        "TRIGGER LIST",
-        [
-          ...lines,
-          "",
-          `📊 Total: ${triggers.length}`,
-        ],
-      ),
-      quotedMessage,
+    await reply(
+      [
+        "⚡ Trigger list",
+        "",
+        ...lines,
+        "",
+        `Total: ${triggers.length}`,
+      ].join("\n"),
     );
 
     return true;
@@ -530,52 +514,42 @@ export async function handleTriggerCommand(
       );
 
     if (!trigger) {
-      await sendVortexReply(
-        sock,
-        jid,
-        commandUsage(
-          "trigger remove",
+      await reply(
+        [
+          "❌ Missing trigger.",
+          "",
+          "Usage:",
           "/trigger remove hello",
-          "Enter the trigger you want to remove.",
-        ),
-        quotedMessage,
+        ].join("\n"),
       );
 
       return true;
     }
 
     if (!groupTriggers[trigger]) {
-      await sendVortexReply(
-        sock,
-        jid,
-        error(
-          "TRIGGER NOT FOUND",
-          [
-            `No trigger named "${trigger}" exists.`,
-          ],
-        ),
-        quotedMessage,
+      await reply(
+        [
+          "❌ Trigger not found.",
+          "",
+          `No trigger named "${trigger}" exists.`,
+        ].join("\n"),
       );
 
       return true;
     }
 
-    delete groupTriggers[trigger];
+    delete groupTriggers[
+      trigger
+    ];
 
     saveTriggers(store);
 
-    await sendVortexReply(
-      sock,
-      jid,
-      success(
-        "TRIGGER REMOVED",
-        [
-          `🗑️ Removed: ${trigger}`,
-          "",
-          "🟢 Trigger deleted successfully.",
-        ],
-      ),
-      quotedMessage,
+    await reply(
+      [
+        "🗑️ Trigger removed.",
+        "",
+        `Trigger: ${trigger}`,
+      ].join("\n"),
     );
 
     return true;
@@ -587,25 +561,20 @@ export async function handleTriggerCommand(
 
   if (action === "clear") {
     const count =
-      Object.keys(groupTriggers).length;
+      Object.keys(
+        groupTriggers,
+      ).length;
 
     store[jid] = {};
 
     saveTriggers(store);
 
-    await sendVortexReply(
-      sock,
-      jid,
-      success(
-        "TRIGGERS CLEARED",
-        [
-          `🗑️ Removed: ${count}`,
-          "",
-          "🟢 All group triggers",
-          "have been deleted.",
-        ],
-      ),
-      quotedMessage,
+    await reply(
+      [
+        "🗑️ Triggers cleared.",
+        "",
+        `Removed: ${count}`,
+      ].join("\n"),
     );
 
     return true;
@@ -615,19 +584,15 @@ export async function handleTriggerCommand(
   // UNKNOWN ACTION
   // ---------------------------------------------------------
 
-  await sendVortexReply(
-    sock,
-    jid,
-    error(
-      "UNKNOWN ACTION",
-      [
-        "/trigger add <trigger> <response>",
-        "/trigger list",
-        "/trigger remove <trigger>",
-        "/trigger clear",
-      ],
-    ),
-    quotedMessage,
+  await reply(
+    [
+      "❌ Unknown trigger action.",
+      "",
+      "/trigger add <trigger> <response>",
+      "/trigger list",
+      "/trigger remove <trigger>",
+      "/trigger clear",
+    ].join("\n"),
   );
 
   return true;
@@ -642,7 +607,6 @@ export async function processTrigger(
   jid: string,
   message: WAMessage,
 ): Promise<boolean> {
-
   // ---------------------------------------------------------
   // GROUP ONLY
   // ---------------------------------------------------------
@@ -664,7 +628,9 @@ export async function processTrigger(
   // ---------------------------------------------------------
 
   const settings =
-    getAutomationSettings(jid);
+    getAutomationSettings(
+      jid,
+    );
 
   if (!settings.autoreply) {
     return false;
@@ -675,7 +641,9 @@ export async function processTrigger(
   // ---------------------------------------------------------
 
   const text =
-    extractMessageText(message);
+    extractMessageText(
+      message,
+    );
 
   if (!text.trim()) {
     return false;
@@ -701,7 +669,9 @@ export async function processTrigger(
   }
 
   const triggerNames =
-    Object.keys(groupTriggers);
+    Object.keys(
+      groupTriggers,
+    );
 
   if (triggerNames.length === 0) {
     return false;
@@ -730,7 +700,9 @@ export async function processTrigger(
   }
 
   const trigger =
-    groupTriggers[matchedTrigger];
+    groupTriggers[
+      matchedTrigger
+    ];
 
   if (
     !trigger ||

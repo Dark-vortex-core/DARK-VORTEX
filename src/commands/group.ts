@@ -1,35 +1,39 @@
-import {
-  downloadMediaMessage,
-  type WASocket,
-  type WAMessage,
-  type GroupMetadata,
+import type {
+  WASocket,
+  WAMessage,
+  GroupMetadata,
+  MiscMessageGenerationOptions,
 } from "@whiskeysockets/baileys";
 
 import {
-  enableGroup,
-  disableGroup,
-  getRegisteredGroups,
-} from "../services/groupRegistry.js";
+  sendVortexReply,
+} from "../utils/vortex-reply.js";
 
-import {
-  vortexBox,
-  success,
-  error,
-  warning,
-  info,
-  security,
-  commandUsage,
-  groupRequired,
-  botAdminRequired,
-  targetRequired,
-  userMention,
-} from "../utils/message.js";
+const BRAND = "🌑 DARK VORTEX";
+
+type ReplyOptions = MiscMessageGenerationOptions & {
+  mentions?: string[];
+};
 
 /* =========================================================
-   🌑 DARK VORTEX — GROUP COMMAND ENGINE
-   ⚡ Premium Group Management Interface
-   ⚡ Powered by Vortex Tech
+   REPLY HELPER
 ========================================================= */
+
+async function reply(
+  sock: WASocket,
+  jid: string,
+  message: WAMessage,
+  text: string,
+  options?: ReplyOptions,
+): Promise<void> {
+  await sendVortexReply(
+    sock,
+    jid,
+    text,
+    message,
+    options,
+  );
+}
 
 /* =========================================================
    HELPERS
@@ -59,7 +63,7 @@ function getJidNumber(jid?: string | null): string {
 
 function sameUser(
   a?: string | null,
-  b?: string | null
+  b?: string | null,
 ): boolean {
   if (!a || !b) return false;
 
@@ -71,11 +75,15 @@ function sameUser(
   const an = getJidNumber(aj);
   const bn = getJidNumber(bj);
 
-  return Boolean(an && bn && an === bn);
+  return Boolean(
+    an &&
+      bn &&
+      an === bn,
+  );
 }
 
 function isAdminParticipant(
-  participant: GroupMetadata["participants"][number]
+  participant: GroupMetadata["participants"][number],
 ): boolean {
   return (
     participant.admin === "admin" ||
@@ -84,30 +92,12 @@ function isAdminParticipant(
 }
 
 /* =========================================================
-   ERROR FORMATTER
-========================================================= */
-
-function errorMessage(
-  title: string,
-  reason: string
-): string {
-  return error(title, [
-    `❌ ${reason}`,
-    "",
-    "🛡️ Verify the bot has the",
-    "required group permissions.",
-    "",
-    "⚡ Try the command again.",
-  ]);
-}
-
-/* =========================================================
    GROUP FETCH
 ========================================================= */
 
 async function getGroup(
   sock: WASocket,
-  jid: string
+  jid: string,
 ): Promise<GroupMetadata | null> {
   try {
     return await sock.groupMetadata(jid);
@@ -122,37 +112,35 @@ async function getGroup(
 
 async function isBotAdmin(
   sock: WASocket,
-  jid: string
+  jid: string,
 ): Promise<boolean> {
   try {
     const metadata = await sock.groupMetadata(jid);
 
     const botJid = sock.user?.id || "";
     const botLid = sock.user?.lid || "";
-
     const botNumber = getJidNumber(botJid);
 
     const participant = metadata.participants.find((p) => {
-      if (sameUser(p.id, botJid)) {
-        return true;
-      }
+      if (sameUser(p.id, botJid)) return true;
 
       if (botLid && sameUser(p.id, botLid)) {
         return true;
       }
 
-      const participantNumber = getJidNumber(p.id);
+      const participantNumber =
+        getJidNumber(p.id);
 
       return Boolean(
         botNumber &&
           participantNumber &&
-          botNumber === participantNumber
+          botNumber === participantNumber,
       );
     });
 
     return Boolean(
       participant &&
-        isAdminParticipant(participant)
+        isAdminParticipant(participant),
     );
   } catch {
     return false;
@@ -165,39 +153,43 @@ async function isBotAdmin(
 
 async function requireGroup(
   sock: WASocket,
-  jid: string
+  jid: string,
+  message: WAMessage,
 ): Promise<GroupMetadata | null> {
   if (!isGroup(jid)) {
-    await sock.sendMessage(jid, {
-      text: groupRequired("group command"),
-    });
+    await reply(
+      sock,
+      jid,
+      message,
+      "📌 This command can only be used in a group.",
+    );
 
     return null;
   }
 
-  const metadata = await getGroup(sock, jid);
+  const metadata = await getGroup(
+    sock,
+    jid,
+  );
 
   if (!metadata) {
-    await sock.sendMessage(jid, {
-      text: error(
-        "GROUP ACCESS FAILED",
-        [
-          "🌑 Dark Vortex could not access",
-          "this group's information.",
-          "",
-          "💡 Make sure the bot is still",
-          "a member of this group.",
-        ]
-      ),
-    });
+    await reply(
+      sock,
+      jid,
+      message,
+      "❌ Group access failed.\n\nDark Vortex could not access this group's information.",
+    );
 
     return null;
   }
 
   if (!(await isBotAdmin(sock, jid))) {
-    await sock.sendMessage(jid, {
-      text: botAdminRequired(),
-    });
+    await reply(
+      sock,
+      jid,
+      message,
+      "🛡️ Bot admin required.\n\nMake Dark Vortex a group administrator and try again.",
+    );
 
     return null;
   }
@@ -206,21 +198,27 @@ async function requireGroup(
 }
 
 /* =========================================================
-   FIND REPLIED MESSAGE
+   FIND REPLIED USER
 ========================================================= */
 
 function getRepliedUser(
-  message?: WAMessage
+  message?: WAMessage,
 ): string | null {
   if (!message) return null;
 
   const context =
-    message.message?.extendedTextMessage?.contextInfo ||
-    message.message?.imageMessage?.contextInfo ||
-    message.message?.videoMessage?.contextInfo ||
-    message.message?.documentMessage?.contextInfo ||
-    message.message?.audioMessage?.contextInfo ||
-    message.message?.stickerMessage?.contextInfo;
+    message.message?.extendedTextMessage
+      ?.contextInfo ||
+    message.message?.imageMessage
+      ?.contextInfo ||
+    message.message?.videoMessage
+      ?.contextInfo ||
+    message.message?.documentMessage
+      ?.contextInfo ||
+    message.message?.audioMessage
+      ?.contextInfo ||
+    message.message?.stickerMessage
+      ?.contextInfo;
 
   if (!context?.quotedMessage) {
     return null;
@@ -230,21 +228,23 @@ function getRepliedUser(
 }
 
 /* =========================================================
-   TARGET FROM REPLY ONLY
+   REPLY TARGET
 ========================================================= */
 
 async function getReplyTarget(
   sock: WASocket,
   jid: string,
   message: WAMessage,
-  commandName: string
 ): Promise<string | null> {
   const target = getRepliedUser(message);
 
   if (!target) {
-    await sock.sendMessage(jid, {
-      text: targetRequired(commandName),
-    });
+    await reply(
+      sock,
+      jid,
+      message,
+      "⚠️ Reply required.\n\nReply to the user's message first.\nExample: Reply → /kick",
+    );
 
     return null;
   }
@@ -253,32 +253,30 @@ async function getReplyTarget(
 }
 
 /* =========================================================
-   TARGET PARTICIPANT
+   PARTICIPANT HELPERS
 ========================================================= */
 
 function findParticipant(
   metadata: GroupMetadata,
-  target: string
+  target: string,
 ) {
   return metadata.participants.find((p) =>
-    sameUser(p.id, target)
+    sameUser(p.id, target),
   );
 }
 
-/* =========================================================
-   PROTECTED BOT
-========================================================= */
-
 function isProtectedTarget(
   sock: WASocket,
-  target: string
+  target: string,
 ): boolean {
   const botJid = sock.user?.id || "";
   const botLid = sock.user?.lid || "";
 
   return (
     sameUser(target, botJid) ||
-    (botLid ? sameUser(target, botLid) : false)
+    (botLid
+      ? sameUser(target, botLid)
+      : false)
   );
 }
 
@@ -290,70 +288,51 @@ async function kick(
   sock: WASocket,
   jid: string,
   message: WAMessage,
-  metadata: GroupMetadata
+  metadata: GroupMetadata,
 ): Promise<void> {
   const target = await getReplyTarget(
     sock,
     jid,
     message,
-    "kick"
   );
 
   if (!target) return;
 
   if (isProtectedTarget(sock, target)) {
-    await sock.sendMessage(jid, {
-      text: security(
-        "PROTECTED TARGET",
-        [
-          "🌑 Dark Vortex cannot remove",
-          "itself from the group.",
-          "",
-          "🛡️ Bot protection remains active.",
-        ]
-      ),
-    });
-
+    await reply(
+      sock,
+      jid,
+      message,
+      "🛡️ Protected target.\n\nDark Vortex cannot remove itself.",
+    );
     return;
   }
 
   const participant = findParticipant(
     metadata,
-    target
+    target,
   );
 
   if (!participant) {
-    await sock.sendMessage(jid, {
-      text: error(
-        "USER NOT FOUND",
-        [
-          "The replied user is no longer",
-          "a member of this group.",
-          "",
-          "🔎 Target lookup failed.",
-        ]
-      ),
-    });
-
+    await reply(
+      sock,
+      jid,
+      message,
+      "❌ User not found.\n\nThe replied user is no longer in this group.",
+    );
     return;
   }
 
   if (isAdminParticipant(participant)) {
-    await sock.sendMessage(jid, {
-      text: security(
-        "ADMIN PROTECTED",
-        [
-          `👤 Target: ${userMention(participant.id)}`,
-          "",
-          "Administrators cannot be removed",
-          "by this command.",
-          "",
-          "🛡️ Group hierarchy protected.",
-        ]
-      ),
-      mentions: [participant.id],
-    });
-
+    await reply(
+      sock,
+      jid,
+      message,
+      `🛡️ Admin protected.\n\n@${getJidNumber(participant.id)} cannot be removed because they are an administrator.`,
+      {
+        mentions: [participant.id],
+      },
+    );
     return;
   }
 
@@ -361,31 +340,27 @@ async function kick(
     await sock.groupParticipantsUpdate(
       jid,
       [participant.id],
-      "remove"
+      "remove",
     );
 
-    await sock.sendMessage(jid, {
-      text: success(
-        "MEMBER REMOVED",
-        [
-          `👤 Target: ${userMention(participant.id)}`,
-          "",
-          "⚡ Action: Remove member",
-          "🟢 Status: Successfully completed",
-          "🛡️ Group protection maintained",
-        ]
-      ),
-      mentions: [participant.id],
-    });
-  } catch (err) {
-    console.error("Kick error:", err);
+    await reply(
+      sock,
+      jid,
+      message,
+      `👢 Member removed.\n\n@${getJidNumber(participant.id)} was removed from the group.`,
+      {
+        mentions: [participant.id],
+      },
+    );
+  } catch (error) {
+    console.error("Kick error:", error);
 
-    await sock.sendMessage(jid, {
-      text: errorMessage(
-        "KICK FAILED",
-        "WhatsApp rejected the removal request."
-      ),
-    });
+    await reply(
+      sock,
+      jid,
+      message,
+      "❌ Kick failed.\n\nWhatsApp rejected the removal request.",
+    );
   }
 }
 
@@ -396,26 +371,23 @@ async function kick(
 async function kickAll(
   sock: WASocket,
   jid: string,
-  metadata: GroupMetadata
+  message: WAMessage,
+  metadata: GroupMetadata,
 ): Promise<void> {
   const targets = metadata.participants
     .filter((p) => !isAdminParticipant(p))
-    .filter((p) => !isProtectedTarget(sock, p.id))
+    .filter(
+      (p) => !isProtectedTarget(sock, p.id),
+    )
     .map((p) => p.id);
 
   if (!targets.length) {
-    await sock.sendMessage(jid, {
-      text: info(
-        "KICK ALL",
-        [
-          "There are no removable members.",
-          "",
-          "👑 Administrators are protected.",
-          "🛡️ Dark Vortex remains protected.",
-        ]
-      ),
-    });
-
+    await reply(
+      sock,
+      jid,
+      message,
+      "ℹ️ Nothing to remove.\n\nThere are no removable members.",
+    );
     return;
   }
 
@@ -423,30 +395,27 @@ async function kickAll(
     await sock.groupParticipantsUpdate(
       jid,
       targets,
-      "remove"
+      "remove",
     );
 
-    await sock.sendMessage(jid, {
-      text: success(
-        "KICK ALL COMPLETE",
-        [
-          `👥 Members removed: ${targets.length}`,
-          "",
-          "👑 Administrators protected",
-          "🛡️ Bot protected",
-          "🟢 Operation completed",
-        ]
-      ),
-    });
-  } catch (err) {
-    console.error("Kickall error:", err);
+    await reply(
+      sock,
+      jid,
+      message,
+      `👢 Members removed.\n\nRemoved: ${targets.length}\nAdministrators were protected.`,
+    );
+  } catch (error) {
+    console.error(
+      "Kickall error:",
+      error,
+    );
 
-    await sock.sendMessage(jid, {
-      text: errorMessage(
-        "KICK ALL FAILED",
-        "WhatsApp rejected the operation."
-      ),
-    });
+    await reply(
+      sock,
+      jid,
+      message,
+      "❌ Kick-all failed.\n\nWhatsApp rejected the operation.",
+    );
   }
 }
 
@@ -457,17 +426,16 @@ async function kickAll(
 async function add(
   sock: WASocket,
   jid: string,
-  args: string[]
+  message: WAMessage,
+  args: string[],
 ): Promise<void> {
   if (!args.length) {
-    await sock.sendMessage(jid, {
-      text: commandUsage(
-        "add",
-        "/add 234xxxxxxxxxx",
-        "Multiple numbers can be separated by spaces."
-      ),
-    });
-
+    await reply(
+      sock,
+      jid,
+      message,
+      "⚠️ Number required.\n\nUsage: /add 234xxxxxxxxxx",
+    );
     return;
   }
 
@@ -478,7 +446,8 @@ async function add(
     .filter(Boolean);
 
   const targets = numbers.map(
-    (number) => `${number}@s.whatsapp.net`
+    (number) =>
+      `${number}@s.whatsapp.net`,
   );
 
   try {
@@ -486,38 +455,30 @@ async function add(
       await sock.groupParticipantsUpdate(
         jid,
         targets,
-        "add"
+        "add",
       );
 
     const successful = result.filter(
       (r) =>
         r.status === "200" ||
-        r.status === "207"
+        r.status === "207",
     );
 
-    await sock.sendMessage(jid, {
-      text: success(
-        "MEMBER ADDITION",
-        [
-          `📱 Requested: ${targets.length}`,
-          `✅ Successful: ${successful.length}`,
-          `❌ Failed: ${targets.length - successful.length}`,
-          "",
-          successful.length === targets.length
-            ? "🟢 All requested members were processed."
-            : "🟡 Operation completed with some failures.",
-        ]
-      ),
-    });
-  } catch (err) {
-    console.error("Add error:", err);
+    await reply(
+      sock,
+      jid,
+      message,
+      `➕ Add member.\n\nRequested: ${targets.length}\nSuccessful: ${successful.length}\nFailed: ${targets.length - successful.length}`,
+    );
+  } catch (error) {
+    console.error("Add error:", error);
 
-    await sock.sendMessage(jid, {
-      text: errorMessage(
-        "ADD FAILED",
-        "Could not add the requested number(s)."
-      ),
-    });
+    await reply(
+      sock,
+      jid,
+      message,
+      "❌ Add failed.\n\nCould not add the requested number.",
+    );
   }
 }
 
@@ -529,50 +490,41 @@ async function promote(
   sock: WASocket,
   jid: string,
   message: WAMessage,
-  metadata: GroupMetadata
+  metadata: GroupMetadata,
 ): Promise<void> {
   const target = await getReplyTarget(
     sock,
     jid,
     message,
-    "promote"
   );
 
   if (!target) return;
 
   const participant = findParticipant(
     metadata,
-    target
+    target,
   );
 
   if (!participant) {
-    await sock.sendMessage(jid, {
-      text: error(
-        "USER NOT FOUND",
-        [
-          "The replied user is not",
-          "in this group.",
-        ]
-      ),
-    });
-
+    await reply(
+      sock,
+      jid,
+      message,
+      "❌ User not found.\n\nThe replied user is not in this group.",
+    );
     return;
   }
 
   if (isAdminParticipant(participant)) {
-    await sock.sendMessage(jid, {
-      text: info(
-        "ALREADY ADMIN",
-        [
-          `👤 User: ${userMention(participant.id)}`,
-          "",
-          "That user already has",
-          "administrator privileges.",
-        ]
-      ),
-      mentions: [participant.id],
-    });
-
+    await reply(
+      sock,
+      jid,
+      message,
+      `ℹ️ Already admin.\n\n@${getJidNumber(participant.id)} is already an administrator.`,
+      {
+        mentions: [participant.id],
+      },
+    );
     return;
   }
 
@@ -580,31 +532,30 @@ async function promote(
     await sock.groupParticipantsUpdate(
       jid,
       [participant.id],
-      "promote"
+      "promote",
     );
 
-    await sock.sendMessage(jid, {
-      text: success(
-        "ADMIN PROMOTED",
-        [
-          `👤 User: ${userMention(participant.id)}`,
-          "",
-          "👑 Role: Administrator",
-          "🟢 Status: Promotion successful",
-          "🛡️ Group hierarchy updated",
-        ]
-      ),
-      mentions: [participant.id],
-    });
-  } catch (err) {
-    console.error("Promote error:", err);
+    await reply(
+      sock,
+      jid,
+      message,
+      `👑 Member promoted.\n\n@${getJidNumber(participant.id)} is now an administrator.`,
+      {
+        mentions: [participant.id],
+      },
+    );
+  } catch (error) {
+    console.error(
+      "Promote error:",
+      error,
+    );
 
-    await sock.sendMessage(jid, {
-      text: errorMessage(
-        "PROMOTE FAILED",
-        "WhatsApp rejected the promotion."
-      ),
-    });
+    await reply(
+      sock,
+      jid,
+      message,
+      "❌ Promote failed.\n\nWhatsApp rejected the promotion.",
+    );
   }
 }
 
@@ -616,66 +567,56 @@ async function demote(
   sock: WASocket,
   jid: string,
   message: WAMessage,
-  metadata: GroupMetadata
+  metadata: GroupMetadata,
 ): Promise<void> {
   const target = await getReplyTarget(
     sock,
     jid,
     message,
-    "demote"
   );
 
   if (!target) return;
 
   const participant = findParticipant(
     metadata,
-    target
+    target,
   );
 
   if (!participant) {
-    await sock.sendMessage(jid, {
-      text: error(
-        "USER NOT FOUND",
-        [
-          "The replied user is not",
-          "in this group.",
-        ]
-      ),
-    });
-
+    await reply(
+      sock,
+      jid,
+      message,
+      "❌ User not found.\n\nThe replied user is not in this group.",
+    );
     return;
   }
 
   if (!isAdminParticipant(participant)) {
-    await sock.sendMessage(jid, {
-      text: info(
-        "NOT AN ADMIN",
-        [
-          `👤 User: ${userMention(participant.id)}`,
-          "",
-          "That user is already",
-          "a regular member.",
-        ]
-      ),
-      mentions: [participant.id],
-    });
-
+    await reply(
+      sock,
+      jid,
+      message,
+      `ℹ️ Not an admin.\n\n@${getJidNumber(participant.id)} is not a group administrator.`,
+      {
+        mentions: [participant.id],
+      },
+    );
     return;
   }
 
-  if (isProtectedTarget(sock, participant.id)) {
-    await sock.sendMessage(jid, {
-      text: security(
-        "PROTECTED TARGET",
-        [
-          "🌑 Dark Vortex cannot demote",
-          "itself from administrator.",
-          "",
-          "🛡️ Bot protection remains active.",
-        ]
-      ),
-    });
-
+  if (
+    isProtectedTarget(
+      sock,
+      participant.id,
+    )
+  ) {
+    await reply(
+      sock,
+      jid,
+      message,
+      "🛡️ Protected target.\n\nDark Vortex cannot demote itself.",
+    );
     return;
   }
 
@@ -683,31 +624,30 @@ async function demote(
     await sock.groupParticipantsUpdate(
       jid,
       [participant.id],
-      "demote"
+      "demote",
     );
 
-    await sock.sendMessage(jid, {
-      text: success(
-        "ADMIN DEMOTED",
-        [
-          `👤 User: ${userMention(participant.id)}`,
-          "",
-          "👤 Role: Member",
-          "🟢 Status: Demotion successful",
-          "🛡️ Group hierarchy updated",
-        ]
-      ),
-      mentions: [participant.id],
-    });
-  } catch (err) {
-    console.error("Demote error:", err);
+    await reply(
+      sock,
+      jid,
+      message,
+      `⬇️ Admin demoted.\n\n@${getJidNumber(participant.id)} is now a regular member.`,
+      {
+        mentions: [participant.id],
+      },
+    );
+  } catch (error) {
+    console.error(
+      "Demote error:",
+      error,
+    );
 
-    await sock.sendMessage(jid, {
-      text: errorMessage(
-        "DEMOTE FAILED",
-        "WhatsApp rejected the demotion."
-      ),
-    });
+    await reply(
+      sock,
+      jid,
+      message,
+      "❌ Demote failed.\n\nWhatsApp rejected the demotion.",
+    );
   }
 }
 
@@ -718,26 +658,23 @@ async function demote(
 async function promoteAll(
   sock: WASocket,
   jid: string,
-  metadata: GroupMetadata
+  message: WAMessage,
+  metadata: GroupMetadata,
 ): Promise<void> {
   const targets = metadata.participants
     .filter((p) => !isAdminParticipant(p))
-    .filter((p) => !isProtectedTarget(sock, p.id))
+    .filter(
+      (p) => !isProtectedTarget(sock, p.id),
+    )
     .map((p) => p.id);
 
   if (!targets.length) {
-    await sock.sendMessage(jid, {
-      text: info(
-        "PROMOTE ALL",
-        [
-          "Everyone is already",
-          "an administrator.",
-          "",
-          "🟢 No changes were required.",
-        ]
-      ),
-    });
-
+    await reply(
+      sock,
+      jid,
+      message,
+      "ℹ️ No changes needed.\n\nEveryone is already an administrator.",
+    );
     return;
   }
 
@@ -745,30 +682,27 @@ async function promoteAll(
     await sock.groupParticipantsUpdate(
       jid,
       targets,
-      "promote"
+      "promote",
     );
 
-    await sock.sendMessage(jid, {
-      text: success(
-        "PROMOTE ALL COMPLETE",
-        [
-          `👥 Promoted: ${targets.length}`,
-          "",
-          "👑 Administrator privileges granted.",
-          "🛡️ Dark Vortex remained protected.",
-          "🟢 Operation completed.",
-        ]
-      ),
-    });
-  } catch (err) {
-    console.error("Promoteall error:", err);
+    await reply(
+      sock,
+      jid,
+      message,
+      `👑 Members promoted.\n\nPromoted: ${targets.length}`,
+    );
+  } catch (error) {
+    console.error(
+      "Promoteall error:",
+      error,
+    );
 
-    await sock.sendMessage(jid, {
-      text: errorMessage(
-        "PROMOTE ALL FAILED",
-        "WhatsApp rejected the operation."
-      ),
-    });
+    await reply(
+      sock,
+      jid,
+      message,
+      "❌ Promote-all failed.\n\nWhatsApp rejected the operation.",
+    );
   }
 }
 
@@ -779,26 +713,23 @@ async function promoteAll(
 async function demoteAll(
   sock: WASocket,
   jid: string,
-  metadata: GroupMetadata
+  message: WAMessage,
+  metadata: GroupMetadata,
 ): Promise<void> {
   const targets = metadata.participants
     .filter((p) => isAdminParticipant(p))
-    .filter((p) => !isProtectedTarget(sock, p.id))
+    .filter(
+      (p) => !isProtectedTarget(sock, p.id),
+    )
     .map((p) => p.id);
 
   if (!targets.length) {
-    await sock.sendMessage(jid, {
-      text: info(
-        "DEMOTE ALL",
-        [
-          "There are no removable",
-          "administrators.",
-          "",
-          "🛡️ Dark Vortex remains protected.",
-        ]
-      ),
-    });
-
+    await reply(
+      sock,
+      jid,
+      message,
+      "ℹ️ No removable administrators.",
+    );
     return;
   }
 
@@ -806,450 +737,173 @@ async function demoteAll(
     await sock.groupParticipantsUpdate(
       jid,
       targets,
-      "demote"
+      "demote",
     );
 
-    await sock.sendMessage(jid, {
-      text: success(
-        "DEMOTE ALL COMPLETE",
-        [
-          `👥 Demoted: ${targets.length}`,
-          "",
-          "👑 Administrator roles removed.",
-          "🛡️ Dark Vortex remained protected.",
-          "🟢 Operation completed.",
-        ]
-      ),
-    });
-  } catch (err) {
-    console.error("Demoteall error:", err);
+    await reply(
+      sock,
+      jid,
+      message,
+      `⬇️ Administrators demoted.\n\nDemoted: ${targets.length}\nDark Vortex was protected.`,
+    );
+  } catch (error) {
+    console.error(
+      "Demoteall error:",
+      error,
+    );
 
-    await sock.sendMessage(jid, {
-      text: errorMessage(
-        "DEMOTE ALL FAILED",
-        "WhatsApp rejected the operation."
-      ),
-    });
+    await reply(
+      sock,
+      jid,
+      message,
+      "❌ Demote-all failed.\n\nWhatsApp rejected the operation.",
+    );
   }
 }
 
 /* =========================================================
-   MUTE
+   GROUP MODE
 ========================================================= */
 
 async function mute(
   sock: WASocket,
-  jid: string
+  jid: string,
+  message: WAMessage,
 ): Promise<void> {
   try {
     await sock.groupSettingUpdate(
       jid,
-      "announcement"
+      "announcement",
     );
 
-    await sock.sendMessage(jid, {
-      text: success(
-        "GROUP MUTED",
-        [
-          "🔇 Mode: Administrators only",
-          "",
-          "Only administrators can",
-          "send messages now.",
-          "",
-          "🛡️ Group mode enforced.",
-        ]
-      ),
-    });
-  } catch (err) {
-    console.error("Mute error:", err);
+    await reply(
+      sock,
+      jid,
+      message,
+      "🔇 Group muted.\n\nOnly administrators can send messages now.",
+    );
+  } catch (error) {
+    console.error("Mute error:", error);
 
-    await sock.sendMessage(jid, {
-      text: errorMessage(
-        "MUTE FAILED",
-        "WhatsApp rejected the group setting change."
-      ),
-    });
+    await reply(
+      sock,
+      jid,
+      message,
+      "❌ Mute failed.\n\nWhatsApp rejected the setting change.",
+    );
   }
 }
-
-/* =========================================================
-   UNMUTE
-========================================================= */
 
 async function unmute(
   sock: WASocket,
-  jid: string
-): Promise<void> {
-  try {
-    await sock.groupSettingUpdate(
-      jid,
-      "not_announcement"
-    );
-
-    await sock.sendMessage(jid, {
-      text: success(
-        "GROUP UNMUTED",
-        [
-          "🔊 Mode: Everyone",
-          "",
-          "All members can send",
-          "messages again.",
-          "",
-          "🟢 Group mode restored.",
-        ]
-      ),
-    });
-  } catch (err) {
-    console.error("Unmute error:", err);
-
-    await sock.sendMessage(jid, {
-      text: errorMessage(
-        "UNMUTE FAILED",
-        "WhatsApp rejected the group setting change."
-      ),
-    });
-  }
-}
-
-/* =========================================================
-   OPEN GROUP
-========================================================= */
-
-async function openGroup(
-  sock: WASocket,
-  jid: string
-): Promise<void> {
-  try {
-    await sock.groupSettingUpdate(
-      jid,
-      "not_announcement"
-    );
-
-    await sock.sendMessage(jid, {
-      text: success(
-        "GROUP OPENED",
-        [
-          "🔓 Group mode: Open",
-          "",
-          "Everyone can send messages",
-          "in this group again.",
-          "",
-          "🟢 Status: Successfully opened.",
-        ]
-      ),
-    });
-  } catch (err) {
-    console.error("Open group error:", err);
-
-    await sock.sendMessage(jid, {
-      text: errorMessage(
-        "OPEN FAILED",
-        "WhatsApp rejected the group setting change."
-      ),
-    });
-  }
-}
-
-/* =========================================================
-   CLOSE GROUP
-========================================================= */
-
-async function closeGroup(
-  sock: WASocket,
-  jid: string
-): Promise<void> {
-  try {
-    await sock.groupSettingUpdate(
-      jid,
-      "announcement"
-    );
-
-    await sock.sendMessage(jid, {
-      text: success(
-        "GROUP CLOSED",
-        [
-          "🔒 Group mode: Administrators only",
-          "",
-          "Only administrators can",
-          "send messages now.",
-          "",
-          "🟢 Status: Successfully closed.",
-        ]
-      ),
-    });
-  } catch (err) {
-    console.error("Close group error:", err);
-
-    await sock.sendMessage(jid, {
-      text: errorMessage(
-        "CLOSE FAILED",
-        "WhatsApp rejected the group setting change."
-      ),
-    });
-  }
-}
-
-/* =========================================================
-   GET GROUP LINK
-========================================================= */
-
-async function getLink(
-  sock: WASocket,
-  jid: string
-): Promise<void> {
-  await link(sock, jid);
-}
-
-/* =========================================================
-   GET IMAGE FROM MESSAGE
-========================================================= */
-
-function getImageMessage(
-  message: WAMessage
-): WAMessage | null {
-  if (message.message?.imageMessage) {
-    return message;
-  }
-
-  const context =
-    message.message?.extendedTextMessage?.contextInfo ||
-    message.message?.imageMessage?.contextInfo ||
-    message.message?.videoMessage?.contextInfo ||
-    message.message?.documentMessage?.contextInfo;
-
-  if (!context?.quotedMessage?.imageMessage) {
-    return null;
-  }
-
-  return {
-    key: {
-      remoteJid: message.key.remoteJid,
-      fromMe: false,
-      id: context.stanzaId || "",
-      participant: context.participant,
-    },
-    message: {
-      imageMessage:
-        context.quotedMessage.imageMessage,
-    },
-  } as WAMessage;
-}
-
-/* =========================================================
-   SET GROUP PROFILE PICTURE
-========================================================= */
-
-async function setProfilePicture(
-  sock: WASocket,
   jid: string,
-  message: WAMessage
+  message: WAMessage,
 ): Promise<void> {
-  const imageMessage = getImageMessage(message);
-
-  if (!imageMessage) {
-    await sock.sendMessage(jid, {
-      text: commandUsage(
-        "setpp",
-        "/setpp",
-        "Send or reply to an image with /setpp."
-      ),
-    });
-
-    return;
-  }
-
   try {
-    const image = await downloadMediaMessage(
-      imageMessage,
-      "buffer",
-      {}
-    );
-
-    await sock.updateProfilePicture(
+    await sock.groupSettingUpdate(
       jid,
-      image
+      "not_announcement",
     );
 
-    await sock.sendMessage(jid, {
-      text: success(
-        "GROUP PICTURE UPDATED",
-        [
-          "🖼️ The group profile picture",
-          "has been updated.",
-          "",
-          "🟢 Status: Successfully changed.",
-          "✨ Visual identity refreshed.",
-        ]
-      ),
-    });
-  } catch (err) {
+    await reply(
+      sock,
+      jid,
+      message,
+      "🔊 Group unmuted.\n\nAll members can send messages now.",
+    );
+  } catch (error) {
     console.error(
-      "Set profile picture error:",
-      err
+      "Unmute error:",
+      error,
     );
 
-    await sock.sendMessage(jid, {
-      text: errorMessage(
-        "PROFILE PICTURE FAILED",
-        "WhatsApp rejected the group picture update."
-      ),
-    });
+    await reply(
+      sock,
+      jid,
+      message,
+      "❌ Unmute failed.\n\nWhatsApp rejected the setting change.",
+    );
   }
 }
-
-/* =========================================================
-   ONLY ADMINS
-========================================================= */
 
 async function onlyAdmins(
   sock: WASocket,
-  jid: string
+  jid: string,
+  message: WAMessage,
 ): Promise<void> {
-  try {
-    await sock.groupSettingUpdate(
-      jid,
-      "announcement"
-    );
-
-    await sock.sendMessage(jid, {
-      text: success(
-        "ADMIN-ONLY MODE",
-        [
-          "🔒 Group mode: Restricted",
-          "",
-          "Only administrators can",
-          "send messages.",
-          "",
-          "🛡️ Restriction is now active.",
-        ]
-      ),
-    });
-  } catch (err) {
-    console.error("Onlyadmins error:", err);
-
-    await sock.sendMessage(jid, {
-      text: errorMessage(
-        "ADMIN-ONLY MODE FAILED",
-        "WhatsApp rejected the group setting change."
-      ),
-    });
-  }
+  await mute(sock, jid, message);
 }
-
-/* =========================================================
-   EVERYONE
-========================================================= */
 
 async function everyone(
   sock: WASocket,
-  jid: string
+  jid: string,
+  message: WAMessage,
 ): Promise<void> {
-  try {
-    await sock.groupSettingUpdate(
-      jid,
-      "not_announcement"
-    );
-
-    await sock.sendMessage(jid, {
-      text: success(
-        "EVERYONE MODE",
-        [
-          "🔓 Group mode: Open",
-          "",
-          "All members can send",
-          "messages.",
-          "",
-          "🟢 Restriction removed.",
-        ]
-      ),
-    });
-  } catch (err) {
-    console.error("Everyone error:", err);
-
-    await sock.sendMessage(jid, {
-      text: errorMessage(
-        "EVERYONE MODE FAILED",
-        "WhatsApp rejected the group setting change."
-      ),
-    });
-  }
+  await unmute(sock, jid, message);
 }
 
 /* =========================================================
-   LOCK GROUP INFO
+   GROUP INFORMATION SETTINGS
 ========================================================= */
 
 async function lockGroup(
   sock: WASocket,
-  jid: string
+  jid: string,
+  message: WAMessage,
 ): Promise<void> {
   try {
     await sock.groupSettingUpdate(
       jid,
-      "locked"
+      "locked",
     );
 
-    await sock.sendMessage(jid, {
-      text: success(
-        "GROUP INFORMATION LOCKED",
-        [
-          "🔒 Information mode: Restricted",
-          "",
-          "Only administrators can",
-          "edit group information.",
-          "",
-          "🛡️ Group metadata protected.",
-        ]
-      ),
-    });
-  } catch (err) {
-    console.error("Lock error:", err);
+    await reply(
+      sock,
+      jid,
+      message,
+      "🔒 Group info locked.\n\nOnly administrators can edit the group subject and description.",
+    );
+  } catch (error) {
+    console.error("Lock error:", error);
 
-    await sock.sendMessage(jid, {
-      text: errorMessage(
-        "LOCK FAILED",
-        "WhatsApp rejected the group setting change."
-      ),
-    });
+    await reply(
+      sock,
+      jid,
+      message,
+      "❌ Lock failed.\n\nWhatsApp rejected the group setting change.",
+    );
   }
 }
 
-/* =========================================================
-   UNLOCK GROUP INFO
-========================================================= */
-
 async function unlockGroup(
   sock: WASocket,
-  jid: string
+  jid: string,
+  message: WAMessage,
 ): Promise<void> {
   try {
     await sock.groupSettingUpdate(
       jid,
-      "unlocked"
+      "unlocked",
     );
 
-    await sock.sendMessage(jid, {
-      text: success(
-        "GROUP INFORMATION UNLOCKED",
-        [
-          "🔓 Information mode: Editable",
-          "",
-          "Members can edit group",
-          "information again.",
-          "",
-          "🟢 Group metadata unlocked.",
-        ]
-      ),
-    });
-  } catch (err) {
-    console.error("Unlock error:", err);
+    await reply(
+      sock,
+      jid,
+      message,
+      "🔓 Group info unlocked.\n\nMembers can edit group information again.",
+    );
+  } catch (error) {
+    console.error(
+      "Unlock error:",
+      error,
+    );
 
-    await sock.sendMessage(jid, {
-      text: errorMessage(
-        "UNLOCK FAILED",
-        "WhatsApp rejected the group setting change."
-      ),
-    });
+    await reply(
+      sock,
+      jid,
+      message,
+      "❌ Unlock failed.\n\nWhatsApp rejected the group setting change.",
+    );
   }
 }
 
@@ -1260,40 +914,29 @@ async function unlockGroup(
 async function groupCreationTime(
   sock: WASocket,
   jid: string,
-  metadata: GroupMetadata
+  message: WAMessage,
+  metadata: GroupMetadata,
 ): Promise<void> {
   if (!metadata.creation) {
-    await sock.sendMessage(jid, {
-      text: info(
-        "GROUP CREATION",
-        [
-          "WhatsApp did not provide",
-          "the creation timestamp.",
-          "",
-          "ℹ️ No timestamp is available.",
-        ]
-      ),
-    });
-
+    await reply(
+      sock,
+      jid,
+      message,
+      "🕒 Creation time unavailable.\n\nWhatsApp did not provide the group creation timestamp.",
+    );
     return;
   }
 
   const date = new Date(
-    metadata.creation * 1000
+    metadata.creation * 1000,
   );
 
-  await sock.sendMessage(jid, {
-    text: vortexBox(
-      "🕒 GROUP CREATION",
-      [
-        `📅 Date: ${date.toLocaleDateString()}`,
-        `⏰ Time: ${date.toLocaleTimeString()}`,
-        `🌍 Timestamp: ${metadata.creation}`,
-        "",
-        "🟢 Timestamp retrieved successfully.",
-      ]
-    ),
-  });
+  await reply(
+    sock,
+    jid,
+    message,
+    `🕒 Group created.\n\nDate: ${date.toLocaleDateString()}\nTime: ${date.toLocaleTimeString()}`,
+  );
 }
 
 /* =========================================================
@@ -1303,54 +946,49 @@ async function groupCreationTime(
 async function joinApproval(
   sock: WASocket,
   jid: string,
-  args: string[]
+  message: WAMessage,
+  args: string[],
 ): Promise<void> {
-  const mode = args[0]?.toLowerCase();
+  const mode =
+    args[0]?.toLowerCase();
 
-  if (!mode || !["on", "off"].includes(mode)) {
-    await sock.sendMessage(jid, {
-      text: commandUsage(
-        "joinapproval",
-        "/joinapproval on | off",
-        "Controls manual approval for new members."
-      ),
-    });
-
+  if (
+    !mode ||
+    !["on", "off"].includes(mode)
+  ) {
+    await reply(
+      sock,
+      jid,
+      message,
+      "⚠️ Invalid setting.\n\nUsage:\n/joinapproval on\n/joinapproval off",
+    );
     return;
   }
 
   try {
     await sock.groupJoinApprovalMode(
       jid,
-      mode === "on" ? "on" : "off"
+      mode === "on" ? "on" : "off",
     );
 
-    await sock.sendMessage(jid, {
-      text: success(
-        "JOIN APPROVAL UPDATED",
-        [
-          `🛡️ Status: ${mode === "on" ? "🟢 ON" : "🔴 OFF"}`,
-          "",
-          mode === "on"
-            ? "New members must be approved"
-            : "Members can join without manual approval.",
-          "",
-          "⚡ Group admission policy updated.",
-        ]
-      ),
-    });
-  } catch (err) {
+    await reply(
+      sock,
+      jid,
+      message,
+      `🛡️ Join approval ${mode === "on" ? "enabled" : "disabled"}.\n\nStatus: ${mode.toUpperCase()}`,
+    );
+  } catch (error) {
     console.error(
       "Join approval error:",
-      err
+      error,
     );
 
-    await sock.sendMessage(jid, {
-      text: errorMessage(
-        "JOIN APPROVAL FAILED",
-        "WhatsApp rejected the setting change."
-      ),
-    });
+    await reply(
+      sock,
+      jid,
+      message,
+      "❌ Join approval failed.\n\nWhatsApp rejected the setting change.",
+    );
   }
 }
 
@@ -1360,58 +998,55 @@ async function joinApproval(
 
 async function requests(
   sock: WASocket,
-  jid: string
+  jid: string,
+  message: WAMessage,
 ): Promise<void> {
   try {
     const pending =
-      await sock.groupRequestParticipantsList(jid);
+      await sock.groupRequestParticipantsList(
+        jid,
+      );
 
     if (!pending.length) {
-      await sock.sendMessage(jid, {
-        text: info(
-          "JOIN REQUESTS",
-          [
-            "There are no pending",
-            "join requests.",
-            "",
-            "🟢 Request queue is clear.",
-          ]
-        ),
-      });
-
+      await reply(
+        sock,
+        jid,
+        message,
+        "📥 Join requests.\n\nNo pending requests.",
+      );
       return;
     }
 
-    const lines = pending.map(
-      (request, index) =>
-        `${index + 1}. @${getJidNumber(request.jid)}`
+    const mentions = pending.map(
+      (request) => request.jid,
     );
 
-    await sock.sendMessage(jid, {
-      text: vortexBox(
-        "📥 JOIN REQUESTS",
-        [
-          `⏳ Pending: ${pending.length}`,
-          "",
-          ...lines,
-          "",
-          "⚡ /approve — approve requests",
-          "⚡ /reject — reject requests",
-        ]
-      ),
-      mentions: pending.map(
-        (request) => request.jid
-      ),
-    });
-  } catch (err) {
-    console.error("Requests error:", err);
+    const lines = pending.map(
+      (request, index) =>
+        `${index + 1}. @${getJidNumber(request.jid)}`,
+    );
 
-    await sock.sendMessage(jid, {
-      text: errorMessage(
-        "REQUESTS FAILED",
-        "Could not retrieve pending join requests."
-      ),
-    });
+    await reply(
+      sock,
+      jid,
+      message,
+      `📥 Join requests.\n\nPending: ${pending.length}\n\n${lines.join("\n")}`,
+      {
+        mentions,
+      },
+    );
+  } catch (error) {
+    console.error(
+      "Requests error:",
+      error,
+    );
+
+    await reply(
+      sock,
+      jid,
+      message,
+      "❌ Could not retrieve pending join requests.",
+    );
   }
 }
 
@@ -1422,30 +1057,27 @@ async function requests(
 async function approveRequests(
   sock: WASocket,
   jid: string,
-  args: string[]
+  message: WAMessage,
+  args: string[],
 ): Promise<void> {
   try {
     const pending =
-      await sock.groupRequestParticipantsList(jid);
+      await sock.groupRequestParticipantsList(
+        jid,
+      );
 
     if (!pending.length) {
-      await sock.sendMessage(jid, {
-        text: info(
-          "APPROVE REQUESTS",
-          [
-            "There are no pending",
-            "join requests.",
-            "",
-            "🟢 Nothing to approve.",
-          ]
-        ),
-      });
-
+      await reply(
+        sock,
+        jid,
+        message,
+        "📥 No pending join requests.",
+      );
       return;
     }
 
     let targets = pending.map(
-      (request) => request.jid
+      (request) => request.jid,
     );
 
     if (args.length) {
@@ -1453,31 +1085,25 @@ async function approveRequests(
         .join(" ")
         .split(/[\s,]+/)
         .map((value) =>
-          value.replace(/\D/g, "")
+          value.replace(/\D/g, ""),
         )
         .filter(Boolean);
 
       targets = pending
         .filter((request) =>
           requestedNumbers.includes(
-            getJidNumber(request.jid)
-          )
+            getJidNumber(request.jid),
+          ),
         )
         .map((request) => request.jid);
 
       if (!targets.length) {
-        await sock.sendMessage(jid, {
-          text: error(
-            "REQUEST NOT FOUND",
-            [
-              "That number does not have",
-              "a pending join request.",
-              "",
-              "🔎 No matching request found.",
-            ]
-          ),
-        });
-
+        await reply(
+          sock,
+          jid,
+          message,
+          "❌ Request not found.\n\nThat number has no pending join request.",
+        );
         return;
       }
     }
@@ -1485,32 +1111,27 @@ async function approveRequests(
     await sock.groupRequestParticipantsUpdate(
       jid,
       targets,
-      "approve"
+      "approve",
     );
 
-    await sock.sendMessage(jid, {
-      text: success(
-        "REQUESTS APPROVED",
-        [
-          `👥 Approved: ${targets.length}`,
-          "",
-          "🟢 Operation completed successfully.",
-          "🛡️ Group admission queue updated.",
-        ]
-      ),
-    });
-  } catch (err) {
+    await reply(
+      sock,
+      jid,
+      message,
+      `✅ Join requests approved.\n\nApproved: ${targets.length}`,
+    );
+  } catch (error) {
     console.error(
       "Approve request error:",
-      err
+      error,
     );
 
-    await sock.sendMessage(jid, {
-      text: errorMessage(
-        "APPROVAL FAILED",
-        "WhatsApp rejected the approval request."
-      ),
-    });
+    await reply(
+      sock,
+      jid,
+      message,
+      "❌ Approval failed.\n\nWhatsApp rejected the request.",
+    );
   }
 }
 
@@ -1521,30 +1142,27 @@ async function approveRequests(
 async function rejectRequests(
   sock: WASocket,
   jid: string,
-  args: string[]
+  message: WAMessage,
+  args: string[],
 ): Promise<void> {
   try {
     const pending =
-      await sock.groupRequestParticipantsList(jid);
+      await sock.groupRequestParticipantsList(
+        jid,
+      );
 
     if (!pending.length) {
-      await sock.sendMessage(jid, {
-        text: info(
-          "REJECT REQUESTS",
-          [
-            "There are no pending",
-            "join requests.",
-            "",
-            "🟢 Nothing to reject.",
-          ]
-        ),
-      });
-
+      await reply(
+        sock,
+        jid,
+        message,
+        "📥 No pending join requests.",
+      );
       return;
     }
 
     let targets = pending.map(
-      (request) => request.jid
+      (request) => request.jid,
     );
 
     if (args.length) {
@@ -1552,31 +1170,25 @@ async function rejectRequests(
         .join(" ")
         .split(/[\s,]+/)
         .map((value) =>
-          value.replace(/\D/g, "")
+          value.replace(/\D/g, ""),
         )
         .filter(Boolean);
 
       targets = pending
         .filter((request) =>
           requestedNumbers.includes(
-            getJidNumber(request.jid)
-          )
+            getJidNumber(request.jid),
+          ),
         )
         .map((request) => request.jid);
 
       if (!targets.length) {
-        await sock.sendMessage(jid, {
-          text: error(
-            "REQUEST NOT FOUND",
-            [
-              "That number does not have",
-              "a pending join request.",
-              "",
-              "🔎 No matching request found.",
-            ]
-          ),
-        });
-
+        await reply(
+          sock,
+          jid,
+          message,
+          "❌ Request not found.\n\nThat number has no pending join request.",
+        );
         return;
       }
     }
@@ -1584,32 +1196,27 @@ async function rejectRequests(
     await sock.groupRequestParticipantsUpdate(
       jid,
       targets,
-      "reject"
+      "reject",
     );
 
-    await sock.sendMessage(jid, {
-      text: success(
-        "REQUESTS REJECTED",
-        [
-          `👥 Rejected: ${targets.length}`,
-          "",
-          "🟢 Operation completed successfully.",
-          "🛡️ Group admission queue updated.",
-        ]
-      ),
-    });
-  } catch (err) {
+    await reply(
+      sock,
+      jid,
+      message,
+      `🚫 Join requests rejected.\n\nRejected: ${targets.length}`,
+    );
+  } catch (error) {
     console.error(
       "Reject request error:",
-      err
+      error,
     );
 
-    await sock.sendMessage(jid, {
-      text: errorMessage(
-        "REJECTION FAILED",
-        "WhatsApp rejected the operation."
-      ),
-    });
+    await reply(
+      sock,
+      jid,
+      message,
+      "❌ Rejection failed.\n\nWhatsApp rejected the operation.",
+    );
   }
 }
 
@@ -1620,26 +1227,20 @@ async function rejectRequests(
 async function groupInfo(
   sock: WASocket,
   jid: string,
-  metadata: GroupMetadata
+  message: WAMessage,
+  metadata: GroupMetadata,
 ): Promise<void> {
-  const admins = metadata.participants.filter(
-    isAdminParticipant
-  );
+  const adminCount =
+    metadata.participants.filter(
+      isAdminParticipant,
+    ).length;
 
-  await sock.sendMessage(jid, {
-    text: vortexBox(
-      "ℹ️ GROUP INFORMATION",
-      [
-        `📛 Name: ${metadata.subject}`,
-        `👥 Members: ${metadata.participants.length}`,
-        `👑 Admins: ${admins.length}`,
-        "",
-        `🆔 ID: ${jid}`,
-        "",
-        "🟢 Group information retrieved.",
-      ]
-    ),
-  });
+  await reply(
+    sock,
+    jid,
+    message,
+    `ℹ️ Group information.\n\nName: ${metadata.subject}\nMembers: ${metadata.participants.length}\nAdmins: ${adminCount}`,
+  );
 }
 
 /* =========================================================
@@ -1649,33 +1250,40 @@ async function groupInfo(
 async function admins(
   sock: WASocket,
   jid: string,
-  metadata: GroupMetadata
+  message: WAMessage,
+  metadata: GroupMetadata,
 ): Promise<void> {
-  const adminList =
+  const list =
     metadata.participants.filter(
-      isAdminParticipant
+      isAdminParticipant,
     );
 
-  const list = adminList.map(
-    (p, index) =>
-      `${index + 1}. @${getJidNumber(p.id)}`
-  );
+  if (!list.length) {
+    await reply(
+      sock,
+      jid,
+      message,
+      "👑 Group admins.\n\nNo administrators found.",
+    );
+    return;
+  }
 
-  await sock.sendMessage(jid, {
-    text: vortexBox(
-      "👑 GROUP ADMINS",
-      [
-        `👑 Total admins: ${adminList.length}`,
-        "",
-        ...list,
-        "",
-        "🛡️ Administrator directory.",
-      ]
-    ),
-    mentions: adminList.map(
-      (p) => p.id
-    ),
-  });
+  const text = list
+    .map(
+      (p, index) =>
+        `${index + 1}. @${getJidNumber(p.id)}`,
+    )
+    .join("\n");
+
+  await reply(
+    sock,
+    jid,
+    message,
+    `👑 Group admins.\n\n${text}`,
+    {
+      mentions: list.map((p) => p.id),
+    },
+  );
 }
 
 /* =========================================================
@@ -1685,30 +1293,27 @@ async function admins(
 async function members(
   sock: WASocket,
   jid: string,
-  metadata: GroupMetadata
+  message: WAMessage,
+  metadata: GroupMetadata,
 ): Promise<void> {
-  const list = metadata.participants.map(
-    (p, index) =>
-      `${index + 1}. @${getJidNumber(p.id)}${
-        isAdminParticipant(p) ? " 👑" : ""
-      }`
-  );
+  const list = metadata.participants;
 
-  await sock.sendMessage(jid, {
-    text: vortexBox(
-      "👥 GROUP MEMBERS",
-      [
-        `👥 Total members: ${metadata.participants.length}`,
-        "",
-        ...list,
-        "",
-        "🟢 Member directory retrieved.",
-      ]
-    ),
-    mentions: metadata.participants.map(
-      (p) => p.id
-    ),
-  });
+  const text = list
+    .map(
+      (p, index) =>
+        `${index + 1}. @${getJidNumber(p.id)}${isAdminParticipant(p) ? " 👑" : ""}`,
+    )
+    .join("\n");
+
+  await reply(
+    sock,
+    jid,
+    message,
+    `👥 Group members.\n\nTotal: ${list.length}\n\n${text}`,
+    {
+      mentions: list.map((p) => p.id),
+    },
+  );
 }
 
 /* =========================================================
@@ -1718,46 +1323,40 @@ async function members(
 async function nonAdmins(
   sock: WASocket,
   jid: string,
-  metadata: GroupMetadata
+  message: WAMessage,
+  metadata: GroupMetadata,
 ): Promise<void> {
-  const list = metadata.participants.filter(
-    (p) => !isAdminParticipant(p)
-  );
+  const list =
+    metadata.participants.filter(
+      (p) => !isAdminParticipant(p),
+    );
 
   if (!list.length) {
-    await sock.sendMessage(jid, {
-      text: info(
-        "NON-ADMINS",
-        [
-          "There are no non-admin",
-          "members in this group.",
-          "",
-          "👑 All members are administrators.",
-        ]
-      ),
-    });
-
+    await reply(
+      sock,
+      jid,
+      message,
+      "👥 Non-admins.\n\nThere are no non-admin members.",
+    );
     return;
   }
 
-  await sock.sendMessage(jid, {
-    text: vortexBox(
-      "👥 NON-ADMINS",
-      [
-        `👥 Total: ${list.length}`,
-        "",
-        ...list.map(
-          (p, index) =>
-            `${index + 1}. @${getJidNumber(p.id)}`
-        ),
-        "",
-        "🟢 Member directory retrieved.",
-      ]
-    ),
-    mentions: list.map(
-      (p) => p.id
-    ),
-  });
+  const text = list
+    .map(
+      (p, index) =>
+        `${index + 1}. @${getJidNumber(p.id)}`,
+    )
+    .join("\n");
+
+  await reply(
+    sock,
+    jid,
+    message,
+    `👥 Non-admins.\n\nTotal: ${list.length}\n\n${text}`,
+    {
+      mentions: list.map((p) => p.id),
+    },
+  );
 }
 
 /* =========================================================
@@ -1767,31 +1366,30 @@ async function nonAdmins(
 async function tagAll(
   sock: WASocket,
   jid: string,
-  metadata: GroupMetadata
+  message: WAMessage,
+  metadata: GroupMetadata,
 ): Promise<void> {
   const mentions =
     metadata.participants.map(
-      (p) => p.id
+      (p) => p.id,
     );
 
-  const text = vortexBox(
-    "📢 TAG ALL",
-    [
-      "Attention everyone!",
-      "",
-      ...mentions.map(
-        (user, index) =>
-          `${index + 1}. @${getJidNumber(user)}`
-      ),
-      "",
-      "📣 Group-wide mention completed.",
-    ]
-  );
+  const text = mentions
+    .map(
+      (user, index) =>
+        `${index + 1}. @${getJidNumber(user)}`,
+    )
+    .join("\n");
 
-  await sock.sendMessage(jid, {
-    text,
-    mentions,
-  });
+  await reply(
+    sock,
+    jid,
+    message,
+    `📢 Attention everyone!\n\n${text}`,
+    {
+      mentions,
+    },
+  );
 }
 
 /* =========================================================
@@ -1801,8 +1399,9 @@ async function tagAll(
 async function hideTag(
   sock: WASocket,
   jid: string,
+  message: WAMessage,
   metadata: GroupMetadata,
-  args: string[]
+  args: string[],
 ): Promise<void> {
   const text =
     args.length > 0
@@ -1811,13 +1410,18 @@ async function hideTag(
 
   const mentions =
     metadata.participants.map(
-      (p) => p.id
+      (p) => p.id,
     );
 
-  await sock.sendMessage(jid, {
+  await reply(
+    sock,
+    jid,
+    message,
     text,
-    mentions,
-  });
+    {
+      mentions,
+    },
+  );
 }
 
 /* =========================================================
@@ -1826,37 +1430,28 @@ async function hideTag(
 
 async function link(
   sock: WASocket,
-  jid: string
+  jid: string,
+  message: WAMessage,
 ): Promise<void> {
   try {
     const code =
       await sock.groupInviteCode(jid);
 
-    const invite =
-      `https://chat.whatsapp.com/${code}`;
+    await reply(
+      sock,
+      jid,
+      message,
+      `🔗 Group link.\n\nhttps://chat.whatsapp.com/${code}`,
+    );
+  } catch (error) {
+    console.error("Link error:", error);
 
-    await sock.sendMessage(jid, {
-      text: vortexBox(
-        "🔗 GROUP INVITE LINK",
-        [
-          "🔐 Current group invite:",
-          "",
-          invite,
-          "",
-          "🟢 Link retrieved successfully.",
-          "⚡ Share only with trusted users.",
-        ]
-      ),
-    });
-  } catch (err) {
-    console.error("Link error:", err);
-
-    await sock.sendMessage(jid, {
-      text: errorMessage(
-        "LINK RETRIEVAL FAILED",
-        "Could not retrieve the group invite link."
-      ),
-    });
+    await reply(
+      sock,
+      jid,
+      message,
+      "❌ Could not retrieve the group invite link.",
+    );
   }
 }
 
@@ -1866,32 +1461,30 @@ async function link(
 
 async function revoke(
   sock: WASocket,
-  jid: string
+  jid: string,
+  message: WAMessage,
 ): Promise<void> {
   try {
     await sock.groupRevokeInvite(jid);
 
-    await sock.sendMessage(jid, {
-      text: success(
-        "GROUP LINK REVOKED",
-        [
-          "🔐 The previous invite link",
-          "is no longer valid.",
-          "",
-          "🟢 A new invite link is now available.",
-          "⚡ Use /link to retrieve it.",
-        ]
-      ),
-    });
-  } catch (err) {
-    console.error("Revoke error:", err);
+    await reply(
+      sock,
+      jid,
+      message,
+      "🔐 Group link revoked.\n\nThe previous invite link is no longer valid.",
+    );
+  } catch (error) {
+    console.error(
+      "Revoke error:",
+      error,
+    );
 
-    await sock.sendMessage(jid, {
-      text: errorMessage(
-        "REVOKE FAILED",
-        "WhatsApp rejected the link revocation."
-      ),
-    });
+    await reply(
+      sock,
+      jid,
+      message,
+      "❌ Link revoke failed.\n\nWhatsApp rejected the operation.",
+    );
   }
 }
 
@@ -1902,48 +1495,47 @@ async function revoke(
 async function setName(
   sock: WASocket,
   jid: string,
-  args: string[]
+  message: WAMessage,
+  args: string[],
 ): Promise<void> {
-  const name = args.join(" ").trim();
+  const name = args
+    .join(" ")
+    .trim();
 
   if (!name) {
-    await sock.sendMessage(jid, {
-      text: commandUsage(
-        "setname",
-        "/setname New Group Name",
-        "Changes the group's display name."
-      ),
-    });
-
+    await reply(
+      sock,
+      jid,
+      message,
+      "⚠️ Name required.\n\nUsage: /setname New Group Name",
+    );
     return;
   }
 
   try {
     await sock.groupUpdateSubject(
       jid,
-      name
+      name,
     );
 
-    await sock.sendMessage(jid, {
-      text: success(
-        "GROUP NAME UPDATED",
-        [
-          `📛 New name: ${name}`,
-          "",
-          "🟢 Status: Updated successfully.",
-          "✨ Group identity refreshed.",
-        ]
-      ),
-    });
-  } catch (err) {
-    console.error("Setname error:", err);
+    await reply(
+      sock,
+      jid,
+      message,
+      `✏️ Group name updated.\n\nNew name: ${name}`,
+    );
+  } catch (error) {
+    console.error(
+      "Setname error:",
+      error,
+    );
 
-    await sock.sendMessage(jid, {
-      text: errorMessage(
-        "NAME UPDATE FAILED",
-        "WhatsApp rejected the group name change."
-      ),
-    });
+    await reply(
+      sock,
+      jid,
+      message,
+      "❌ Name update failed.\n\nWhatsApp rejected the group name change.",
+    );
   }
 }
 
@@ -1954,168 +1546,48 @@ async function setName(
 async function setDescription(
   sock: WASocket,
   jid: string,
-  args: string[]
+  message: WAMessage,
+  args: string[],
 ): Promise<void> {
-  const description =
-    args.join(" ").trim();
+  const description = args
+    .join(" ")
+    .trim();
 
   if (!description) {
-    await sock.sendMessage(jid, {
-      text: commandUsage(
-        "setdesc",
-        "/setdesc Your group description",
-        "Updates the group's description."
-      ),
-    });
-
+    await reply(
+      sock,
+      jid,
+      message,
+      "⚠️ Description required.\n\nUsage: /setdesc Your group description",
+    );
     return;
   }
 
   try {
     await sock.groupUpdateDescription(
       jid,
-      description
+      description,
     );
 
-    await sock.sendMessage(jid, {
-      text: success(
-        "DESCRIPTION UPDATED",
-        [
-          "📝 Group description",
-          "has been updated.",
-          "",
-          "🟢 Status: Updated successfully.",
-          "✨ Group information refreshed.",
-        ]
-      ),
-    });
-  } catch (err) {
-    console.error("Setdesc error:", err);
+    await reply(
+      sock,
+      jid,
+      message,
+      "📝 Group description updated.",
+    );
+  } catch (error) {
+    console.error(
+      "Setdesc error:",
+      error,
+    );
 
-    await sock.sendMessage(jid, {
-      text: errorMessage(
-        "DESCRIPTION UPDATE FAILED",
-        "WhatsApp rejected the description change."
-      ),
-    });
+    await reply(
+      sock,
+      jid,
+      message,
+      "❌ Description update failed.\n\nWhatsApp rejected the change.",
+    );
   }
-}
-
-/* =========================================================
-   DARK VORTEX GROUP REGISTRY CONTROLS
-========================================================= */
-
-async function enableCurrentGroup(
-  sock: WASocket,
-  jid: string,
-  metadata: GroupMetadata
-): Promise<void> {
-  const entry = await enableGroup(
-    jid,
-    metadata.subject
-  );
-
-  await sock.sendMessage(jid, {
-    text: success(
-      "GROUP ENABLED",
-      [
-        `📛 Group: ${entry.name}`,
-        "",
-        "🟢 Status: ENABLED",
-        "",
-        "Dark Vortex commands are now active",
-        "in this group.",
-        "",
-        "⚡ Powered by Vortex Tech",
-      ]
-    ),
-  });
-}
-
-async function disableCurrentGroup(
-  sock: WASocket,
-  jid: string,
-  metadata: GroupMetadata
-): Promise<void> {
-  const entry = await disableGroup(
-    jid,
-    metadata.subject
-  );
-
-  await sock.sendMessage(jid, {
-    text: warning(
-      "GROUP DISABLED",
-      [
-        `📛 Group: ${entry.name}`,
-        "",
-        "🔴 Status: DISABLED",
-        "",
-        "Dark Vortex commands are now",
-        "disabled in this group.",
-        "",
-        "Use /enable to reactivate the bot.",
-        "",
-        "⚡ Powered by Vortex Tech",
-      ]
-    ),
-  });
-}
-
-async function listRegisteredGroups(
-  sock: WASocket,
-  jid: string
-): Promise<void> {
-  const groups =
-    await getRegisteredGroups();
-
-  if (!groups.length) {
-    await sock.sendMessage(jid, {
-      text: info(
-        "GROUP REGISTRY",
-        [
-          "No groups have been registered yet.",
-          "",
-          "Groups are registered automatically",
-          "when Dark Vortex interacts with them.",
-        ]
-      ),
-    });
-
-    return;
-  }
-
-  const lines = groups.map(
-    (group, index) => {
-      const status =
-        group.status === "enabled"
-          ? "🟢 ENABLED"
-          : group.status === "disabled"
-            ? "🔴 DISABLED"
-            : "⚫ LEFT";
-
-      return [
-        `${index + 1}. ${group.name}`,
-        `   ${status}`,
-      ].join("\n");
-    }
-  );
-
-  await sock.sendMessage(jid, {
-    text: vortexBox(
-      "🌑 DARK VORTEX GROUPS",
-      [
-        `📊 Registered: ${groups.length}`,
-        "",
-        ...lines,
-        "",
-        "🟢 ENABLED — commands active",
-        "🔴 DISABLED — commands blocked",
-        "⚫ LEFT — bot no longer present",
-        "",
-        "⚡ Powered by Vortex Tech",
-      ]
-    ),
-  });
 }
 
 /* =========================================================
@@ -2125,9 +1597,9 @@ async function listRegisteredGroups(
 export async function handleGroupCommand(
   sock: WASocket,
   jid: string,
-  commandName: string,
+  command: string,
   args: string[],
-  message: WAMessage
+  message: WAMessage,
 ): Promise<boolean> {
   const groupCommands = new Set([
     "kick",
@@ -2137,50 +1609,54 @@ export async function handleGroupCommand(
     "demote",
     "promoteall",
     "demoteall",
+
     "mute",
     "unmute",
-    "open",
-    "close",
     "onlyadmins",
     "onlyadmin",
     "everyone",
+
     "lock",
     "unlock",
     "gctime",
+
     "joinapproval",
     "requests",
     "approve",
     "reject",
+
     "admins",
     "members",
     "nonadmins",
     "tagall",
     "hidetag",
     "groupinfo",
+
     "link",
     "getlink",
     "revoke",
+
     "setname",
     "setdesc",
     "setdescription",
-    "setpp",
-    "groups",
-    "enable",
-    "disable"
   ]);
 
-  if (!groupCommands.has(commandName)) {
+  if (!groupCommands.has(command)) {
     return false;
   }
 
   const metadata =
-    await requireGroup(sock, jid);
+    await requireGroup(
+      sock,
+      jid,
+      message,
+    );
 
   if (!metadata) {
     return true;
   }
 
-  switch (commandName) {
+  switch (command) {
     /* =========================
        MEMBER MANAGEMENT
     ========================= */
@@ -2190,7 +1666,7 @@ export async function handleGroupCommand(
         sock,
         jid,
         message,
-        metadata
+        metadata,
       );
       return true;
 
@@ -2198,7 +1674,8 @@ export async function handleGroupCommand(
       await kickAll(
         sock,
         jid,
-        metadata
+        message,
+        metadata,
       );
       return true;
 
@@ -2206,7 +1683,8 @@ export async function handleGroupCommand(
       await add(
         sock,
         jid,
-        args
+        message,
+        args,
       );
       return true;
 
@@ -2215,7 +1693,7 @@ export async function handleGroupCommand(
         sock,
         jid,
         message,
-        metadata
+        metadata,
       );
       return true;
 
@@ -2224,7 +1702,7 @@ export async function handleGroupCommand(
         sock,
         jid,
         message,
-        metadata
+        metadata,
       );
       return true;
 
@@ -2232,7 +1710,8 @@ export async function handleGroupCommand(
       await promoteAll(
         sock,
         jid,
-        metadata
+        message,
+        metadata,
       );
       return true;
 
@@ -2240,64 +1719,46 @@ export async function handleGroupCommand(
       await demoteAll(
         sock,
         jid,
-        metadata
+        message,
+        metadata,
       );
       return true;
-
-    /* =========================
-   GROUP REGISTRY CONTROL
-========================= */
-
-    case "groups":
-    await listRegisteredGroups(
-      sock,
-      jid
-    );
-    return true;
-
-  case "enable":
-    await enableCurrentGroup(
-      sock,
-      jid,
-      metadata
-    );
-    return true;
-
-  case "disable":
-    await disableCurrentGroup(
-      sock,
-      jid,
-      metadata
-    );
-    return true;
 
     /* =========================
        GROUP MODE
     ========================= */
 
     case "mute":
-      await mute(sock, jid);
+      await mute(
+        sock,
+        jid,
+        message,
+      );
       return true;
 
     case "unmute":
-      await unmute(sock, jid);
-      return true;
-
-    case "open":
-      await openGroup(sock, jid);
-      return true;
-
-    case "close":
-      await closeGroup(sock, jid);
+      await unmute(
+        sock,
+        jid,
+        message,
+      );
       return true;
 
     case "onlyadmins":
     case "onlyadmin":
-      await onlyAdmins(sock, jid);
+      await onlyAdmins(
+        sock,
+        jid,
+        message,
+      );
       return true;
 
     case "everyone":
-      await everyone(sock, jid);
+      await everyone(
+        sock,
+        jid,
+        message,
+      );
       return true;
 
     /* =========================
@@ -2305,18 +1766,27 @@ export async function handleGroupCommand(
     ========================= */
 
     case "lock":
-      await lockGroup(sock, jid);
+      await lockGroup(
+        sock,
+        jid,
+        message,
+      );
       return true;
 
     case "unlock":
-      await unlockGroup(sock, jid);
+      await unlockGroup(
+        sock,
+        jid,
+        message,
+      );
       return true;
 
     case "gctime":
       await groupCreationTime(
         sock,
         jid,
-        metadata
+        message,
+        metadata,
       );
       return true;
 
@@ -2324,19 +1794,25 @@ export async function handleGroupCommand(
       await joinApproval(
         sock,
         jid,
-        args
+        message,
+        args,
       );
       return true;
 
     case "requests":
-      await requests(sock, jid);
+      await requests(
+        sock,
+        jid,
+        message,
+      );
       return true;
 
     case "approve":
       await approveRequests(
         sock,
         jid,
-        args
+        message,
+        args,
       );
       return true;
 
@@ -2344,7 +1820,8 @@ export async function handleGroupCommand(
       await rejectRequests(
         sock,
         jid,
-        args
+        message,
+        args,
       );
       return true;
 
@@ -2356,7 +1833,8 @@ export async function handleGroupCommand(
       await groupInfo(
         sock,
         jid,
-        metadata
+        message,
+        metadata,
       );
       return true;
 
@@ -2364,7 +1842,8 @@ export async function handleGroupCommand(
       await admins(
         sock,
         jid,
-        metadata
+        message,
+        metadata,
       );
       return true;
 
@@ -2372,7 +1851,8 @@ export async function handleGroupCommand(
       await members(
         sock,
         jid,
-        metadata
+        message,
+        metadata,
       );
       return true;
 
@@ -2380,7 +1860,8 @@ export async function handleGroupCommand(
       await nonAdmins(
         sock,
         jid,
-        metadata
+        message,
+        metadata,
       );
       return true;
 
@@ -2392,7 +1873,8 @@ export async function handleGroupCommand(
       await tagAll(
         sock,
         jid,
-        metadata
+        message,
+        metadata,
       );
       return true;
 
@@ -2400,8 +1882,9 @@ export async function handleGroupCommand(
       await hideTag(
         sock,
         jid,
+        message,
         metadata,
-        args
+        args,
       );
       return true;
 
@@ -2410,15 +1893,20 @@ export async function handleGroupCommand(
     ========================= */
 
     case "link":
-      await link(sock, jid);
-      return true;
-
     case "getlink":
-      await getLink(sock, jid);
+      await link(
+        sock,
+        jid,
+        message,
+      );
       return true;
 
     case "revoke":
-      await revoke(sock, jid);
+      await revoke(
+        sock,
+        jid,
+        message,
+      );
       return true;
 
     /* =========================
@@ -2429,7 +1917,8 @@ export async function handleGroupCommand(
       await setName(
         sock,
         jid,
-        args
+        message,
+        args,
       );
       return true;
 
@@ -2438,15 +1927,8 @@ export async function handleGroupCommand(
       await setDescription(
         sock,
         jid,
-        args
-      );
-      return true;
-
-    case "setpp":
-      await setProfilePicture(
-        sock,
-        jid,
-        message
+        message,
+        args,
       );
       return true;
 
