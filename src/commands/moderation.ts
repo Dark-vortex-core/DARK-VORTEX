@@ -1,5 +1,7 @@
+
 /* =========================================================
    🌑 DARK VORTEX — MODERATION ENGINE
+
    ⚡ Powered by Vortex Tech
 ========================================================= */
 
@@ -16,13 +18,15 @@ import {
   sendVortexReply,
 } from "../utils/vortex-reply.js";
 
+import {
+  resolveIdentity,
+} from "../utils/identity.js";
+
 /* =========================================================
    DATABASE PATHS
 ========================================================= */
 
-const DATA_DIR = path.resolve(
-  "./src/data",
-);
+const DATA_DIR = path.resolve("./src/data");
 
 const WARNINGS_FILE = path.join(
   DATA_DIR,
@@ -107,11 +111,10 @@ function readJsonFile<T>(
   ensureDatabase();
 
   try {
-    const raw =
-      fs.readFileSync(
-        filePath,
-        "utf8",
-      );
+    const raw = fs.readFileSync(
+      filePath,
+      "utf8",
+    );
 
     if (!raw.trim()) {
       return fallback;
@@ -131,11 +134,7 @@ function writeJsonFile<T>(
 
   fs.writeFileSync(
     filePath,
-    JSON.stringify(
-      data,
-      null,
-      2,
-    ),
+    JSON.stringify(data, null, 2),
     "utf8",
   );
 }
@@ -212,11 +211,8 @@ function saveWarnLimits(
 export function getWarnLimit(
   jid: string,
 ): number {
-  const database =
-    loadWarnLimits();
-
-  const limit =
-    database[jid];
+  const database = loadWarnLimits();
+  const limit = database[jid];
 
   if (
     typeof limit !== "number" ||
@@ -238,18 +234,14 @@ export function setWarnLimit(
   jid: string,
   limit: number,
 ): void {
-  const database =
-    loadWarnLimits();
+  const database = loadWarnLimits();
 
-  database[jid] =
-    Math.max(
-      0,
-      Math.floor(limit),
-    );
-
-  saveWarnLimits(
-    database,
+  database[jid] = Math.max(
+    0,
+    Math.floor(limit),
   );
+
+  saveWarnLimits(database);
 }
 
 /* =========================================================
@@ -265,10 +257,7 @@ function normalizeJid(
 
   return jid
     .trim()
-    .replace(
-      /:\d+(?=@)/,
-      "",
-    )
+    .replace(/:\d+(?=@)/, "")
     .replace(
       /@c\.us$/i,
       "@s.whatsapp.net",
@@ -296,11 +285,8 @@ function sameUser(
     return false;
   }
 
-  const normalizedA =
-    normalizeJid(a);
-
-  const normalizedB =
-    normalizeJid(b);
+  const normalizedA = normalizeJid(a);
+  const normalizedB = normalizeJid(b);
 
   if (
     normalizedA &&
@@ -309,15 +295,8 @@ function sameUser(
     return true;
   }
 
-  const numberA =
-    getJidNumber(
-      normalizedA,
-    );
-
-  const numberB =
-    getJidNumber(
-      normalizedB,
-    );
+  const numberA = getJidNumber(normalizedA);
+  const numberB = getJidNumber(normalizedB);
 
   return Boolean(
     numberA &&
@@ -327,18 +306,32 @@ function sameUser(
 }
 
 /* =========================================================
-   USER DISPLAY
+   GLOBAL IDENTITY DISPLAY
 ========================================================= */
 
-function cleanMention(
+/**
+ * Resolves a JID through the global identity system.
+ *
+ * Display names come from identity.ts.
+ * The original JID is still used for the actual
+ * WhatsApp mention metadata.
+ */
+async function resolveMention(
+  sock: WASocket,
   jid: string,
-): string {
-  const number =
-    getJidNumber(jid);
+  contextJid?: string,
+): Promise<string> {
+  const identity = await resolveIdentity(
+    sock,
+    jid,
+    contextJid,
+  );
 
-  return number
-    ? `@${number}`
-    : "@user";
+  if (identity.name === "Unknown User") {
+    return "@Unknown User";
+  }
+
+  return `@${identity.name}`;
 }
 
 /* =========================================================
@@ -365,8 +358,8 @@ async function sendModerationReply(
 /**
  * Reply with real WhatsApp mentions.
  *
- * Mentions must be placed in the message
- * content itself, not send options.
+ * The display name is resolved globally,
+ * while the raw JID remains the actual mention target.
  */
 async function sendModerationMentionReply(
   sock: WASocket,
@@ -379,8 +372,7 @@ async function sendModerationMentionReply(
     jid,
     {
       text,
-      mentions:
-        mentionedJids,
+      mentions: mentionedJids,
     },
     message
       ? {
@@ -397,9 +389,7 @@ async function sendModerationMentionReply(
 function isGroup(
   jid: string,
 ): boolean {
-  return jid.endsWith(
-    "@g.us",
-  );
+  return jid.endsWith("@g.us");
 }
 
 function isAdmin(
@@ -407,10 +397,8 @@ function isAdmin(
     GroupMetadata["participants"][number],
 ): boolean {
   return (
-    participant.admin ===
-      "admin" ||
-    participant.admin ===
-      "superadmin"
+    participant.admin === "admin" ||
+    participant.admin === "superadmin"
   );
 }
 
@@ -419,9 +407,7 @@ async function getGroup(
   jid: string,
 ): Promise<GroupMetadata | null> {
   try {
-    return await sock.groupMetadata(
-      jid,
-    );
+    return await sock.groupMetadata(jid);
   } catch {
     return null;
   }
@@ -433,9 +419,7 @@ async function isBotAdmin(
 ): Promise<boolean> {
   try {
     const metadata =
-      await sock.groupMetadata(
-        jid,
-      );
+      await sock.groupMetadata(jid);
 
     const botJid =
       sock.user?.id || "";
@@ -469,9 +453,7 @@ async function isBotAdmin(
           }
 
           const participantNumber =
-            getJidNumber(
-              item.id,
-            );
+            getJidNumber(item.id);
 
           return Boolean(
             botNumber &&
@@ -518,16 +500,11 @@ function getReplyTarget(
       ?.stickerMessage
       ?.contextInfo;
 
-  if (
-    !context?.quotedMessage
-  ) {
+  if (!context?.quotedMessage) {
     return null;
   }
 
-  return (
-    context.participant ||
-    null
-  );
+  return context.participant || null;
 }
 
 async function requireReplyTarget(
@@ -536,9 +513,7 @@ async function requireReplyTarget(
   message: WAMessage,
 ): Promise<string | null> {
   const target =
-    getReplyTarget(
-      message,
-    );
+    getReplyTarget(message);
 
   if (!target) {
     await sendModerationReply(
@@ -556,9 +531,7 @@ async function requireReplyTarget(
     return null;
   }
 
-  return normalizeJid(
-    target,
-  );
+  return normalizeJid(target);
 }
 
 /* =========================================================
@@ -615,8 +588,7 @@ export function isBanned(
   jid: string,
   user: string,
 ): boolean {
-  const database =
-    loadBans();
+  const database = loadBans();
 
   const groupBans =
     database[jid] || [];
@@ -636,8 +608,7 @@ export function isBanned(
 export function getBannedUsers(
   jid: string,
 ): string[] {
-  const database =
-    loadBans();
+  const database = loadBans();
 
   return [
     ...(database[jid] || []),
@@ -648,8 +619,7 @@ function addBan(
   jid: string,
   user: string,
 ): void {
-  const database =
-    loadBans();
+  const database = loadBans();
 
   if (!database[jid]) {
     database[jid] = [];
@@ -677,17 +647,14 @@ function addBan(
     );
   }
 
-  saveBans(
-    database,
-  );
+  saveBans(database);
 }
 
 function removeBan(
   jid: string,
   user: string,
 ): boolean {
-  const database =
-    loadBans();
+  const database = loadBans();
 
   if (!database[jid]) {
     return false;
@@ -709,19 +676,15 @@ function removeBan(
     );
 
   const changed =
-    database[jid].length !==
-    before;
+    database[jid].length !== before;
 
   if (
-    database[jid].length ===
-    0
+    database[jid].length === 0
   ) {
     delete database[jid];
   }
 
-  saveBans(
-    database,
-  );
+  saveBans(database);
 
   return changed;
 }
@@ -758,9 +721,7 @@ export async function enforceBan(
 
   try {
     const metadata =
-      await sock.groupMetadata(
-        jid,
-      );
+      await sock.groupMetadata(jid);
 
     const participant =
       findParticipant(
@@ -791,15 +752,20 @@ export async function enforceBan(
       "remove",
     );
 
+    const mention =
+      await resolveMention(
+        sock,
+        participant.id,
+        jid,
+      );
+
     await sendModerationMentionReply(
       sock,
       jid,
       [
         "🚫 Banned user removed.",
         "",
-        `${cleanMention(
-          participant.id,
-        )} attempted to rejoin.`,
+        `${mention} attempted to rejoin.`,
       ].join("\n"),
       [participant.id],
     );
@@ -860,9 +826,7 @@ export function resetWarnings(
     delete database[jid];
   }
 
-  saveWarnings(
-    database,
-  );
+  saveWarnings(database);
 }
 
 /* =========================================================
@@ -873,8 +837,7 @@ export async function addWarning(
   sock: WASocket,
   jid: string,
   target: string,
-  reason =
-    "No reason provided",
+  reason = "No reason provided",
   quotedMessage?: WAMessage,
 ): Promise<void> {
   const database =
@@ -888,21 +851,22 @@ export async function addWarning(
     normalizeJid(target);
 
   database[jid][user] =
-    (database[jid][user] || 0) +
-    1;
+    (database[jid][user] || 0) + 1;
 
   const count =
     database[jid][user];
 
-  saveWarnings(
-    database,
-  );
+  saveWarnings(database);
 
   const warnLimit =
     getWarnLimit(jid);
 
   const mention =
-    cleanMention(user);
+    await resolveMention(
+      sock,
+      user,
+      jid,
+    );
 
   /* =======================================================
      WARNING LIMIT DISABLED
@@ -1213,13 +1177,20 @@ async function banUser(
   ------------------------------------------------------- */
 
   if (!participant) {
+    const mention =
+      await resolveMention(
+        sock,
+        target,
+        jid,
+      );
+
     await sendModerationReply(
       sock,
       jid,
       [
         "⚠️ User not found.",
         "",
-        `${cleanMention(target)} is not currently in this group.`,
+        `${mention} is not currently in this group.`,
       ].join("\n"),
       message,
     );
@@ -1234,15 +1205,20 @@ async function banUser(
   if (
     isAdmin(participant)
   ) {
+    const mention =
+      await resolveMention(
+        sock,
+        participant.id,
+        jid,
+      );
+
     await sendModerationMentionReply(
       sock,
       jid,
       [
         "🛡️ Action blocked.",
         "",
-        `${cleanMention(
-          participant.id,
-        )} is a group admin.`,
+        `${mention} is a group admin.`,
         "Administrators cannot be banned.",
       ].join("\n"),
       [participant.id],
@@ -1268,15 +1244,20 @@ async function banUser(
       participant.id,
     );
 
+    const mention =
+      await resolveMention(
+        sock,
+        participant.id,
+        jid,
+      );
+
     await sendModerationMentionReply(
       sock,
       jid,
       [
         "🚫 Member banned.",
         "",
-        `${cleanMention(
-          participant.id,
-        )} was removed and added to the ban list.`,
+        `${mention} was removed and added to the ban list.`,
       ].join("\n"),
       [participant.id],
       message,
@@ -1287,15 +1268,20 @@ async function banUser(
       err,
     );
 
+    const mention =
+      await resolveMention(
+        sock,
+        participant.id,
+        jid,
+      );
+
     await sendModerationMentionReply(
       sock,
       jid,
       [
         "⚠️ Ban failed.",
         "",
-        `${cleanMention(
-          participant.id,
-        )} could not be removed.`,
+        `${mention} could not be removed.`,
         "Ban list was not updated.",
       ].join("\n"),
       [participant.id],
@@ -1335,6 +1321,13 @@ async function unbanUser(
     target,
   );
 
+  const mention =
+    await resolveMention(
+      sock,
+      target,
+      jid,
+    );
+
   try {
     await sock.groupParticipantsUpdate(
       jid,
@@ -1348,7 +1341,7 @@ async function unbanUser(
       [
         "🟢 User unbanned.",
         "",
-        `${cleanMention(target)} — ban removed.`,
+        `${mention} — ban removed.`,
         "Re-entry request sent.",
       ].join("\n"),
       [target],
@@ -1366,7 +1359,7 @@ async function unbanUser(
       [
         "🟢 Ban removed.",
         "",
-        `${cleanMention(target)} — ban cleared.`,
+        `${mention} — ban cleared.`,
         wasBanned
           ? "WhatsApp rejected the add request."
           : "User was not in the ban database.",
@@ -1404,11 +1397,24 @@ async function showBanned(
     return;
   }
 
-  const lines =
-    banned.map(
-      (user, index) =>
-        `${index + 1}. ${cleanMention(user)}`,
+  const resolvedLines: string[] = [];
+
+  for (
+    let index = 0;
+    index < banned.length;
+    index += 1
+  ) {
+    const mention =
+      await resolveMention(
+        sock,
+        banned[index],
+        jid,
+      );
+
+    resolvedLines.push(
+      `${index + 1}. ${mention}`,
     );
+  }
 
   await sendModerationMentionReply(
     sock,
@@ -1418,7 +1424,7 @@ async function showBanned(
       "",
       `Total: ${banned.length}`,
       "",
-      ...lines,
+      ...resolvedLines,
     ].join("\n"),
     banned,
     message,
@@ -1438,8 +1444,7 @@ async function clearBans(
     loadBans();
 
   const count =
-    database[jid]?.length ||
-    0;
+    database[jid]?.length || 0;
 
   if (!count) {
     await sendModerationReply(
@@ -1458,9 +1463,7 @@ async function clearBans(
 
   delete database[jid];
 
-  saveBans(
-    database,
-  );
+  saveBans(database);
 
   await sendModerationReply(
     sock,
@@ -1530,13 +1533,20 @@ async function warnUser(
   ------------------------------------------------------- */
 
   if (!participant) {
+    const mention =
+      await resolveMention(
+        sock,
+        target,
+        jid,
+      );
+
     await sendModerationReply(
       sock,
       jid,
       [
         "⚠️ User not found.",
         "",
-        `${cleanMention(target)} is not currently in this group.`,
+        `${mention} is not currently in this group.`,
       ].join("\n"),
       message,
     );
@@ -1551,15 +1561,20 @@ async function warnUser(
   if (
     isAdmin(participant)
   ) {
+    const mention =
+      await resolveMention(
+        sock,
+        participant.id,
+        jid,
+      );
+
     await sendModerationMentionReply(
       sock,
       jid,
       [
         "🛡️ Action blocked.",
         "",
-        `${cleanMention(
-          participant.id,
-        )} is a group admin.`,
+        `${mention} is a group admin.`,
         "Administrators cannot be warned.",
       ].join("\n"),
       [participant.id],
@@ -1608,7 +1623,11 @@ async function showWarnings(
     getWarnLimit(jid);
 
   const mention =
-    cleanMention(target);
+    await resolveMention(
+      sock,
+      target,
+      jid,
+    );
 
   await sendModerationMentionReply(
     sock,
@@ -1660,13 +1679,20 @@ async function resetWarning(
     target,
   );
 
+  const mention =
+    await resolveMention(
+      sock,
+      target,
+      jid,
+    );
+
   await sendModerationMentionReply(
     sock,
     jid,
     [
       "♻️ Warnings reset.",
       "",
-      `${cleanMention(target)} — ${previous} warning(s) cleared.`,
+      `${mention} — ${previous} warning(s) cleared.`,
     ].join("\n"),
     [target],
     message,
@@ -1698,9 +1724,7 @@ export async function handleModerationCommand(
     ]);
 
   if (
-    !moderationCommands.has(
-      command,
-    )
+    !moderationCommands.has(command)
   ) {
     return false;
   }
@@ -1709,9 +1733,7 @@ export async function handleModerationCommand(
      GROUP ONLY
   ======================================================= */
 
-  if (
-    !isGroup(jid)
-  ) {
+  if (!isGroup(jid)) {
     await sendModerationReply(
       sock,
       jid,
@@ -1860,3 +1882,4 @@ export async function handleModerationCommand(
       return false;
   }
 }
+

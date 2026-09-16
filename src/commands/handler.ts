@@ -14,6 +14,15 @@ import type {
 } from "@whiskeysockets/baileys";
 
 import {
+  resolveIdentity,
+} from "../utils/identity.js";
+
+import {
+  generateNigerianMeme,
+  generateRandomNigerianMeme,
+} from "../utils/nigerian-meme-generator.js";
+
+import {
   getSessionStatus,
   getSessionAccount,
   getSessionPairingMode,
@@ -1379,9 +1388,7 @@ async function handleWhoisCommand(
     const raw =
       args[0].trim();
 
-    if (
-      raw.includes("@")
-    ) {
+    if (raw.includes("@")) {
       targetJid =
         normalizeJid(raw);
     } else if (
@@ -1410,30 +1417,40 @@ async function handleWhoisCommand(
 
   try {
     const metadata =
-      await sock.groupMetadata(
-        jid,
-      );
+      await sock.groupMetadata(jid);
+
+    const normalizedTarget =
+      normalizeJid(targetJid);
 
     const participant =
       metadata.participants.find(
         (item) => {
-          const participantId =
-            normalizeJid(
-              item.id,
-            );
-
-          const participantLid =
-            normalizeJid(
+          const identifiers = [
+            item.id,
+            (item as {
+              lid?: string;
+            }).lid,
+            (item as {
+              phoneNumber?: string;
+            }).phoneNumber,
+          ]
+            .filter(
               (
-                item as {
-                  lid?: string;
-                }
-              ).lid,
+                value,
+              ): value is string =>
+                typeof value ===
+                  "string" &&
+                value.trim().length > 0,
+            )
+            .map(
+              (value) =>
+                normalizeJid(
+                  value,
+                ),
             );
 
-          return (
-            participantId === targetJid ||
-            participantLid === targetJid
+          return identifiers.includes(
+            normalizedTarget,
           );
         },
       );
@@ -1458,10 +1475,17 @@ async function handleWhoisCommand(
         participant.id,
       );
 
-    const phone =
-      formatWhoisPhone(
+    const identity =
+      await resolveIdentity(
+        sock,
         participantJid,
+        jid,
+        undefined,
       );
+
+    const phone =
+      identity.phone ??
+      "UNKNOWN";
 
     const role =
       participant.admin ===
@@ -1472,29 +1496,35 @@ async function handleWhoisCommand(
           ? "ADMIN"
           : "MEMBER";
 
-    const isBot =
-      participantJid ===
+    const botJid =
       normalizeJid(
         sock.user?.id,
-      ) ||
-      participantJid ===
+      );
+
+    const botLid =
       normalizeJid(
         sock.user?.lid,
       );
 
-    const displayName =
+    const participantLid =
+      normalizeJid(
+        (
+          participant as {
+            lid?: string;
+          }
+        ).lid,
+      );
+
+    const isBot =
+      participantJid ===
+        botJid ||
+      participantJid ===
+        botLid ||
       (
-        participant as {
-          name?: string;
-          notify?: string;
-        }
-      ).name ||
-      (
-        participant as {
-          notify?: string;
-        }
-      ).notify ||
-      "Unknown";
+        participantLid &&
+        participantLid ===
+          botLid
+      );
 
     await sendVortexReply(
       sock,
@@ -1502,14 +1532,26 @@ async function handleWhoisCommand(
       [
         "👤 WHOIS",
         "",
-        `Name: ${displayName}`,
+        `Name: ${identity.name}`,
         `Number: ${phone}`,
         `Role: ${role}`,
-        `Status: ${isBot ? "DARK VORTEX" : "GROUP MEMBER"}`,
-        `JID: ${participantJid}`,
+        `Status: ${
+          isBot
+            ? "DARK VORTEX"
+            : "GROUP MEMBER"
+        }`,
+        `JID: ${identity.jid}`,
         "",
-        `Admin: ${participant.admin ? "YES" : "NO"}`,
-        `Bot: ${isBot ? "YES" : "NO"}`,
+        `Admin: ${
+          participant.admin
+            ? "YES"
+            : "NO"
+        }`,
+        `Bot: ${
+          isBot
+            ? "YES"
+            : "NO"
+        }`,
       ].join("\n"),
       message,
     );
@@ -1536,7 +1578,6 @@ async function handleWhoisCommand(
     return true;
   }
 }
-
 
 /* =========================================================
    SETTINGS
@@ -2246,30 +2287,31 @@ export async function handleCommand(
             detection.suspicious &&
             await shouldAlert(sender)
           ) {
-            const number =
-              sender
-                .split(":")[0]
-                .replace(
-                  "@s.whatsapp.net",
-                  "",
-                )
-                .replace(
-                  "@lid",
-                  "",
-                );
+            const identity =
+  await resolveIdentity(
+    sock,
+    sender,
+    jid,
+    message.pushName,
+  );
 
-            await sendVortexReply(
-              sock,
-              jid,
-              formatBotDetectionAlert(
-                detection,
-                `@${number}`,
-              ),
-              message,
-              {
-                mentions: [sender],
-              } as any,
-            );
+const displayTarget =
+  identity.name === "Unknown User"
+    ? "Unknown User"
+    : identity.name;
+
+await sendVortexReply(
+  sock,
+  jid,
+  formatBotDetectionAlert(
+    detection,
+    displayTarget,
+  ),
+  message,
+  {
+    mentions: [sender],
+  } as any,
+);
           }
         } catch (detectorError) {
           console.error(
@@ -3783,8 +3825,123 @@ export async function handleCommand(
       return;
     }
 
+      /* =====================================================
+       NIGERIAN MEME / JOKE GENERATOR
+    ===================================================== */
 
-    /* =====================================================
+    if (
+      requestedCommand === "meme" ||
+      requestedCommand === "joke" ||
+      requestedCommand === "naija"
+    ) {
+      const memeInput = args.join(" ").trim();
+
+      let response: string;
+
+      // .joke / .naija
+      if (
+        requestedCommand === "joke" ||
+        requestedCommand === "naija"
+      ) {
+        response = generateRandomNigerianMeme();
+      }
+
+      // .meme
+      else if (!memeInput) {
+        response = generateRandomNigerianMeme();
+      }
+
+      else {
+        const normalized = memeInput
+          .toLowerCase()
+          .replace(/[-_]/g, " ")
+          .trim();
+
+        const styleAliases: Record<string, string> = {
+          banter: "banter",
+          story: "story",
+          dialogue: "dialogue",
+          twist: "plot_twist",
+          "plot twist": "plot_twist",
+          "one liner": "one_liner",
+        };
+
+        const categoryAliases: Record<string, string> = {
+          random: "random",
+          family: "family",
+          parents: "parents",
+          money: "money",
+          salary: "salary",
+          relationship: "relationship",
+          school: "school",
+          work: "work",
+          transport: "transport",
+          traffic: "traffic",
+          power: "power",
+          nepa: "power",
+          phcn: "power",
+          internet: "internet",
+          data: "internet",
+          food: "food",
+          pos: "pos",
+          whatsapp: "whatsapp",
+          friends: "friends",
+          landlord: "landlord",
+          social: "social",
+          lagos: "lagos",
+          abuja: "abuja",
+        };
+
+        // Style command
+        if (styleAliases[normalized]) {
+          response = generateNigerianMeme({
+            style: styleAliases[normalized] as any,
+          });
+        }
+
+        // Category command
+        else if (categoryAliases[normalized]) {
+          response = generateNigerianMeme({
+            category: categoryAliases[normalized] as any,
+          });
+        }
+
+        // Unknown option
+        else {
+          response =
+            `❌ Unknown meme category/style: ${memeInput}\n\n` +
+            `Try:\n` +
+            `• random\n` +
+            `• banter\n` +
+            `• story\n` +
+            `• dialogue\n` +
+            `• twist\n` +
+            `• one-liner\n` +
+            `• food\n` +
+            `• money\n` +
+            `• relationship\n` +
+            `• school\n` +
+            `• work\n` +
+            `• traffic\n` +
+            `• power\n` +
+            `• WhatsApp\n` +
+            `• Lagos\n` +
+            `• Abuja`;
+        }
+      }
+
+      await sendVortexReply(
+        sock,
+        jid,
+        response,
+        message,
+      );
+
+      return;
+    }
+
+
+   /* =====================================================
        MODERATION
     ===================================================== */
 

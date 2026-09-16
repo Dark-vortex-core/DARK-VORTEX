@@ -2,11 +2,17 @@ import {
   type WAMessage,
   type WASocket,
   proto,
+  jidNormalizedUser,
 } from "@whiskeysockets/baileys";
 
 import {
   sendVortexReply,
 } from "../utils/vortex-reply.js";
+
+import {
+  resolveMessageIdentity,
+  formatIdentity,
+} from "../utils/identity.js";
 
 type AntiEditSettings = {
   enabled: boolean;
@@ -144,9 +150,8 @@ export function getAntiEditStatus(
 /*
  * Cache every incoming group message.
  *
- * IMPORTANT:
- * This must run when the original message
- * arrives, before WhatsApp edits it.
+ * This must happen when the original
+ * message arrives, before WhatsApp edits it.
  */
 export function rememberMessage(
   message: WAMessage,
@@ -193,27 +198,34 @@ function getOriginal(
   )?.message;
 }
 
-function getParticipant(
-  message: WAMessage,
-): string {
-  return (
-    message.key.participant ||
-    message.key.remoteJid ||
-    "Unknown"
-  );
-}
+/*
+ * Resolve the group name.
+ */
+async function resolveGroupName(
+  sock: WASocket,
+  jid: string,
+): Promise<string> {
+  try {
+    const metadata =
+      await sock.groupMetadata(jid);
 
-function getDisplayName(
-  message: WAMessage,
-): string {
-  const pushName =
-    message.pushName?.trim();
+    const subject =
+      metadata?.subject?.trim();
 
-  if (pushName) {
-    return pushName;
+    if (subject) {
+      return subject;
+    }
+  } catch {
+    /*
+     * Group metadata is supplementary.
+     * Anti-Edit should still report if
+     * the lookup fails.
+     */
   }
 
-  return getParticipant(message);
+  return jid === "status@broadcast"
+    ? "Status"
+    : "Unknown group";
 }
 
 function extractText(
@@ -313,12 +325,37 @@ function getContentType(
   return "message";
 }
 
-function buildAlert(
+async function buildAlert(
+  sock: WASocket,
+  groupJid: string,
   original: WAMessage,
   edited?: WAMessage,
-): string {
-  const name =
-    getDisplayName(original);
+): Promise<string> {
+  /*
+   * GLOBAL IDENTITY RESOLVER
+   *
+   * This handles:
+   * • pushName
+   * • normal WhatsApp JIDs
+   * • LIDs
+   * • group participant metadata
+   *
+   * Raw LIDs are never shown.
+   */
+  const identity =
+    await resolveMessageIdentity(
+      sock,
+      original,
+    );
+
+  const displayName =
+    formatIdentity(identity);
+
+  const groupName =
+    await resolveGroupName(
+      sock,
+      groupJid,
+    );
 
   const originalText =
     extractText(original);
@@ -334,7 +371,8 @@ function buildAlert(
   const lines = [
     "✏️ Message edited.",
     "",
-    `👤 ${name}`,
+    displayName,
+    `Group: ${groupName}`,
     `Type: ${type}`,
     "",
     "Original:",
@@ -450,6 +488,30 @@ function extractEditedMessage(
   } as WAMessage;
 }
 
+/*
+ * Resolve the owner's private chat.
+ *
+ * The owner is the WhatsApp account currently
+ * connected to this Dark Vortex socket.
+ *
+ * This means the group JID is NEVER used as
+ * the Anti-Edit alert destination.
+ */
+function getOwnerJid(
+  sock: WASocket,
+): string | undefined {
+  const ownId =
+    sock.user?.id;
+
+  if (!ownId) {
+    return undefined;
+  }
+
+  return jidNormalizedUser(
+    ownId,
+  );
+}
+
 export async function processAntiEditUpdate(
   sock: WASocket,
   rawUpdate: any,
@@ -529,22 +591,50 @@ export async function processAntiEditUpdate(
     );
 
   const alert =
-    buildAlert(
+    await buildAlert(
+      sock,
+      jid,
       original,
       edited,
     );
 
+  /*
+   * CRITICAL:
+   *
+   * Destination = OWNER DM.
+   *
+   * Never use `jid` here.
+   */
+  const ownerJid =
+    getOwnerJid(sock);
+
+  if (!ownerJid) {
+    processedEdits.delete(
+      eventId,
+    );
+
+    return false;
+  }
+
   try {
+    /*
+     * Send privately to the owner and
+     * quote the original message.
+     */
     await sendVortexReply(
       sock,
-      jid,
+      ownerJid,
       alert,
       original,
     );
   } catch {
+    /*
+     * If quoting fails, still send the
+     * Anti-Edit report privately.
+     */
     await sendVortexReply(
       sock,
-      jid,
+      ownerJid,
       alert,
     );
   }

@@ -1,3 +1,4 @@
+
 /* =========================================================
    🌑 DARK VORTEX BOT — VORTEX SECURITY TOOLS
    ⚡ Powered by Vortex Tech
@@ -36,8 +37,11 @@ import {
   warning,
   error,
   cleanUserNumber,
-  userMention,
 } from "../utils/message.js";
+
+import {
+  resolveIdentity,
+} from "../utils/identity.js";
 
 import {
   sendVortexReply,
@@ -561,68 +565,61 @@ async function getTargetDisplayName(
   message: WAMessage,
   targetJid: string,
 ): Promise<string> {
-  const senderJid =
-    message.key.participant ||
-    message.key.remoteJid ||
-    "";
-
-  if (
-    senderJid === targetJid &&
-    message.pushName?.trim()
-  ) {
-    return message.pushName.trim();
-  }
-
   const chatJid =
-    message.key.remoteJid;
+    message.key.remoteJid ??
+    undefined;
+
+  const identity =
+    await resolveIdentity(
+      sock,
+      targetJid,
+      chatJid,
+      message.key.participant ===
+        targetJid
+        ? message.pushName
+        : undefined,
+    );
 
   if (
-    chatJid?.endsWith("@g.us")
+    identity.name !==
+    "Unknown User"
   ) {
-    try {
-      const metadata =
-        await sock.groupMetadata(
-          chatJid,
-        );
-
-      const participant =
-        metadata.participants.find(
-          (member) => {
-            const data =
-              member as any;
-
-            return (
-              data.id === targetJid ||
-              data.jid === targetJid ||
-              data.lid === targetJid
-            );
-          },
-        );
-
-      if (participant) {
-        const name =
-          (participant as any).notify ||
-          (participant as any).name ||
-          (participant as any).verifiedName;
-
-        if (
-          typeof name === "string" &&
-          name.trim()
-        ) {
-          return name.trim();
-        }
-      }
-    } catch (err) {
-      console.error(
-        "⚠️ [PRINTINSULT] Failed to resolve target name:",
-        err,
-      );
-    }
+    return identity.name;
   }
 
-  return cleanUserNumber(
-    targetJid,
+  return (
+    cleanUserNumber(
+      targetJid,
+    ) ||
+    "Unknown User"
   );
+}
+
+/* =========================================================
+   TARGET MENTION RESOLUTION
+========================================================= */
+
+async function resolveTargetMention(
+  sock: WASocket,
+  message: WAMessage,
+  targetJid: string,
+): Promise<string> {
+  const identity =
+    await resolveIdentity(
+      sock,
+      targetJid,
+      message.key.remoteJid ??
+        undefined,
+    );
+
+  if (
+    identity.name ===
+    "Unknown User"
+  ) {
+    return "@Unknown User";
+  }
+
+  return `@${identity.name}`;
 }
 
 /* =========================================================
@@ -721,6 +718,13 @@ async function checkBot(
   message: WAMessage,
   targetJid: string,
 ): Promise<void> {
+  const targetMention =
+    await resolveTargetMention(
+      sock,
+      message,
+      targetJid,
+    );
+
   const scanId =
     crypto.randomUUID();
 
@@ -745,7 +749,7 @@ async function checkBot(
       [
         "🌑 DARK VORTEX • VX",
         "",
-        `Scanning ${userMention(targetJid)}...`,
+        `Scanning ${targetMention}...`,
         "",
         "▱▱▱▱▱▱▱▱▱▱ 0%",
         "",
@@ -915,7 +919,7 @@ async function checkBot(
         text: [
           "🌑 DARK VORTEX • VX",
           "",
-          `${userMention(targetJid)}`,
+          targetMention,
           "",
           "██████████████████ 100%",
           "",
@@ -996,6 +1000,13 @@ async function scanBot(
   message: WAMessage,
   targetJid: string,
 ): Promise<void> {
+  const targetMention =
+    await resolveTargetMention(
+      sock,
+      message,
+      targetJid,
+    );
+
   const scanId =
     crypto.randomUUID();
 
@@ -1020,7 +1031,7 @@ async function scanBot(
       [
         "🌑 DARK VORTEX • VX",
         "",
-        `Scanning ${userMention(targetJid)}...`,
+        `Scanning ${targetMention}...`,
         "",
         "▱▱▱▱▱▱▱▱▱▱ 0%",
         "",
@@ -1202,7 +1213,7 @@ async function scanBot(
         text: [
           "🌑 DARK VORTEX • VX",
           "",
-          `${userMention(targetJid)}`,
+          targetMention,
           "",
           "██████████████████ 100%",
           "",
@@ -1342,6 +1353,26 @@ async function showProgress(
       10 - filled,
     );
 
+  let targetMention:
+    | string
+    | undefined;
+
+  if (entry.target) {
+    const identity =
+      await resolveIdentity(
+        sock,
+        entry.target,
+        message?.key.remoteJid ??
+          jid,
+      );
+
+    targetMention =
+      identity.name ===
+      "Unknown User"
+        ? "@Unknown User"
+        : `@${identity.name}`;
+  }
+
   await sendReply(
     sock,
     jid,
@@ -1350,7 +1381,10 @@ async function showProgress(
       "",
       `Command: ${entry.command}`,
       entry.target
-        ? `Target: ${userMention(entry.target)}`
+        ? `Target: ${
+            targetMention ??
+            "@Unknown User"
+          }`
         : "",
       "",
       `${bar} ${entry.progress}%`,
@@ -2128,7 +2162,7 @@ export async function handleVortexConfirmation(
     return false;
   }
 
-     const normalizeConfirmationJid = (
+  const normalizeConfirmationJid = (
     value: string | undefined,
   ): string => {
     if (!value) {
@@ -2183,6 +2217,7 @@ export async function handleVortexConfirmation(
   ) {
     return false;
   }
+
   if (
     isSecurityConfirmationExpired()
   ) {
@@ -2580,3 +2615,4 @@ export {
   getReport,
   updateReport,
 };
+

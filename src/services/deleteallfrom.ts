@@ -16,6 +16,10 @@ import {
   sendVortexReply,
 } from "../utils/vortex-reply.js";
 
+import {
+  resolveIdentity,
+} from "../utils/identity.js";
+
 // =========================================================
 // 🌑 DARK VORTEX — DELETE ALL FROM
 // ⚡ Powered by Vortex Tech
@@ -210,6 +214,32 @@ function getMessageSender(
   return undefined;
 }
 
+/* =========================================================
+   GLOBAL IDENTITY DISPLAY
+========================================================= */
+
+async function resolveTargetMention(
+  sock: WASocket,
+  targetJid: string,
+  groupJid: string,
+): Promise<string> {
+  const identity =
+    await resolveIdentity(
+      sock,
+      targetJid,
+      groupJid,
+    );
+
+  if (
+    identity.name ===
+    "Unknown User"
+  ) {
+    return "@Unknown User";
+  }
+
+  return `@${identity.name}`;
+}
+
 // =========================================================
 // COMMAND HANDLER
 // =========================================================
@@ -227,8 +257,10 @@ export async function handleDeleteAllFromCommand(
       .toLowerCase();
 
   if (
-    normalizedCommand !== "deleteallfrom" &&
-    normalizedCommand !== "deleteallfromuser"
+    normalizedCommand !==
+      "deleteallfrom" &&
+    normalizedCommand !==
+      "deleteallfromuser"
   ) {
     return false;
   }
@@ -328,6 +360,13 @@ export async function handleDeleteAllFromCommand(
       ?.trim()
       .toLowerCase();
 
+  const mention =
+    await resolveTargetMention(
+      sock,
+      targetJid,
+      groupJid,
+    );
+
   // ---------------------------------------------------------
   // REMOVE RULE
   // ---------------------------------------------------------
@@ -364,7 +403,7 @@ export async function handleDeleteAllFromCommand(
       [
         "🛑 Delete-all-from disabled.",
         "",
-        `Target: @${targetJid.split("@")[0]}`,
+        `Target: ${mention}`,
         "Status: INACTIVE",
       ].join("\n"),
       {
@@ -388,7 +427,7 @@ export async function handleDeleteAllFromCommand(
       [
         "⚠️ Rule already active.",
         "",
-        `Target: @${targetJid.split("@")[0]}`,
+        `Target: ${mention}`,
         "Messages from this user are already being deleted.",
       ].join("\n"),
       {
@@ -420,7 +459,7 @@ export async function handleDeleteAllFromCommand(
     [
       "🛡️ Delete-all-from enabled.",
       "",
-      `Target: @${targetJid.split("@")[0]}`,
+      `Target: ${mention}`,
       "Status: ACTIVE",
       "",
       "New messages from this user will be automatically deleted.",
@@ -556,3 +595,4 @@ export async function getDeleteAllFromRules():
   Promise<DeleteAllFromRules> {
   return loadRules();
 }
+

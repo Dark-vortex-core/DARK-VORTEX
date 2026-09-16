@@ -464,28 +464,107 @@ export function footer(): string {
    USER / TARGET HELPERS
 ========================================================= */
 
+/**
+ * Extract a safe phone number from a WhatsApp phone JID.
+ *
+ * IMPORTANT:
+ * LIDs are NOT phone numbers and must never be converted
+ * into fake @number displays.
+ */
 export function cleanUserNumber(
   jid: string,
 ): string {
-  return String(jid || "")
-    .split(":")[0]
-    .replace("@s.whatsapp.net", "")
-    .replace("@lid", "")
-    .replace(/[^\d+]/g, "");
+  const value = String(jid || "").trim();
+
+  if (!value) {
+    return "";
+  }
+
+  /*
+   * Device-specific JIDs:
+   * 2348012345678:12@s.whatsapp.net
+   */
+  const base = value.split(":")[0];
+
+  /*
+   * Only extract numbers from actual WhatsApp phone JIDs.
+   */
+  if (
+    base.includes("@s.whatsapp.net")
+  ) {
+    return base
+      .replace("@s.whatsapp.net", "")
+      .replace(/[^\d+]/g, "");
+  }
+
+  /*
+   * Never expose or convert a LID into a fake
+   * phone number.
+   */
+  if (
+    base.includes("@lid")
+  ) {
+    return "";
+  }
+
+  /*
+   * Legacy/plain-number compatibility.
+   */
+  if (
+    !base.includes("@")
+  ) {
+    return base.replace(
+      /[^\d+]/g,
+      "",
+    );
+  }
+
+  return "";
 }
 
+/**
+ * Legacy mention formatter.
+ *
+ * IMPORTANT:
+ * This function is synchronous, so it cannot resolve a
+ * LID to a real name by itself.
+ *
+ * For real identity resolution use:
+ *
+ * resolveAndFormatIdentity()
+ *
+ * from src/utils/identity.ts
+ */
 export function userMention(
   jid: string,
 ): string {
-  return `@${cleanUserNumber(jid)}`;
+  const number = cleanUserNumber(jid);
+
+  if (number) {
+    return `@${number}`;
+  }
+
+  if (
+    String(jid || "").endsWith("@lid")
+  ) {
+    return "@Unknown User";
+  }
+
+  return "@Unknown User";
 }
 
+/**
+ * Legacy target formatter.
+ *
+ * This remains synchronous for compatibility with existing
+ * commands. New code that has access to the socket should
+ * use the identity resolver before passing the target here.
+ */
 export function targetLine(
   jid: string,
 ): string {
   return `Target: ${userMention(jid)}`;
 }
-
 
 /* =========================================================
    TIME / MEMORY

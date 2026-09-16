@@ -1,3 +1,4 @@
+
 /* =========================================================
    🌑 DARK VORTEX — VORTEX SECURITY COMMAND HANDLER
    ⚡ Powered by Vortex Tech
@@ -51,6 +52,10 @@ import {
 import {
   sendVortexReply,
 } from "../utils/vortex-reply.js";
+
+import {
+  resolveIdentity,
+} from "../utils/identity.js";
 
 /* =========================================================
    TYPES
@@ -439,6 +444,32 @@ function getTargetFromArgs(
   }
 
   return first;
+}
+
+/* =========================================================
+   GLOBAL IDENTITY DISPLAY
+========================================================= */
+
+async function resolveSecurityTarget(
+  sock: WASocket,
+  target: string,
+  contextJid: string,
+): Promise<string> {
+  const identity =
+    await resolveIdentity(
+      sock,
+      target,
+      contextJid,
+    );
+
+  if (
+    identity.name ===
+    "Unknown User"
+  ) {
+    return "@Unknown User";
+  }
+
+  return `@${identity.name}`;
 }
 
 /* =========================================================
@@ -838,6 +869,13 @@ async function commandAuditUser(
     return;
   }
 
+  const displayTarget =
+    await resolveSecurityTarget(
+      sock,
+      target,
+      jid,
+    );
+
   const {
     update,
     finish,
@@ -899,7 +937,7 @@ async function commandAuditUser(
   );
 
   const lines = [
-    `👤 Target: ${target}`,
+    `👤 Target: ${displayTarget}`,
     "",
     `📚 Matching events: ${events.length}`,
     `❌ Failed: ${failures}`,
@@ -2230,3 +2268,4 @@ export async function handleVortexSecurityCommand(
 export {
   SECURITY_COMMANDS,
 };
+

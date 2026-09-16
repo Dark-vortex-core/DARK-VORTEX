@@ -369,6 +369,19 @@ const COMMANDS: CommandDefinition[] = [
   },
 
 
+  {
+    name: "meme",
+    description:
+      "Generate an extremely funny Nigerian-style meme or joke.",
+    category: "core",
+    usage: "meme [category]",
+    aliases: ["joke", "naija", "funny"],
+    order: 14,
+    access: "public",
+    scope: "any",
+  },
+
+
   /* =======================================================
      👑 OWNER
   ======================================================= */

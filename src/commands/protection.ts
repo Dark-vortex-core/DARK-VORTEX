@@ -1,4 +1,3 @@
-
 import fs from "node:fs";
 import path from "node:path";
 import pino from "pino";
@@ -21,6 +20,10 @@ import {
 import {
   sendVortexReply,
 } from "../utils/vortex-reply.js";
+
+import {
+  resolveIdentity,
+} from "../utils/identity.js";
 
 import type {
   BotDetectionResult,
@@ -123,20 +126,11 @@ interface GroupProtectionSettings {
   antiflood: ProtectionSettings;
   antifake: ProtectionSettings;
   antinsfw: ProtectionSettings;
-
   warnLimit: number;
-
   spamMessages: number;
   spamWindowSeconds: number;
-
   floodMessages: number;
   floodWindowSeconds: number;
-
-  /**
-   * By default group admins are exempt from protection.
-   *
-   * Set to true if you later want to protect admins too.
-   */
   protectAdmins: boolean;
 }
 
@@ -239,13 +233,10 @@ const DEFAULT_SETTINGS:
     },
 
     warnLimit: 3,
-
     spamMessages: 5,
     spamWindowSeconds: 8,
-
     floodMessages: 8,
     floodWindowSeconds: 5,
-
     protectAdmins: false,
   };
 
@@ -531,30 +522,6 @@ function normalizeJid(
     );
 }
 
-function cleanUserNumber(
-  jid?: string | null,
-): string {
-  const normalized =
-    normalizeJid(jid);
-
-  if (!normalized) {
-    return "user";
-  }
-
-  return (
-    normalized
-      .split("@")[0]
-      .replace(/\D/g, "") ||
-    "user"
-  );
-}
-
-function userMention(
-  jid: string,
-): string {
-  return `@${cleanUserNumber(jid)}`;
-}
-
 function sameUser(
   first?: string | null,
   second?: string | null,
@@ -574,16 +541,61 @@ function sameUser(
   }
 
   const aNumber =
-    a.split("@")[0];
+    a
+      .split("@")[0]
+      .replace(/\D/g, "");
 
   const bNumber =
-    b.split("@")[0];
+    b
+      .split("@")[0]
+      .replace(/\D/g, "");
 
   return (
     Boolean(aNumber) &&
     Boolean(bNumber) &&
     aNumber === bNumber
   );
+}
+
+// ============================================================
+// GLOBAL IDENTITY RESOLUTION
+// ============================================================
+
+interface ProtectionTarget {
+  text: string;
+  mentionJid: string;
+}
+
+async function resolveProtectionTarget(
+  sock: WASocket,
+  message: WAMessage,
+  jid: string,
+): Promise<ProtectionTarget> {
+  const identity =
+    await resolveIdentity(
+      sock,
+      jid,
+      message.key.remoteJid ??
+        undefined,
+      undefined,
+    );
+
+  const resolvedJid =
+    identity.jid ||
+    normalizeJid(jid);
+
+  const name =
+    identity.name?.trim() ||
+    "Unknown User";
+
+  return {
+    text:
+      name === "Unknown User"
+        ? "@Unknown User"
+        : `@${name}`,
+    mentionJid:
+      resolvedJid,
+  };
 }
 
 // ============================================================
@@ -606,6 +618,10 @@ function isAdmin(
         ) ||
         sameUser(
           member.phoneNumber,
+          jid,
+        ) ||
+        sameUser(
+          member.lid,
           jid,
         ),
     );
@@ -665,6 +681,14 @@ function isBotAdmin(
           participant.phoneNumber,
           botLid,
         ) ||
+        sameUser(
+          participant.lid,
+          botJid,
+        ) ||
+        sameUser(
+          participant.lid,
+          botLid,
+        ) ||
         participant.id
           ?.split("@")[0]
           ?.split(":")[0] ===
@@ -711,20 +735,32 @@ function getContextInfo(
   return (
     content.extendedTextMessage
       ?.contextInfo ||
+
     content.imageMessage
       ?.contextInfo ||
+
     content.videoMessage
       ?.contextInfo ||
+
     content.documentMessage
       ?.contextInfo ||
+
     content.audioMessage
       ?.contextInfo ||
+
     (content as any)
       .statusMentionMessage
       ?.contextInfo
   );
 }
 
+/**
+ * Raw mention extraction intentionally
+ * remains synchronous and lightweight.
+ *
+ * Identity resolution happens only when
+ * Dark Vortex needs to display the target.
+ */
 function getMentionedJids(
   message: WAMessage,
 ): string[] {
@@ -805,7 +841,6 @@ function containsStatusMention(
     return false;
   }
 
-  // Direct status structures.
   if (
     content.statusMentionMessage ||
     content.groupStatusMentionMessage ||
@@ -992,14 +1027,21 @@ function looksSuspicious(
         )
       : "";
 
-  // LID is legitimate.
+  const lid =
+    typeof participant.lid ===
+    "string"
+      ? normalizeJid(
+          participant.lid,
+        )
+      : "";
+
   if (
-    id.endsWith("@lid")
+    id.endsWith("@lid") ||
+    lid.endsWith("@lid")
   ) {
     return false;
   }
 
-  // Normal phone-number participant.
   if (
     id.endsWith("@s.whatsapp.net") ||
     phoneNumber.endsWith(
@@ -1009,15 +1051,14 @@ function looksSuspicious(
     return false;
   }
 
-  // No usable identity.
   if (
     !id &&
-    !phoneNumber
+    !phoneNumber &&
+    !lid
   ) {
     return true;
   }
 
-  // Malformed identity.
   if (
     id &&
     !id.includes("@")
@@ -1408,16 +1449,32 @@ function protectionLabel(
   return names[protection];
 }
 
-function protectionResponse(
+// ============================================================
+// RESOLVED PROTECTION RESPONSE
+// ============================================================
+
+async function protectionResponse(
+  sock: WASocket,
+  message: WAMessage,
   protection: ProtectionName,
   sender: string,
   reason: string,
   action: ProtectionAction,
   warningCount = 0,
   warnLimit = 3,
-): string {
+): Promise<{
+  text: string;
+  mentionJid: string;
+}> {
+  const target =
+    await resolveProtectionTarget(
+      sock,
+      message,
+      sender,
+    );
+
   const mention =
-    userMention(sender);
+    target.text;
 
   const label =
     protectionLabel(protection);
@@ -1425,39 +1482,59 @@ function protectionResponse(
   if (
     action === "delete"
   ) {
-    return [
-      `${label} removed.`,
-      "",
-      `${mention}, ${reason}`,
-    ].join("\n");
+    return {
+      text: [
+        `${label} removed.`,
+        "",
+        `${mention}, ${reason}`,
+      ].join("\n"),
+
+      mentionJid:
+        target.mentionJid,
+    };
   }
 
   if (
     action === "warn"
   ) {
-    return [
-      `⚠️ ${label} detected.`,
-      "",
-      `${mention}, ${reason}`,
-      `Warning: ${warningCount}/${warnLimit}`,
-    ].join("\n");
+    return {
+      text: [
+        `⚠️ ${label} detected.`,
+        "",
+        `${mention}, ${reason}`,
+        `Warning: ${warningCount}/${warnLimit}`,
+      ].join("\n"),
+
+      mentionJid:
+        target.mentionJid,
+    };
   }
 
   if (
     action === "kick"
   ) {
-    return [
-      "👢 Member removed.",
-      "",
-      `${mention} — ${reason}`,
-    ].join("\n");
+    return {
+      text: [
+        "👢 Member removed.",
+        "",
+        `${mention} — ${reason}`,
+      ].join("\n"),
+
+      mentionJid:
+        target.mentionJid,
+    };
   }
 
-  return [
-    "🚫 Member removed.",
-    "",
-    `${mention} — ${reason}`,
-  ].join("\n");
+  return {
+    text: [
+      "🚫 Member removed.",
+      "",
+      `${mention} — ${reason}`,
+    ].join("\n"),
+
+    mentionJid:
+      target.mentionJid,
+  };
 }
 
 // ============================================================
@@ -1476,18 +1553,32 @@ async function sendProtectionResponse(
   quotedMessage?: WAMessage,
 ): Promise<void> {
   try {
-    await sendVortexReply(
-      sock,
-      jid,
-      protectionResponse(
+    if (!quotedMessage) {
+      return;
+    }
+
+    const response =
+      await protectionResponse(
+        sock,
+        quotedMessage,
         protection,
         sender,
         reason,
         action,
         warningCount,
         warnLimit,
-      ),
+      );
+
+    await sendVortexReply(
+      sock,
+      jid,
+      response.text,
       quotedMessage,
+      {
+        mentions: [
+          response.mentionJid,
+        ],
+      } as any,
     );
   } catch (err) {
     console.error(
@@ -1707,17 +1798,28 @@ async function executeAction(
       warnLimit
     ) {
       try {
+        const target =
+          await resolveProtectionTarget(
+            sock,
+            message,
+            normalizedSender,
+          );
+
         await sendVortexReply(
           sock,
           jid,
           [
             "👢 Warning limit reached.",
             "",
-            `${userMention(normalizedSender)} — ${warningCount}/${warnLimit} warnings.`,
+            `${target.text} — ${warningCount}/${warnLimit} warnings.`,
             "Removing member...",
           ].join("\n"),
           message,
-          {},
+          {
+            mentions: [
+              target.mentionJid,
+            ],
+          } as any,
         );
       } catch (err) {
         console.error(
@@ -2042,7 +2144,7 @@ export async function enforceAutomaticBotDetection(
     previous &&
     now -
       previous.timestamp <
-        AUTOMATIC_BOT_ENFORCEMENT_COOLDOWN
+      AUTOMATIC_BOT_ENFORCEMENT_COOLDOWN
   ) {
     return false;
   }
@@ -2409,9 +2511,7 @@ export async function handleProtectionCommand(
 
     updated = {
       ...current,
-
       enabled: true,
-
       action:
         requestedAction
           ? requestedAction as ProtectionAction
@@ -2444,9 +2544,7 @@ export async function handleProtectionCommand(
 
     updated = {
       ...current,
-
       enabled: true,
-
       action:
         mode as ProtectionAction,
     };
@@ -2722,6 +2820,10 @@ export async function processProtection(
           sameUser(
             member.phoneNumber,
             normalizedSender,
+          ) ||
+          sameUser(
+            member.lid,
+            normalizedSender,
           ),
       );
 
@@ -2971,4 +3073,3 @@ setInterval(
   },
   5 * 60 * 1000,
 );
-
